@@ -14,8 +14,11 @@ import { beat } from "./motion.js";
 
 const SESSION_KEY = "jarvis.lastSession";
 
-/** FLAG and CONFLICT sort last so the audit builds toward what needs Joseph. */
-const STATUS_ORDER = { OK: 0, FLAG: 1, CONFLICT: 2 };
+/**
+ * What needs Joseph types in first and stays above the fold. The clean rows are
+ * still listed, just underneath — an audit panel shouldn't bury its conflicts.
+ */
+const STATUS_ORDER = { CONFLICT: 0, FLAG: 1, OK: 2 };
 
 function readLastSession() {
   try {

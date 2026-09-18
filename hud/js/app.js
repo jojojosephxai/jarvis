@@ -244,8 +244,8 @@ function count(n, noun) {
 /** One short line from a steward reporting in — not a chatbot greeting. */
 function wakeLine(audit, date = new Date()) {
   const tally = [];
-  if (audit.flags) tally.push(count(audit.flags, "flag"));
   if (audit.conflicts) tally.push(count(audit.conflicts, "conflict"));
+  if (audit.flags) tally.push(count(audit.flags, "flag"));
   const verdict = tally.length ? `${tally.join(", ")}` : "nothing outstanding";
   return [
     `${greetingLine(date)}, ${PROFILE.name}. Systems online.`,
@@ -257,10 +257,10 @@ function wakeLine(audit, date = new Date()) {
 function overnightReply() {
   if (!state.audit) return "The audit is still running. One moment.";
   const notable = state.audit.rows.filter((r) => r.status !== "OK");
-  const head = `${count(state.audit.ok, "row")} clear, ${count(state.audit.flags, "flag")}, ${count(
-    state.audit.conflicts,
-    "conflict",
-  )}. Nothing ran on your behalf and nothing was sent.`;
+  const head = `${count(state.audit.conflicts, "conflict")}, ${count(
+    state.audit.flags,
+    "flag",
+  )}, ${count(state.audit.ok, "row")} clear. Nothing ran on your behalf and nothing was sent.`;
   if (!notable.length) return head;
   return [head, ...notable.map((r) => `${r.label}: ${r.detail}`)].join("\n");
 }

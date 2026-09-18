@@ -603,6 +603,13 @@ body {
   padding-left: 1.1rem;
 }
 
+.feed {
+  max-height: 15rem;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(160, 200, 255, 0.3) transparent;
+}
+
 .feed .msg {
   border-left: 2px solid var(--cyan-dim);
   padding: 0.45rem 0.65rem;
