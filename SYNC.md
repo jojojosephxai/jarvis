@@ -93,3 +93,23 @@ Do **not** merge both blindly. Recommended order:
 - Live HUD: Systems / Overnight / Briefing / command bar; xAI + Cursor **NOT WIRED** without keys (`jarvis-hud-settled.webp`)
 - **Brief me** works via button and typed command — local fallback briefing (swim/school), no keys required (`jarvis-briefme-response.webp`)
 - Not on `main`: that clone still serves the older HUD + stub bridge only
+
+## Multi-model review (PR #1)
+
+Reviewed tip `8b37ea3` with three models in parallel: `claude-opus-5-thinking-high`, `gpt-5.6-terra-high`, `cursor-grok-4.6-high`.
+
+### Consensus — act on before trusting live Cursor edits
+1. **Bridge CORS `*`** (`bridge/server.mjs`) — any website can `POST` localhost `:8790` while Jarvis runs; with `CURSOR_API_KEY` that is remote file edit. Restrict origin to the HUD.
+2. **HUD swallows Cursor edits** (`parseSelfEdit` before bridge) — phrases like "add a new panel" refuse locally even when Cursor is ONLINE. Return `null` for source edits so `askBridge` runs.
+
+### Consider
+- Vercel build ships real profile PII in `hud/dist` (demo profile or Deployment Protection)
+- Vite `0.0.0.0` + weak self-edit trust headers on LAN
+- Esc/timeout does not cancel in-flight Cursor agent
+- Profile date UTC vs local for Tetrathlon flag
+- Health endpoint key oracle under open CORS
+
+### Noted / dismissed for now
+- Overnight `NOTHING_RAN` as FLAG (honesty choice)
+- Bridge host hardcoded `127.0.0.1` (phone LAN brain) — known limitation
+
