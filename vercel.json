@@ -1,0 +1,6 @@
+{
+  "buildCommand": "npm run build:hud",
+  "outputDirectory": "hud/dist",
+  "framework": null,
+  "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }]
+}
