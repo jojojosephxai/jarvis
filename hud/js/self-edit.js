@@ -162,7 +162,7 @@ export function parseSelfEdit(raw, current) {
   ) {
     return {
       patch: {},
-      say: "That's past what I can safely do to myself. I can only move the dials I expose — say \"what can you change\" for the list. For a new panel or new behaviour, open this repo in Cursor. That's the part of me that writes code, and you get to read the diff before it lands.",
+      say: "That's past the local dials. Put CURSOR_API_KEY in .env from cursor.com/dashboard/cloud-agents, restart npm run jarvis, and ask again — that's the part of me that writes code, and you get a diff to read.",
     };
   }
 

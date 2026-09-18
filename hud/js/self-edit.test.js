@@ -88,8 +88,8 @@ test("it reports what it has changed about itself", () => {
 test("it refuses code changes instead of pretending", () => {
   const result = parseSelfEdit("add a new panel to your UI", fresh());
   assert.deepEqual(result.patch, {});
-  assert.match(result.say, /past what I can safely do/);
-  assert.match(result.say, /Cursor/);
+  assert.match(result.say, /CURSOR_API_KEY/);
+  assert.match(result.say, /cloud-agents/);
 });
 
 test("ordinary commands are left to the normal brain", () => {
