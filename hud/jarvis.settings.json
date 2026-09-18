@@ -1,0 +1,12 @@
+{
+  "accent": "ice",
+  "orbSize": 400,
+  "bootSpeed": 1,
+  "textSpeed": 1,
+  "scanlines": 8,
+  "starfield": true,
+  "voiceRate": 1.04,
+  "voicePitch": 0.9,
+  "wakeStyle": "steward",
+  "probeBridge": true
+}

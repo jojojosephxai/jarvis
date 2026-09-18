@@ -1,0 +1,933 @@
+/* Boot cinematic: cold start → helmet visor → plate assemble.
+   Phase is driven by body[data-phase]; body[data-cut="1"] means Skip/Esc was
+   pressed and every cinematic element must jump straight to its settled state. */
+
+/* ——— PHASE 1 · COLD START ——— */
+.boot {
+  position: fixed;
+  inset: 0;
+  z-index: 44;
+  display: grid;
+  place-items: center;
+  background:
+    radial-gradient(circle at 50% 45%, rgba(50, 80, 140, 0.28), transparent 45%),
+    #000;
+  overflow: hidden;
+}
+
+.boot__grid {
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(180, 210, 255, 0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(180, 210, 255, 0.05) 1px, transparent 1px);
+  background-size: 48px 48px;
+  mask-image: radial-gradient(circle at center, black 20%, transparent 75%);
+  animation: grid-drift 12s linear infinite;
+  opacity: 0.5;
+}
+
+@keyframes grid-drift {
+  from {
+    transform: translateY(0);
+  }
+  to {
+    transform: translateY(48px);
+  }
+}
+
+.boot__reactor {
+  position: absolute;
+  width: min(58vw, 420px);
+  aspect-ratio: 1;
+  display: grid;
+  place-items: center;
+  opacity: 0.9;
+  animation: reactor-ignite calc(1.5s / var(--bs)) var(--ease-heavy) both, reactor-breathe calc(3.5s / var(--bs)) ease-in-out calc(1.5s / var(--bs)) infinite;
+}
+
+/* Spin-up: the reactor arrives fast and hot, then settles into a breath. */
+@keyframes reactor-ignite {
+  0% {
+    opacity: 0;
+    transform: scale(0.55) rotate(-26deg);
+    filter: brightness(3.4) drop-shadow(0 0 60px rgba(200, 228, 255, 0.9));
+  }
+  46% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0.9;
+    transform: none;
+    filter: none;
+  }
+}
+
+@keyframes reactor-breathe {
+  0%,
+  100% {
+    filter: drop-shadow(0 0 12px rgba(160, 200, 255, 0.22));
+  }
+  50% {
+    filter: drop-shadow(0 0 28px rgba(180, 210, 255, 0.5));
+  }
+}
+
+.boot__ring {
+  position: absolute;
+  border-radius: 50%;
+  border: 1px solid var(--cyan);
+  box-shadow: 0 0 24px var(--cyan-glow), inset 0 0 24px rgba(160, 200, 255, 0.1);
+}
+
+.boot__ring--a {
+  inset: 8%;
+  border-style: dashed;
+  animation: spin calc(14s / var(--bs)) linear infinite, ring-spinup calc(2.2s / var(--bs)) var(--ease-heavy) both;
+}
+
+.boot__ring--b {
+  inset: 20%;
+  opacity: 0.7;
+  animation: spin-rev calc(9s / var(--bs)) linear infinite, ring-spinup calc(1.9s / var(--bs)) var(--ease-heavy) calc(0.1s / var(--bs)) both;
+}
+
+.boot__ring--c {
+  inset: 32%;
+  border-width: 2px;
+  animation: spin calc(6s / var(--bs)) linear infinite, ring-spinup calc(1.6s / var(--bs)) var(--ease-heavy) calc(0.2s / var(--bs)) both;
+}
+
+@keyframes ring-spinup {
+  from {
+    scale: 1.7;
+  }
+  to {
+    scale: 1;
+  }
+}
+
+.boot__core {
+  width: 22%;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #f4f8ff, #8eb6ff 40%, #1a2740 75%);
+  box-shadow: 0 0 40px var(--cyan-glow), 0 0 80px rgba(120, 170, 255, 0.3);
+  animation: core-pulse 2.2s ease-in-out infinite;
+}
+
+@keyframes spin {
+  to {
+    rotate: 360deg;
+  }
+}
+
+@keyframes spin-rev {
+  to {
+    rotate: -360deg;
+  }
+}
+
+.boot__copy {
+  position: relative;
+  z-index: 2;
+  text-align: center;
+  width: min(92vw, 520px);
+  padding: 2rem 1rem;
+}
+
+.boot__eyebrow {
+  margin: 0;
+  font-family: var(--font-mono);
+  letter-spacing: 0.28em;
+  text-transform: uppercase;
+  font-size: 0.7rem;
+  color: var(--muted);
+}
+
+.boot__brand {
+  margin: 0.4rem 0 0;
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: clamp(2.4rem, 8vw, 4.2rem);
+  letter-spacing: 0.18em;
+  text-indent: 0.18em;
+  color: var(--cyan);
+  text-shadow: 0 0 30px var(--cyan-glow);
+  animation: brand-in calc(1.3s / var(--bs)) var(--ease-heavy) calc(0.2s / var(--bs)) both;
+}
+
+@keyframes brand-in {
+  0% {
+    opacity: 0;
+    letter-spacing: 0.62em;
+    filter: blur(14px);
+  }
+  100% {
+    opacity: 1;
+    letter-spacing: 0.18em;
+    filter: none;
+  }
+}
+
+.boot__tag {
+  margin: 0.35rem 0 1.4rem;
+  font-size: 0.95rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+  animation: fade-up calc(0.9s / var(--bs)) var(--ease-heavy) calc(0.7s / var(--bs)) both;
+}
+
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.boot__log {
+  list-style: none;
+  margin: 0 auto 1.2rem;
+  padding: 0;
+  text-align: left;
+  width: min(100%, 392px);
+  min-height: 9.2rem;
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  color: var(--cyan);
+}
+
+.boot__log li {
+  margin: 0.22rem 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.boot__log li::before {
+  content: "> ";
+  color: var(--cyan-dim);
+}
+
+.boot__log li.is-typing::after {
+  content: "▌";
+  animation: caret-blink 0.7s step-end infinite;
+}
+
+@keyframes caret-blink {
+  50% {
+    opacity: 0;
+  }
+}
+
+.boot__bar {
+  height: 3px;
+  background: rgba(160, 200, 255, 0.12);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.boot__bar span {
+  display: block;
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg, var(--cyan-dim), var(--cyan));
+  box-shadow: 0 0 12px var(--cyan-glow);
+  transition: width 0.24s var(--ease-heavy);
+}
+
+.boot__pct {
+  margin: 0.5rem 0 0;
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+/* The boot screen falls away behind the visor rather than simply fading. */
+body[data-phase="visor"] .boot {
+  animation: boot-recede calc(760ms / var(--bs)) var(--ease-heavy) both;
+}
+
+@keyframes boot-recede {
+  0% {
+    opacity: 1;
+    transform: scale(1);
+    filter: blur(0);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.22);
+    filter: blur(10px);
+  }
+}
+
+body[data-phase="assemble"] .boot,
+body[data-phase="live"] .boot {
+  display: none;
+}
+
+/* ——— PHASE 2 · HELMET VISOR ——— */
+.visor {
+  position: fixed;
+  inset: 0;
+  z-index: 45;
+  pointer-events: none;
+  transform-origin: 50% 47%;
+}
+
+body[data-phase="boot"] .visor,
+body[data-phase="live"] .visor {
+  display: none;
+}
+
+.visor__svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.visor__half {
+  opacity: 1;
+}
+
+body[data-phase="visor"] .visor__half--l {
+  animation: visor-seat-l calc(940ms / var(--bs)) var(--ease-seat) both;
+}
+
+body[data-phase="visor"] .visor__half--r {
+  animation: visor-seat-r calc(940ms / var(--bs)) var(--ease-seat) both;
+}
+
+/* Heavy plates: they arrive fast, cross the mark by a hair, and settle back. */
+@keyframes visor-seat-l {
+  0% {
+    opacity: 0;
+    transform: translateX(-780px) rotate(-2.2deg);
+  }
+  26% {
+    opacity: 1;
+  }
+  84% {
+    transform: translateX(18px) rotate(0.14deg);
+  }
+  100% {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes visor-seat-r {
+  0% {
+    opacity: 0;
+    transform: translateX(780px) rotate(2.2deg);
+  }
+  26% {
+    opacity: 1;
+  }
+  84% {
+    transform: translateX(-18px) rotate(-0.14deg);
+  }
+  100% {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.visor__rim {
+  fill: none;
+  stroke: rgba(205, 232, 255, 0.9);
+  stroke-width: 3;
+  stroke-linejoin: round;
+  filter: drop-shadow(0 0 12px rgba(150, 200, 255, 0.8));
+}
+
+body[data-phase="visor"] .visor__rim {
+  animation: rim-charge calc(900ms / var(--bs)) var(--ease-heavy) calc(0.42s / var(--bs)) both;
+}
+
+@keyframes rim-charge {
+  0% {
+    stroke: rgba(205, 232, 255, 0.08);
+    stroke-width: 1;
+  }
+  55% {
+    stroke: rgba(240, 250, 255, 1);
+    stroke-width: 5;
+  }
+  100% {
+    stroke: rgba(205, 232, 255, 0.9);
+    stroke-width: 3;
+  }
+}
+
+.visor__brow,
+.visor__cheek {
+  fill: none;
+  stroke: rgba(150, 190, 255, 0.28);
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+
+.visor__horizon {
+  fill: none;
+  stroke: rgba(176, 212, 255, 0.4);
+  stroke-width: 1.6;
+}
+
+.visor__horizon--minor {
+  stroke: rgba(176, 212, 255, 0.22);
+  stroke-dasharray: 14 10;
+}
+
+.visor__target {
+  fill: none;
+  stroke: rgba(196, 226, 255, 0.5);
+  stroke-width: 1.6;
+  stroke-dasharray: 9 12;
+}
+
+body[data-phase="visor"] .visor__glass {
+  animation: glass-print calc(820ms / var(--bs)) steps(1, end) calc(0.28s / var(--bs)) both;
+}
+
+/* The readout stutters onto the glass rather than fading politely. */
+@keyframes glass-print {
+  0% {
+    opacity: 0;
+  }
+  18% {
+    opacity: 0.7;
+  }
+  26% {
+    opacity: 0;
+  }
+  40% {
+    opacity: 1;
+  }
+  48% {
+    opacity: 0.35;
+  }
+  60%,
+  100% {
+    opacity: 1;
+  }
+}
+
+/* Light rakes across the inside of the glass as the plates seat. */
+.visor__glare {
+  opacity: 0;
+}
+
+body[data-phase="visor"] .visor__glare {
+  animation: visor-glare calc(1150ms / var(--bs)) cubic-bezier(0.3, 0, 0.2, 1) calc(400ms / var(--bs)) both;
+}
+
+@keyframes visor-glare {
+  0% {
+    opacity: 0;
+    transform: translateX(0) skewX(-15deg);
+  }
+  22% {
+    opacity: 1;
+  }
+  78% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translateX(3200px) skewX(-15deg);
+  }
+}
+
+.visor__reticle {
+  position: absolute;
+  inset: 22% 18%;
+  pointer-events: none;
+}
+
+.visor__reticle span {
+  position: absolute;
+  width: 26px;
+  height: 26px;
+  border: 1px solid rgba(190, 222, 255, 0.55);
+}
+
+.visor__reticle span:nth-child(1) {
+  top: 0;
+  left: 0;
+  border-right: 0;
+  border-bottom: 0;
+}
+.visor__reticle span:nth-child(2) {
+  top: 0;
+  right: 0;
+  border-left: 0;
+  border-bottom: 0;
+}
+.visor__reticle span:nth-child(3) {
+  bottom: 0;
+  left: 0;
+  border-right: 0;
+  border-top: 0;
+}
+.visor__reticle span:nth-child(4) {
+  bottom: 0;
+  right: 0;
+  border-left: 0;
+  border-top: 0;
+}
+
+body[data-phase="visor"] .visor__reticle span {
+  animation: reticle-lock calc(620ms / var(--bs)) var(--ease-heavy) calc(0.62s / var(--bs)) both;
+}
+
+@keyframes reticle-lock {
+  0% {
+    opacity: 0;
+    scale: 2.4;
+  }
+  100% {
+    opacity: 1;
+    scale: 1;
+  }
+}
+
+/* ——— PHASE 3 · CAMERA THROUGH THE VISOR ——— */
+body[data-phase="assemble"] .visor {
+  animation: visor-through calc(1400ms / var(--bs)) cubic-bezier(0.55, 0, 0.32, 1) both;
+}
+
+@keyframes visor-through {
+  0% {
+    opacity: 1;
+    transform: scale(1);
+    filter: blur(0);
+  }
+  30% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: scale(5.6);
+    filter: blur(6px);
+  }
+}
+
+body[data-phase="assemble"] .visor__half--l {
+  animation: visor-part-l calc(1400ms / var(--bs)) cubic-bezier(0.55, 0, 0.32, 1) both;
+}
+
+body[data-phase="assemble"] .visor__half--r {
+  animation: visor-part-r calc(1400ms / var(--bs)) cubic-bezier(0.55, 0, 0.32, 1) both;
+}
+
+/* The halves overlap across the nose bridge by 104 user units, so parting them
+   by 34 adds depth to the push-through without tearing a seam down the middle. */
+@keyframes visor-part-l {
+  to {
+    transform: translateX(-34px);
+  }
+}
+
+@keyframes visor-part-r {
+  to {
+    transform: translateX(34px);
+  }
+}
+
+/* ——— HUD REVEAL ——— */
+.hud {
+  opacity: 0;
+  z-index: 1;
+}
+
+/* Nothing behind the visor is clickable until the HUD is actually up. */
+body[data-phase="boot"] .hud,
+body[data-phase="visor"] .hud {
+  pointer-events: none;
+}
+
+/* Dim behind the glass while the visor is seating, then full power. */
+body[data-phase="visor"] .hud {
+  animation: hud-wake calc(900ms / var(--bs)) var(--ease-heavy) both;
+}
+
+@keyframes hud-wake {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 0.82;
+  }
+}
+
+/* The orb ignites while the visor is still down, so there is something alive to
+   see through the eye slits before the camera pushes through. */
+.center {
+  opacity: 0;
+}
+
+body[data-phase="visor"] .center {
+  animation: orb-ignite calc(1150ms / var(--bs)) var(--ease-heavy) calc(240ms / var(--bs)) both;
+}
+
+@keyframes orb-ignite {
+  0% {
+    opacity: 0;
+    transform: scaleY(0.02);
+    filter: blur(7px) brightness(3.2);
+  }
+  44% {
+    opacity: 0.9;
+  }
+  100% {
+    opacity: 1;
+    transform: none;
+    filter: none;
+  }
+}
+
+body[data-phase="assemble"] .center,
+body[data-phase="live"] .center {
+  opacity: 1;
+}
+
+body[data-phase="assemble"] .hud,
+body[data-phase="live"] .hud {
+  opacity: 1;
+  transition: opacity 500ms var(--ease-heavy);
+}
+
+/* ——— PLATE ASSEMBLE ——— */
+[data-plate] {
+  --plate-x: 0px;
+  --plate-y: 0px;
+  --plate-sy: 1;
+  opacity: 0;
+}
+
+.topbar[data-plate] {
+  --plate-y: -68px;
+}
+.panel--left[data-plate] {
+  --plate-x: -64px;
+}
+.panel--right[data-plate] {
+  --plate-x: 64px;
+}
+.dock[data-plate] {
+  --plate-y: 68px;
+}
+
+body[data-phase="assemble"] [data-plate],
+body[data-phase="live"] [data-plate] {
+  animation: plate-seat calc(880ms / var(--bs)) var(--ease-heavy) both;
+  animation-delay: calc(var(--plate-i, 0) * 85ms / var(--bs));
+}
+
+/* Machined: it arrives, taps 4% past the mark, and settles. No bounce. */
+@keyframes plate-seat {
+  0% {
+    opacity: 0;
+    transform: translate3d(var(--plate-x), var(--plate-y), 0) scaleY(var(--plate-sy));
+    filter: blur(9px) brightness(2.6);
+  }
+  50% {
+    opacity: 1;
+  }
+  86% {
+    transform: translate3d(calc(var(--plate-x) * -0.04), calc(var(--plate-y) * -0.04), 0) scaleY(1);
+    filter: blur(0) brightness(1.22) drop-shadow(0 0 22px rgba(185, 218, 255, 0.45));
+  }
+  100% {
+    opacity: 1;
+    transform: none;
+    filter: none;
+  }
+}
+
+body[data-phase="assemble"] .frame,
+body[data-phase="live"] .frame {
+  animation: frame-snap calc(720ms / var(--bs)) var(--ease-heavy) both;
+}
+
+@keyframes frame-snap {
+  0% {
+    opacity: 0;
+    scale: 2.8;
+  }
+  58% {
+    opacity: 0.95;
+  }
+  100% {
+    opacity: 0.7;
+    scale: 1;
+  }
+}
+
+/* ——— SCAN + FLICKER ——— */
+.hud__scan {
+  position: fixed;
+  left: 0;
+  right: 0;
+  top: -34vh;
+  height: 34vh;
+  z-index: 41;
+  pointer-events: none;
+  opacity: 0;
+  background: linear-gradient(
+    180deg,
+    transparent 0%,
+    rgba(170, 210, 255, 0.05) 58%,
+    rgba(210, 236, 255, 0.34) 88%,
+    rgba(236, 248, 255, 0.62) 97%,
+    transparent 100%
+  );
+}
+
+body[data-phase="assemble"] .hud__scan {
+  animation: scan-pass calc(1400ms / var(--bs)) cubic-bezier(0.4, 0, 0.25, 1) calc(180ms / var(--bs)) both;
+}
+
+@keyframes scan-pass {
+  0% {
+    opacity: 0;
+    transform: translateY(0);
+  }
+  10% {
+    opacity: 1;
+  }
+  88% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(150vh);
+  }
+}
+
+.hud__flicker {
+  position: fixed;
+  inset: 0;
+  z-index: 42;
+  pointer-events: none;
+  background: #000;
+  opacity: 0;
+}
+
+/* Power surge as the plates land. */
+body[data-phase="assemble"] .hud__flicker {
+  animation: power-surge calc(1200ms / var(--bs)) steps(1, end) both;
+}
+
+@keyframes power-surge {
+  0%,
+  100% {
+    opacity: 0;
+  }
+  3% {
+    opacity: 0.5;
+  }
+  5% {
+    opacity: 0;
+  }
+  9% {
+    opacity: 0.24;
+  }
+  11% {
+    opacity: 0;
+  }
+  24% {
+    opacity: 0.12;
+  }
+  26% {
+    opacity: 0;
+  }
+}
+
+/* Rare idle flicker — mostly nothing, occasionally a blink. */
+body[data-phase="live"] .hud__flicker {
+  animation: idle-flicker 19s steps(1, end) 6s infinite;
+}
+
+@keyframes idle-flicker {
+  0%,
+  100% {
+    opacity: 0;
+  }
+  0.4% {
+    opacity: 0.16;
+  }
+  0.8% {
+    opacity: 0;
+  }
+  1.4% {
+    opacity: 0.08;
+  }
+  1.7% {
+    opacity: 0;
+  }
+}
+
+/* ——— SKIP ——— */
+.skip {
+  position: fixed;
+  right: 1.25rem;
+  bottom: 1.25rem;
+  z-index: 60;
+  background: rgba(2, 6, 14, 0.7);
+  border: 1px solid var(--line);
+  color: var(--muted);
+  font-family: var(--font-ui);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  padding: 0.45rem 0.85rem;
+  cursor: pointer;
+}
+
+.skip:hover,
+.skip:focus-visible {
+  color: var(--cyan);
+  border-color: var(--cyan);
+}
+
+body[data-phase="live"] .skip {
+  display: none;
+}
+
+/* ——— SKIP / ESC · jump every cinematic element to its settled state ——— */
+body[data-cut="1"] .boot,
+body[data-cut="1"] .visor {
+  display: none !important;
+}
+
+body[data-cut="1"] .hud {
+  animation: none !important;
+  opacity: 1 !important;
+}
+
+body[data-cut="1"] [data-plate],
+body[data-cut="1"] .center {
+  animation: none !important;
+  opacity: 1 !important;
+  transform: none !important;
+  filter: none !important;
+}
+
+body[data-cut="1"] .frame {
+  animation: none !important;
+  opacity: 0.7 !important;
+  scale: 1 !important;
+}
+
+body[data-cut="1"] .hud__scan {
+  animation: none !important;
+  opacity: 0 !important;
+}
+
+/* ——— REDUCED MOTION ———
+   Same boot log, same audit, same spoken line — cross-fades instead of flight. */
+@media (prefers-reduced-motion: reduce) {
+  .boot__grid,
+  .boot__reactor,
+  .boot__ring,
+  .boot__core,
+  .boot__brand,
+  .boot__tag,
+  .topbar__mark,
+  .topbar__title,
+  .orb__halo,
+  .wave span,
+  .dock__mic-ring,
+  .visor__rim,
+  .visor__glare,
+  .visor__glass,
+  .visor__reticle span {
+    animation: none !important;
+  }
+
+  .boot__reactor {
+    opacity: 0.9;
+  }
+
+  body[data-phase="visor"] .boot {
+    animation: soft-fade-out 220ms linear both !important;
+  }
+
+  .visor__half {
+    animation: none !important;
+    transform: none !important;
+    opacity: 1 !important;
+  }
+
+  body[data-phase="visor"] .visor {
+    animation: soft-fade-in 220ms linear both !important;
+  }
+
+  body[data-phase="assemble"] .visor {
+    animation: soft-fade-out 220ms linear both !important;
+  }
+
+  body[data-phase="visor"] .hud {
+    animation: none !important;
+    opacity: 0.72;
+  }
+
+  body[data-phase="assemble"] [data-plate],
+  body[data-phase="live"] [data-plate] {
+    animation: soft-fade-in 260ms linear both !important;
+    transform: none !important;
+    filter: none !important;
+  }
+
+  body[data-phase="visor"] .center {
+    animation: soft-fade-in 260ms linear both !important;
+    transform: none !important;
+    filter: none !important;
+  }
+
+  body[data-phase="assemble"] .frame,
+  body[data-phase="live"] .frame {
+    animation: none !important;
+    opacity: 0.7;
+    scale: 1;
+  }
+
+  .hud__scan,
+  .hud__flicker {
+    display: none !important;
+  }
+
+  .audit__row {
+    transition: none !important;
+    opacity: 1;
+    transform: none;
+  }
+
+  .audit__row.is-in .audit__chip {
+    animation: none !important;
+  }
+
+  @keyframes soft-fade-in {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+
+  @keyframes soft-fade-out {
+    from {
+      opacity: 1;
+    }
+    to {
+      opacity: 0;
+    }
+  }
+}

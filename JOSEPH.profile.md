@@ -273,7 +273,10 @@ If a "memory" and tonight's answer conflict, believe tonight's answer. Latest in
 
 - "(50)" = 50m pool; Thursday's "(B)" is a different site/setup on his grid.
 - He'll send example sets per day — use them to understand load; **do not rewrite the coach's sets** or pile on extras.
-- *Note:* this schedule differs from the general briefing file's description of morning practices — see §11 Conflicts.
+- **This grid is the one to plan against.** An older note described morning practices (~8:30–10:30am,
+  six days, with Mon/Wed afternoon doubles). That version is **superseded** — it is kept only in §11 as
+  history so nobody reintroduces it. It is not a second schedule; do not plan around it, and do not
+  present Joseph with two options. Still **ask him to confirm this grid** before building a week on it.
 
 ### History / return-to-water ramp *(don't present as current — this is history)*
 - He was out of the water for ~3 months as of early September 2026.
@@ -348,8 +351,15 @@ These are genuine disagreements between the two source files. Neither is treated
 1. **Body stats — record or omit?**
    The general briefing file lists his height and weight (~6'0", ~163 lb) as "known" facts, along with body-composition commentary ("still carrying some belly fat, actively body-recomping"). The fitness-merge file explicitly instructs: *"OMIT forever unless Joseph explicitly asks in-chat: height, weight, BMI, medical/body-image details, binge/snack detail, calorie targets, lift loads"* — and says this should be omitted even from this profile itself. **Default to the omission rule** unless he brings body stats up himself, since it's the more protective and more recently stated instruction — but the raw numbers are preserved here rather than deleted, per the instruction to keep all information from both files.
 
-2. **Practice schedule.**
-   The general briefing file describes swim practice as **mornings, ~8:30–10:30am, six days a week, with Mon/Wed doubles ~4:30–6:00pm**. The fitness-merge file describes a completely different weekly grid: **evening practices** — Mon 6–8pm, Tue 4–6pm, Wed 6–8pm (VO2), Thu 6:15–8:15pm (sprint), Sat 10am–12pm, Fri/Sun off — with no morning sessions or Mon/Wed doubles at all (see §9 table). These do not reconcile. The evening-grid version is more detailed and more recently dated, but confirm which (if either) is current before planning around either one.
+2. **Practice schedule — resolved to one grid, still needs Joseph's confirmation.**
+   **Use the §9 evening grid.** That is the only schedule in this file that anyone should plan against.
+   An older note claimed morning practices (~8:30–10:30am, six days a week, with Mon/Wed afternoon
+   doubles ~4:30–6:00pm). That claim is **superseded** — recorded here as history so it doesn't get
+   reintroduced, not offered as an alternative. The evening grid won because it is more detailed and
+   more recently dated, and everything downstream (homework windows, the 10:15pm cutoff, the food
+   rules, `hud/js/profile-data.js`) is built on it.
+   **Open question for Joseph:** confirm the §9 evening grid is current. Until he does, say the grid is
+   unconfirmed — don't re-open the morning version as a live possibility.
 
 3. **How settled is his age?**
    The general briefing file states "14 years old" as a known fact. The fitness-merge file treats his exact age at the March 2027 meet as something to **ASK** rather than assume ("ASK whether he is 14 or 15 at the March meet — do not dump a full DOB"). This isn't necessarily a hard contradiction (he could be 14 now and still 14 at that meet), but the second file treats age as more provisional/meet-rule-dependent than the first does — don't state his age at a specific future meet with more confidence than that file allows.
@@ -370,12 +380,12 @@ Two tracks. School first, because that has a deadline. Research second, because 
 
 I need three facts before I build the night:
 1. What is due tomorrow vs later this week? (class + task, even messy)
-2. Practice today — morning only, double, or off?
+2. Practice today — on the §9 grid, moved, or off?
 3. What's the research topic, and do you want a watch (I check later) or a brief (I give you one page now)?
 
 If you don't answer #1, I'm not guessing your planner.
 
-**Working plan if this is a normal double day**
+**Working plan if this is a normal evening-practice day**
 - 0:02 — You dump the list. I sort: must submit / must study / can slide.
 - 0:25 — One AP block only. If Bio has a quiz or problem set, that wins. If World has a reading + notes, we do a one-page map: events, cause, effect, what the prompt will ask.
 - Then stop that subject. Tired brain starts rereading and calling it work.
@@ -415,3 +425,4 @@ Reply with the three facts. If you only have energy for one sentence, send the d
 - 2026-09-16: First "jit" merge into that file (schedule, PE, sleep, grade, meets).
 - 2026-09-16: Second "jit" merge — full fitness depth added (coach split, Swimcloud PBs/QTs, meet sheet, school day, food/lift rules, privacy omissions locked).
 - 2026-09-16: This document — `about-joseph.md` and `ABOUT-JOSEPH-JARVIS.md` merged into one file, all content retained, conflicts preserved rather than resolved (see §11).
+- 2026-09-18: Practice-schedule conflict resolved to a single grid. The §9 evening AG1B grid is now the only schedule to plan against; the old morning/doubles version is recorded as superseded history in §11, not as an alternative. Still flagged as unconfirmed until Joseph confirms it — the Jarvis HUD surfaces that as a `CONFLICT` row in its Overnight audit.
