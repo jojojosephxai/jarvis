@@ -484,6 +484,7 @@ async function runOpening() {
   // the time the panel is ready to type.
   const auditPromise = collectAudit(new Date(), { probeBridge: state.settings.probeBridge });
 
+  playBootChirp(); // silent until a gesture unlocks AudioContext
   await playBoot({ log: el.bootLog, bar: el.bootBar, pct: el.bootPct }, sequence);
   playBootChirp();
   renderBriefing();
