@@ -21,9 +21,13 @@ Cursor SDK does **not** run on Vercel for this HUD. School path = Grok API.
 
 ## Every day at school
 
-1. Open your Jarvis URL (Vercel gives you something like `https://jarvis-….vercel.app`).
-2. If gated, type in the HUD: `unlock YOUR_PASSWORD`
+1. Open the preview URL (until PR is merged):  
+   **https://jarvis-git-cursor-hud-live-brain-5701-atelier-3d58.vercel.app**  
+   After merge, use the production alias from the Vercel dashboard (e.g. `jarvis-atelier-3d58.vercel.app`).
+2. If you set `JARVIS_ACCESS_KEY`, type in the HUD: `unlock YOUR_PASSWORD`
 3. Talk — mic or type. No localhost. No Node.
+
+**Still needed once (home phone/laptop):** Vercel → jarvis → Settings → Environment Variables → add `XAI_API_KEY` (+ optional `JARVIS_ACCESS_KEY`), then Redeploy. Until then the HUD loads but the brain says “add XAI_API_KEY”.
 
 ## Get the xAI key
 
