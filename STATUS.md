@@ -9,7 +9,7 @@
 | Voice talk / listen | Done | Mic + Space + TTS |
 | Knows Joseph | Done | Merged profile → `profile-data.js` + `JOSEPH.profile.md` |
 | Morning “everything handled” vibe | Partial | Overnight panel (honest: no real email automation yet) |
-| Coding hands like Cursor behind face | Done | Bridge: Cursor SDK (`tools: []` chat) + optional xAI Grok |
+| Coding hands like Cursor behind face | Done | Local bridge: Cursor SDK + Grok; school: Vercel Grok (`api/`) |
 | Multi-agent auditor (reel 4) | Not yet | Explicitly phase 2 |
 | Downloadable .dmg like TikTok | Optional | OpenDex path documented; in-repo HUD is the shippable face |
 
