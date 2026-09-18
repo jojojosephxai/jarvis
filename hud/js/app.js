@@ -1,26 +1,21 @@
 import { PROFILE, buildBriefing, greetingLine } from "./profile-data.js";
 import { startStarfield } from "./stars.js";
 import { playBootChirp, playAckBlip } from "./sfx.js";
-import { askBridge, bridgeHealth } from "./bridge-client.js";
+import { askBridge } from "./bridge-client.js";
 import { startWireOrb } from "./wire-orb.js";
-
-const BOOT_LINES = [
-  "Initializing personal instance…",
-  "Loading Joseph profile kernel…",
-  "Mounting Conestoga schedule bus…",
-  "Syncing UMLY AG1B grid…",
-  "Voice stack: Web Speech API",
-  "Policy: no Grok Bot · no new subscriptions",
-  "Arc reactor simulation online",
-  "Briefing engine: armed",
-  "Handshake complete. Welcome back.",
-];
+import { createSequence } from "./sequence.js";
+import { playBoot, playVisor, playAssemble, markCut } from "./cinematic.js";
+import { collectAudit, renderAudit } from "./overnight.js";
+import { beat } from "./motion.js";
 
 const state = {
   voiceOn: true,
   listening: false,
   recognition: null,
-  bootDone: false,
+  /** True once the cinematic has handed control to the HUD. */
+  live: false,
+  /** Latest overnight audit, so "overnight" can be re-asked at any time. */
+  audit: null,
   /** Bumps on every new command so stale replies/speech are ignored */
   cmdSeq: 0,
 };
@@ -29,18 +24,16 @@ const state = {
 let wireOrb = null;
 
 const el = {
-  boot: document.getElementById("boot"),
   bootLog: document.getElementById("boot-log"),
   bootBar: document.getElementById("boot-bar"),
   bootPct: document.getElementById("boot-pct"),
   skip: document.getElementById("skip-boot"),
-  hud: document.getElementById("hud"),
   clock: document.getElementById("clock"),
   statePill: document.getElementById("state-pill"),
   orb: document.getElementById("orb"),
   orbWire: document.getElementById("orb-wire"),
   briefing: document.getElementById("briefing"),
-  overnight: document.getElementById("overnight"),
+  audit: document.getElementById("audit"),
   tonight: document.getElementById("tonight-list"),
   feed: document.getElementById("feed"),
   transcript: document.getElementById("transcript"),
@@ -52,9 +45,11 @@ const el = {
   briefBtn: document.getElementById("brief-btn"),
   speakToggle: document.getElementById("speak-toggle"),
   sysVoice: document.getElementById("sys-voice"),
-  stars: document.getElementById("starfield"),
   sysCursor: document.getElementById("sys-cursor"),
+  stars: document.getElementById("starfield"),
 };
+
+/* ——— HUD state ——— */
 
 function setState(mode) {
   const map = {
@@ -98,13 +93,14 @@ function cancelSpeech() {
 }
 
 function tickClock() {
-  const now = new Date();
-  el.clock.textContent = now.toLocaleTimeString("en-US", {
+  el.clock.textContent = new Date().toLocaleTimeString("en-US", {
     hour: "2-digit",
     minute: "2-digit",
     second: "2-digit",
   });
 }
+
+/* ——— Speech ——— */
 
 /** Split into sentences so voice can start the first beat immediately. */
 function sentences(text) {
@@ -123,7 +119,8 @@ function pickVoice() {
 }
 
 /**
- * Speak reply. Starts first sentence ASAP; queues the rest so long dumps don't block the first beat.
+ * Speak a reply. Starts the first sentence ASAP and queues the rest so a long
+ * answer doesn't delay the first beat.
  * @param {string} text
  * @param {number} [seq] command sequence — ignore if a newer command took over
  */
@@ -145,8 +142,8 @@ function speak(text, seq = state.cmdSeq) {
     }
     const u = new SpeechSynthesisUtterance(chunks[i]);
     i += 1;
-    u.rate = 1.06;
-    u.pitch = 0.92;
+    u.rate = 1.04;
+    u.pitch = 0.9;
     if (voice) u.voice = voice;
     setState("speak");
     u.onend = next;
@@ -158,6 +155,8 @@ function speak(text, seq = state.cmdSeq) {
   next();
 }
 
+/* ——— Panels ——— */
+
 function addFeed(role, text) {
   const node = document.createElement("div");
   node.className = `msg${role === "You" ? " msg--user" : ""}`;
@@ -168,17 +167,6 @@ function addFeed(role, text) {
 
 function renderBriefing() {
   const b = buildBriefing();
-  if (el.overnight) {
-    el.overnight.innerHTML = `
-      <p><strong>While you were offline</strong></p>
-      <ul>
-        <li>Profile kernel loaded — Joseph context ready.</li>
-        <li>No inbox automation running yet (Cursor Automations = phase 2).</li>
-        <li>School + swim calendars active for today.</li>
-        <li>Standing by for triage — say what’s due.</li>
-      </ul>
-    `;
-  }
   el.briefing.innerHTML = `
     <p><strong>${b.title}</strong></p>
     <ul>${b.lines.map((l) => `<li>${l}</li>`).join("")}</ul>
@@ -186,16 +174,51 @@ function renderBriefing() {
   el.tonight.innerHTML = b.tonight.map((t) => `<li>${t}</li>`).join("");
 }
 
-/**
- * Local brain. Profile is silent memory — only dump school/swim/bio when asked.
- * Default tone: dry, helpful, movie Jarvis — not a bio dump.
- */
+const NUMBER_WORDS = ["no", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine"];
+
+function count(n, noun) {
+  const word = NUMBER_WORDS[n] ?? String(n);
+  return `${word} ${noun}${n === 1 ? "" : "s"}`;
+}
+
+/** One short line from a steward reporting in — not a chatbot greeting. */
+function wakeLine(audit, date = new Date()) {
+  const tally = [];
+  if (audit.flags) tally.push(count(audit.flags, "flag"));
+  if (audit.conflicts) tally.push(count(audit.conflicts, "conflict"));
+  const verdict = tally.length ? `${tally.join(", ")}` : "nothing outstanding";
+  return [
+    `${greetingLine(date)}, ${PROFILE.name}. Systems online.`,
+    `Overnight audit: ${verdict}.`,
+    "Nothing ran on your behalf, and nothing was sent.",
+  ].join(" ");
+}
+
+function overnightReply() {
+  if (!state.audit) return "The audit is still running. One moment.";
+  const notable = state.audit.rows.filter((r) => r.status !== "OK");
+  const head = `${count(state.audit.ok, "row")} clear, ${count(state.audit.flags, "flag")}, ${count(
+    state.audit.conflicts,
+    "conflict",
+  )}. Nothing ran on your behalf and nothing was sent.`;
+  if (!notable.length) return head;
+  return [head, ...notable.map((r) => `${r.label}: ${r.detail}`)].join("\n");
+}
+
+/* ——— Local brain ———
+   Profile is silent memory. Dry and helpful by default; only dump school/swim
+   detail when Joseph actually asks for it. */
+
 function jarvisReply(raw) {
   const q = raw.trim().toLowerCase();
   if (!q) return "Standing by.";
 
   if (/^(hey )?jarvis\b/.test(q) && q.replace(/^(hey )?jarvis[,!.\s]*/i, "").length < 2) {
     return `Yes, ${PROFILE.name}?`;
+  }
+
+  if (/overnight|audit|flags?|conflicts?/.test(q)) {
+    return overnightReply();
   }
 
   if (/brief|status|morning|wake|systems/.test(q)) {
@@ -217,9 +240,9 @@ function jarvisReply(raw) {
     return [
       `${PROFILE.swim.team}, ${PROFILE.swim.group}. Events: ${PROFILE.swim.events.join(", ")}.`,
       "Week:",
-      PROFILE.swim.week.join("; ") + ".",
+      `${PROFILE.swim.week.join("; ")}.`,
+      "That grid is still unconfirmed — say if it changed.",
       `Near meets: ${PROFILE.meetsNear.join("; ")}.`,
-      "Confirm today: single, double, meet, or off.",
     ].join(" ");
   }
 
@@ -248,10 +271,9 @@ function jarvisReply(raw) {
   }
 
   if (/help|what can you do|commands/.test(q)) {
-    return "Try: brief me · school tonight · swim · atelier · who am I · sleep. Mic or Space to talk.";
+    return "Try: brief me · overnight · school tonight · swim · atelier · who am I · sleep. Mic or Space to talk.";
   }
 
-  // Default — connected, dry, no profile lecture
   return "Understood. Say the job — school, swim, Atelier, or a quick question — and I'll take it from there.";
 }
 
@@ -268,7 +290,7 @@ async function handleCommand(text) {
   el.transcript.textContent = `Heard: ${text}`;
   setState("think");
 
-  // Let the pill/orb paint one frame, then answer (no fake 280ms lag)
+  // Let the pill/orb paint one frame, then answer (no fake lag)
   await new Promise((r) => requestAnimationFrame(() => r()));
 
   const remote = await askBridge(cleaned);
@@ -281,58 +303,50 @@ async function handleCommand(text) {
   if (!state.voiceOn && seq === state.cmdSeq) setState("idle");
 }
 
-function enterHud() {
-  if (state.bootDone) return;
-  state.bootDone = true;
-  playBootChirp();
-  el.boot.classList.add("is-done");
-  setTimeout(async () => {
-    el.boot.hidden = true;
-    el.boot.classList.add("is-hidden");
-    el.hud.hidden = false;
-    el.hud.classList.remove("is-hidden");
-    wireOrb?.setMode("idle");
-    requestAnimationFrame(() => wireOrb?.setMode(state.listening ? "listen" : "idle"));
-    renderBriefing();
-    if (el.sysCursor) {
-      const up = await bridgeHealth();
-      if (up) {
-        el.sysCursor.textContent = "STUB";
-        el.sysCursor.classList.remove("dim");
-        el.sysCursor.title = "Bridge online — Cursor SDK not wired yet";
-      }
-    }
-    const open = `${greetingLine()}, ${PROFILE.name}. Online.`;
-    addFeed("Jarvis", open);
-    el.transcript.textContent = open;
-    speak(open);
-  }, 280);
+/* ——— Opening sequence ——— */
+
+const sequence = createSequence();
+
+function cutCinematic() {
+  if (state.live || sequence.isCut) return;
+  markCut();
+  sequence.cut();
 }
 
-function runBoot() {
-  let i = 0;
-  const step = () => {
-    if (state.bootDone) return;
-    if (i < BOOT_LINES.length) {
-      const li = document.createElement("li");
-      li.classList.add("is-typing");
-      li.textContent = BOOT_LINES[i];
-      el.bootLog.appendChild(li);
-      [...el.bootLog.querySelectorAll("li")].forEach((n) => {
-        if (n !== li) n.classList.remove("is-typing");
-      });
-      i += 1;
-      const pct = Math.round((i / BOOT_LINES.length) * 100);
-      el.bootBar.style.width = `${pct}%`;
-      el.bootPct.textContent = `${pct}%`;
-      setTimeout(step, 280);
-    } else {
-      el.bootLog.querySelectorAll("li").forEach((n) => n.classList.remove("is-typing"));
-      setTimeout(enterHud, 180);
-    }
-  };
-  step();
+async function runOpening() {
+  // Kick the audit off during boot so its bridge probe is already resolved by
+  // the time the panel is ready to type.
+  const auditPromise = collectAudit();
+
+  await playBoot({ log: el.bootLog, bar: el.bootBar, pct: el.bootPct }, sequence);
+  playBootChirp();
+  renderBriefing();
+
+  await playVisor(sequence);
+  await playAssemble(sequence);
+
+  state.live = true;
+  setState("idle");
+  wireOrb?.setMode("idle");
+
+  const audit = await auditPromise;
+  state.audit = audit;
+  if (el.sysCursor) {
+    const link = audit.rows.find((r) => r.id === "link");
+    el.sysCursor.textContent = link?.status === "OK" ? "ONLINE" : "NOT WIRED";
+    el.sysCursor.title = link?.detail || "";
+  }
+
+  await sequence.wait(beat(260, 0));
+  await renderAudit(el.audit, audit, sequence);
+
+  const line = wakeLine(audit);
+  addFeed("Jarvis", line);
+  el.transcript.textContent = line;
+  speak(line);
 }
+
+/* ——— Voice input ——— */
 
 function initVoice() {
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -379,8 +393,7 @@ function initVoice() {
   state.recognition = rec;
 }
 
-el.skip.addEventListener("click", enterHud);
-el.mic.addEventListener("click", () => {
+function toggleMic() {
   if (!state.recognition) {
     el.transcript.textContent = "Voice input isn't available here — type a command.";
     return;
@@ -395,7 +408,13 @@ el.mic.addEventListener("click", () => {
   } catch {
     /* already started */
   }
-});
+}
+
+/* ——— Wiring ——— */
+
+el.skip.addEventListener("click", cutCinematic);
+el.mic.addEventListener("click", toggleMic);
+
 el.form.addEventListener("submit", (e) => {
   e.preventDefault();
   const v = el.input.value.trim();
@@ -403,7 +422,9 @@ el.form.addEventListener("submit", (e) => {
   el.input.value = "";
   handleCommand(v);
 });
+
 el.briefBtn.addEventListener("click", () => handleCommand("brief me"));
+
 el.speakToggle.addEventListener("click", () => {
   state.voiceOn = !state.voiceOn;
   el.speakToggle.dataset.on = state.voiceOn ? "1" : "0";
@@ -414,26 +435,26 @@ el.speakToggle.addEventListener("click", () => {
   }
 });
 
-// Double-tap orb to re-run a short systems salute (movie flair)
-el.orb?.addEventListener("dblclick", () => {
-  handleCommand("brief me");
-});
-
-if (el.orbWire) wireOrb = startWireOrb(el.orbWire);
-
-tickClock();
-setInterval(tickClock, 1000);
-window.speechSynthesis?.addEventListener?.("voiceschanged", () => {});
-initVoice();
-if (el.stars) startStarfield(el.stars);
+// Double-tap the orb for a systems salute (movie flair)
+el.orb?.addEventListener("dblclick", () => handleCommand("brief me"));
 
 document.addEventListener("keydown", (e) => {
   if (e.target === el.input) return;
-  if (e.code === "Space" && !e.repeat && state.bootDone) {
-    e.preventDefault();
-    el.mic.click();
+  if (e.key === "Escape") {
+    cutCinematic();
+    return;
   }
-  if (e.key === "Escape" && !state.bootDone) enterHud();
+  if (e.code === "Space" && !e.repeat && state.live) {
+    e.preventDefault();
+    toggleMic();
+  }
 });
 
-runBoot();
+if (el.orbWire) wireOrb = startWireOrb(el.orbWire);
+if (el.stars) startStarfield(el.stars);
+
+tickClock();
+setInterval(tickClock, 1000);
+initVoice();
+
+runOpening();

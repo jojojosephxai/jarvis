@@ -17,13 +17,18 @@ export async function askBridge(message) {
   }
 }
 
-export async function bridgeHealth() {
+/**
+ * Probe the optional `bridge/` stub. Offline is the normal, expected case —
+ * the HUD reports it honestly rather than treating it as an error.
+ * @returns {Promise<{ reachable: boolean, cursor: boolean }>}
+ */
+export async function probeBridge() {
   try {
     const res = await fetch(`${BRIDGE}/health`, { signal: AbortSignal.timeout(800) });
-    if (!res.ok) return false;
+    if (!res.ok) return { reachable: false, cursor: false };
     const data = await res.json();
-    return Boolean(data.ok);
+    return { reachable: Boolean(data.ok), cursor: Boolean(data.cursor) };
   } catch {
-    return false;
+    return { reachable: false, cursor: false };
   }
 }

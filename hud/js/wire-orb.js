@@ -111,9 +111,10 @@ export function startWireOrb(canvas) {
 
   function resize() {
     const parent = canvas.parentElement;
-    const rect = canvas.getBoundingClientRect();
-    const cssW = Math.max(rect.width, canvas.clientWidth, parent?.clientWidth || 0);
-    const cssH = Math.max(rect.height, canvas.clientHeight, parent?.clientHeight || 0);
+    // Layout size, not getBoundingClientRect — the stage is scaled during the
+    // plate assemble and a transformed rect would resize the canvas to nothing.
+    const cssW = Math.max(canvas.clientWidth, parent?.clientWidth || 0);
+    const cssH = Math.max(canvas.clientHeight, parent?.clientHeight || 0);
     if (cssW < 2 || cssH < 2) return false;
     const px = dpr();
     const nextW = Math.max(1, Math.floor(cssW * px));
