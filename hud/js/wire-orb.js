@@ -115,12 +115,39 @@ function rotate([x, y, z], ax, ay, az) {
   return [x, y, z];
 }
 
+/** Geometry per mode. Colour for idle/think comes from the accent setting;
+ *  listening and speaking keep fixed status colours so they always read the
+ *  same way no matter what accent Joseph has picked. */
 const MODES = {
-  idle: { line: [198, 224, 255], hot: [238, 249, 255], core: [150, 195, 255], scale: 1, spin: 1 },
-  listen: { line: [255, 194, 118], hot: [255, 234, 194], core: [255, 176, 72], scale: 1.16, spin: 1.3 },
-  think: { line: [186, 218, 255], hot: [242, 250, 255], core: [138, 188, 255], scale: 1.07, spin: 1.95 },
-  speak: { line: [176, 250, 202], hot: [240, 255, 246], core: [140, 238, 180], scale: 1.22, spin: 1.2 },
+  idle: { scale: 1, spin: 1, status: null },
+  think: { scale: 1.07, spin: 1.95, status: null },
+  listen: {
+    scale: 1.16,
+    spin: 1.3,
+    status: { line: [255, 194, 118], hot: [255, 234, 194], core: [255, 176, 72] },
+  },
+  speak: {
+    scale: 1.22,
+    spin: 1.2,
+    status: { line: [176, 250, 202], hot: [240, 255, 246], core: [140, 238, 180] },
+  },
 };
+
+const ICE = { line: [198, 224, 255], core: [150, 195, 255] };
+
+function cssRgb(name, fallback) {
+  const raw = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  const parts = raw.split(",").map((n) => Number(n.trim()));
+  return parts.length === 3 && parts.every(Number.isFinite) ? parts : fallback;
+}
+
+/** Full palette for a mode, resolved against the current accent. */
+function paletteFor(mode, accent) {
+  const spec = MODES[mode] || MODES.idle;
+  const colour = spec.status || accent;
+  const hot = spec.status?.hot || colour.line.map((c) => Math.min(255, c + 42));
+  return { line: colour.line, hot, core: colour.core, scale: spec.scale, spin: spec.spin };
+}
 
 const rgba = ([r, g, b], a) => `rgba(${r | 0}, ${g | 0}, ${b | 0}, ${a.toFixed(3)})`;
 
@@ -142,13 +169,21 @@ export function startWireOrb(canvas) {
   const rings = [gimbal(0.34), gimbal(-0.78)];
 
   let mode = "idle";
+  let accent = { line: [...ICE.line], core: [...ICE.core] };
   const look = {
-    line: [...MODES.idle.line],
-    hot: [...MODES.idle.hot],
-    core: [...MODES.idle.core],
+    line: [...ICE.line],
+    hot: ICE.line.map((c) => Math.min(255, c + 42)),
+    core: [...ICE.core],
     scale: 1,
     spin: 1,
   };
+
+  function readAccent() {
+    accent = {
+      line: cssRgb("--orb-idle-rgb", ICE.line),
+      core: cssRgb("--orb-core-rgb", ICE.core),
+    };
+  }
 
   let spun = 0; // accumulated rotation, so speed changes never snap the mesh
   let last = performance.now();
@@ -245,7 +280,7 @@ export function startWireOrb(canvas) {
     const dt = Math.min((now - last) / 1000, 0.05);
     last = now;
 
-    const target = MODES[mode] || MODES.idle;
+    const target = paletteFor(mode, accent);
     // ~8%/frame at 60fps, framerate-independent: heavy but never sluggish.
     const ease = 1 - Math.exp(-dt * 5.2);
     look.line = lerpColor(look.line, target.line, ease);
@@ -330,6 +365,17 @@ export function startWireOrb(canvas) {
     frame(last);
   }
 
+  /** With motion reduced there's no loop to ease the palette, so jump to it. */
+  function settle() {
+    const target = paletteFor(mode, accent);
+    look.line = [...target.line];
+    look.hot = [...target.hot];
+    look.core = [...target.core];
+    look.scale = target.scale;
+    render();
+  }
+
+  readAccent();
   resize();
   const observer = typeof ResizeObserver !== "undefined" ? new ResizeObserver(render) : null;
   observer?.observe(canvas);
@@ -340,16 +386,15 @@ export function startWireOrb(canvas) {
   return {
     setMode(next) {
       mode = MODES[next] ? next : "idle";
-      if (still) {
-        // No loop to pick the change up, so settle the palette and repaint once.
-        const target = MODES[mode];
-        look.line = [...target.line];
-        look.hot = [...target.hot];
-        look.core = [...target.core];
-        look.scale = target.scale;
-        render();
-      }
+      if (still) settle();
     },
+
+    /** Re-read the accent after Jarvis edits his own settings. */
+    refresh() {
+      readAccent();
+      if (still) settle();
+    },
+
     destroy() {
       running = false;
       cancelAnimationFrame(raf);

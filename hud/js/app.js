@@ -8,6 +8,10 @@ import { playBoot, playVisor, playAssemble, markCut } from "./cinematic.js";
 import { collectAudit, renderAudit } from "./overnight.js";
 import { typeInto, deliverySpeed } from "./typewriter.js";
 import { beat } from "./motion.js";
+import { DEFAULTS } from "./settings.js";
+import { applySettings } from "./apply-settings.js";
+import { loadSettings, writeSettings } from "./settings-client.js";
+import { parseSelfEdit } from "./self-edit.js";
 
 const state = {
   voiceOn: true,
@@ -22,6 +26,10 @@ const state = {
   bridgeOnline: false,
   /** A line the browser refused to speak before the page was interacted with. */
   pendingSpeech: null,
+  /** Jarvis's own settings, as applied. */
+  settings: { ...DEFAULTS },
+  /** False when nothing can write jarvis.settings.json (a built copy). */
+  selfEditable: false,
   /** Bumps on every new command so stale replies/speech are ignored */
   cmdSeq: 0,
 };
@@ -152,8 +160,8 @@ function speak(text, seq) {
       const u = new SpeechSynthesisUtterance(chunks[i]);
       const isFirst = i === 0;
       i += 1;
-      u.rate = 1.04;
-      u.pitch = 0.9;
+      u.rate = state.settings.voiceRate;
+      u.pitch = state.settings.voicePitch;
       if (voice) u.voice = voice;
       u.onend = next;
       u.onerror = (ev) => {
@@ -254,6 +262,10 @@ function wakeLine(audit, date = new Date()) {
   if (audit.conflicts) tally.push(count(audit.conflicts, "conflict"));
   if (audit.flags) tally.push(count(audit.flags, "flag"));
   const verdict = tally.length ? `${tally.join(", ")}` : "nothing outstanding";
+
+  if (state.settings.wakeStyle === "brief") {
+    return `${greetingLine(date)}, ${PROFILE.name}. ${verdict}.`;
+  }
   return [
     `${greetingLine(date)}, ${PROFILE.name}. Systems online.`,
     `Overnight audit: ${verdict}.`,
@@ -343,7 +355,7 @@ function jarvisReply(raw) {
   }
 
   if (/help|what can you do|commands/.test(q)) {
-    return "Try: brief me · overnight · school tonight · swim · atelier · who am I · sleep. Mic or Space to talk.";
+    return "Try: brief me · overnight · school tonight · swim · atelier · who am I · sleep. I can also tune myself — say “what can you change” for the dials. Mic or Space to talk.";
   }
 
   return "Understood. Say the job — school, swim, Atelier, or a quick question — and I'll take it from there.";
@@ -366,10 +378,39 @@ async function handleCommand(text) {
   // Let the pill/orb paint one frame, then answer (no fake lag)
   await new Promise((r) => requestAnimationFrame(() => r()));
 
+  // Jarvis editing Jarvis comes first — it's the only path that writes a file.
+  const edit = parseSelfEdit(cleaned, state.settings);
+  if (edit) {
+    const reply = await applySelfEdit(edit);
+    if (seq !== state.cmdSeq) return;
+    await deliverReply(reply, seq);
+    return;
+  }
+
   const remote = state.bridgeOnline ? await askBridge(cleaned) : null;
   if (seq !== state.cmdSeq) return;
 
   await deliverReply(remote || jarvisReply(cleaned), seq);
+}
+
+/**
+ * Write a settings patch to disk and re-apply it to the running HUD.
+ * The change is live immediately — no reload, no second boot.
+ */
+async function applySelfEdit({ patch, say }) {
+  if (!Object.keys(patch).length) return say; // a question, not a change
+
+  if (!state.selfEditable) {
+    return "I can only rewrite myself while running from npm run jarvis. Nothing was saved.";
+  }
+
+  const result = await writeSettings(patch);
+  if (!result.ok) return `I couldn't write that to myself. ${result.error}`;
+
+  state.settings = applySettings(result.settings);
+  wireOrb?.refresh();
+  syncStarfield();
+  return `${say} Saved.`;
 }
 
 /* ——— Opening sequence ——— */
@@ -390,7 +431,7 @@ async function runOpening() {
 
   // Kick the audit off during boot so its bridge probe is already resolved by
   // the time the panel is ready to type.
-  const auditPromise = collectAudit();
+  const auditPromise = collectAudit(new Date(), { probeBridge: state.settings.probeBridge });
 
   await playBoot({ log: el.bootLog, bar: el.bootBar, pct: el.bootPct }, sequence);
   playBootChirp();
@@ -416,7 +457,14 @@ async function runOpening() {
   await sequence.wait(beat(260, 0));
   await renderAudit(el.audit, audit, sequence);
 
-  await deliverReply(wakeLine(audit), openingSeq);
+  const line = wakeLine(audit);
+  if (state.settings.wakeStyle === "silent") {
+    // He asked me not to talk on startup. Still show it; just don't say it.
+    addFeed("Jarvis", line);
+    el.transcript.textContent = line;
+    return;
+  }
+  await deliverReply(line, openingSeq);
 }
 
 /* ——— Voice input ——— */
@@ -549,11 +597,35 @@ document.addEventListener("keydown", (e) => {
   }
 });
 
-if (el.orbWire) wireOrb = startWireOrb(el.orbWire);
-if (el.stars) startStarfield(el.stars);
+/** @type {(() => void) | null} */
+let starfieldStop = null;
 
-tickClock();
-setInterval(tickClock, 1000);
-initVoice();
+/** Start or stop the starfield to match the current setting. */
+function syncStarfield() {
+  if (!el.stars) return;
+  if (state.settings.starfield && !starfieldStop) {
+    starfieldStop = startStarfield(el.stars);
+  } else if (!state.settings.starfield && starfieldStop) {
+    starfieldStop();
+    starfieldStop = null;
+  }
+}
 
-runOpening();
+async function bootstrap() {
+  // Jarvis reads his own settings before the first frame, so an accent or a
+  // boot speed he set last time is in effect from the opening shot.
+  const { settings, writable } = await loadSettings();
+  state.settings = applySettings(settings);
+  state.selfEditable = writable;
+
+  if (el.orbWire) wireOrb = startWireOrb(el.orbWire);
+  syncStarfield();
+
+  tickClock();
+  setInterval(tickClock, 1000);
+  initVoice();
+
+  await runOpening();
+}
+
+bootstrap();

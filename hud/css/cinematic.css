@@ -43,9 +43,7 @@
   display: grid;
   place-items: center;
   opacity: 0.9;
-  animation:
-    reactor-ignite 1.5s var(--ease-heavy) both,
-    reactor-breathe 3.5s ease-in-out 1.5s infinite;
+  animation: reactor-ignite calc(1.5s / var(--bs)) var(--ease-heavy) both, reactor-breathe calc(3.5s / var(--bs)) ease-in-out calc(1.5s / var(--bs)) infinite;
 }
 
 /* Spin-up: the reactor arrives fast and hot, then settles into a breath. */
@@ -85,19 +83,19 @@
 .boot__ring--a {
   inset: 8%;
   border-style: dashed;
-  animation: spin 14s linear infinite, ring-spinup 2.2s var(--ease-heavy) both;
+  animation: spin calc(14s / var(--bs)) linear infinite, ring-spinup calc(2.2s / var(--bs)) var(--ease-heavy) both;
 }
 
 .boot__ring--b {
   inset: 20%;
   opacity: 0.7;
-  animation: spin-rev 9s linear infinite, ring-spinup 1.9s var(--ease-heavy) 0.1s both;
+  animation: spin-rev calc(9s / var(--bs)) linear infinite, ring-spinup calc(1.9s / var(--bs)) var(--ease-heavy) calc(0.1s / var(--bs)) both;
 }
 
 .boot__ring--c {
   inset: 32%;
   border-width: 2px;
-  animation: spin 6s linear infinite, ring-spinup 1.6s var(--ease-heavy) 0.2s both;
+  animation: spin calc(6s / var(--bs)) linear infinite, ring-spinup calc(1.6s / var(--bs)) var(--ease-heavy) calc(0.2s / var(--bs)) both;
 }
 
 @keyframes ring-spinup {
@@ -156,7 +154,7 @@
   text-indent: 0.18em;
   color: var(--cyan);
   text-shadow: 0 0 30px var(--cyan-glow);
-  animation: brand-in 1.3s var(--ease-heavy) 0.2s both;
+  animation: brand-in calc(1.3s / var(--bs)) var(--ease-heavy) calc(0.2s / var(--bs)) both;
 }
 
 @keyframes brand-in {
@@ -178,7 +176,7 @@
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--muted);
-  animation: fade-up 0.9s var(--ease-heavy) 0.7s both;
+  animation: fade-up calc(0.9s / var(--bs)) var(--ease-heavy) calc(0.7s / var(--bs)) both;
 }
 
 @keyframes fade-up {
@@ -252,7 +250,7 @@
 
 /* The boot screen falls away behind the visor rather than simply fading. */
 body[data-phase="visor"] .boot {
-  animation: boot-recede 760ms var(--ease-heavy) both;
+  animation: boot-recede calc(760ms / var(--bs)) var(--ease-heavy) both;
 }
 
 @keyframes boot-recede {
@@ -298,11 +296,11 @@ body[data-phase="live"] .visor {
 }
 
 body[data-phase="visor"] .visor__half--l {
-  animation: visor-seat-l 940ms var(--ease-seat) both;
+  animation: visor-seat-l calc(940ms / var(--bs)) var(--ease-seat) both;
 }
 
 body[data-phase="visor"] .visor__half--r {
-  animation: visor-seat-r 940ms var(--ease-seat) both;
+  animation: visor-seat-r calc(940ms / var(--bs)) var(--ease-seat) both;
 }
 
 /* Heavy plates: they arrive fast, cross the mark by a hair, and settle back. */
@@ -349,7 +347,7 @@ body[data-phase="visor"] .visor__half--r {
 }
 
 body[data-phase="visor"] .visor__rim {
-  animation: rim-charge 900ms var(--ease-heavy) 0.42s both;
+  animation: rim-charge calc(900ms / var(--bs)) var(--ease-heavy) calc(0.42s / var(--bs)) both;
 }
 
 @keyframes rim-charge {
@@ -394,7 +392,7 @@ body[data-phase="visor"] .visor__rim {
 }
 
 body[data-phase="visor"] .visor__glass {
-  animation: glass-print 820ms steps(1, end) 0.28s both;
+  animation: glass-print calc(820ms / var(--bs)) steps(1, end) calc(0.28s / var(--bs)) both;
 }
 
 /* The readout stutters onto the glass rather than fading politely. */
@@ -426,7 +424,7 @@ body[data-phase="visor"] .visor__glass {
 }
 
 body[data-phase="visor"] .visor__glare {
-  animation: visor-glare 1150ms cubic-bezier(0.3, 0, 0.2, 1) 400ms both;
+  animation: visor-glare calc(1150ms / var(--bs)) cubic-bezier(0.3, 0, 0.2, 1) calc(400ms / var(--bs)) both;
 }
 
 @keyframes visor-glare {
@@ -485,7 +483,7 @@ body[data-phase="visor"] .visor__glare {
 }
 
 body[data-phase="visor"] .visor__reticle span {
-  animation: reticle-lock 620ms var(--ease-heavy) 0.62s both;
+  animation: reticle-lock calc(620ms / var(--bs)) var(--ease-heavy) calc(0.62s / var(--bs)) both;
 }
 
 @keyframes reticle-lock {
@@ -501,7 +499,7 @@ body[data-phase="visor"] .visor__reticle span {
 
 /* ——— PHASE 3 · CAMERA THROUGH THE VISOR ——— */
 body[data-phase="assemble"] .visor {
-  animation: visor-through 1400ms cubic-bezier(0.55, 0, 0.32, 1) both;
+  animation: visor-through calc(1400ms / var(--bs)) cubic-bezier(0.55, 0, 0.32, 1) both;
 }
 
 @keyframes visor-through {
@@ -521,11 +519,11 @@ body[data-phase="assemble"] .visor {
 }
 
 body[data-phase="assemble"] .visor__half--l {
-  animation: visor-part-l 1400ms cubic-bezier(0.55, 0, 0.32, 1) both;
+  animation: visor-part-l calc(1400ms / var(--bs)) cubic-bezier(0.55, 0, 0.32, 1) both;
 }
 
 body[data-phase="assemble"] .visor__half--r {
-  animation: visor-part-r 1400ms cubic-bezier(0.55, 0, 0.32, 1) both;
+  animation: visor-part-r calc(1400ms / var(--bs)) cubic-bezier(0.55, 0, 0.32, 1) both;
 }
 
 /* The halves overlap across the nose bridge by 104 user units, so parting them
@@ -556,7 +554,7 @@ body[data-phase="visor"] .hud {
 
 /* Dim behind the glass while the visor is seating, then full power. */
 body[data-phase="visor"] .hud {
-  animation: hud-wake 900ms var(--ease-heavy) both;
+  animation: hud-wake calc(900ms / var(--bs)) var(--ease-heavy) both;
 }
 
 @keyframes hud-wake {
@@ -575,7 +573,7 @@ body[data-phase="visor"] .hud {
 }
 
 body[data-phase="visor"] .center {
-  animation: orb-ignite 1150ms var(--ease-heavy) 240ms both;
+  animation: orb-ignite calc(1150ms / var(--bs)) var(--ease-heavy) calc(240ms / var(--bs)) both;
 }
 
 @keyframes orb-ignite {
@@ -628,8 +626,8 @@ body[data-phase="live"] .hud {
 
 body[data-phase="assemble"] [data-plate],
 body[data-phase="live"] [data-plate] {
-  animation: plate-seat 880ms var(--ease-heavy) both;
-  animation-delay: calc(var(--plate-i, 0) * 85ms);
+  animation: plate-seat calc(880ms / var(--bs)) var(--ease-heavy) both;
+  animation-delay: calc(var(--plate-i, 0) * 85ms / var(--bs));
 }
 
 /* Machined: it arrives, taps 4% past the mark, and settles. No bounce. */
@@ -655,7 +653,7 @@ body[data-phase="live"] [data-plate] {
 
 body[data-phase="assemble"] .frame,
 body[data-phase="live"] .frame {
-  animation: frame-snap 720ms var(--ease-heavy) both;
+  animation: frame-snap calc(720ms / var(--bs)) var(--ease-heavy) both;
 }
 
 @keyframes frame-snap {
@@ -693,7 +691,7 @@ body[data-phase="live"] .frame {
 }
 
 body[data-phase="assemble"] .hud__scan {
-  animation: scan-pass 1400ms cubic-bezier(0.4, 0, 0.25, 1) 180ms both;
+  animation: scan-pass calc(1400ms / var(--bs)) cubic-bezier(0.4, 0, 0.25, 1) calc(180ms / var(--bs)) both;
 }
 
 @keyframes scan-pass {
@@ -724,7 +722,7 @@ body[data-phase="assemble"] .hud__scan {
 
 /* Power surge as the plates land. */
 body[data-phase="assemble"] .hud__flicker {
-  animation: power-surge 1200ms steps(1, end) both;
+  animation: power-surge calc(1200ms / var(--bs)) steps(1, end) both;
 }
 
 @keyframes power-surge {

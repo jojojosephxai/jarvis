@@ -42,11 +42,26 @@ Open **<http://localhost:8787>**.
 | `js/motion.js` | `prefers-reduced-motion` helper |
 | `js/stars.js`, `js/sfx.js` | Starfield, boot tones |
 | `js/bridge-client.js` | Health check for the optional, not-wired `bridge/` stub |
+| `js/settings.js` | The dials Jarvis is allowed to turn on himself |
+| `js/self-edit.js` | Turns a spoken command into a settings patch |
+| `self-edit-plugin.mjs` | Dev-server endpoint that writes `jarvis.settings.json` |
+| `jarvis.settings.json` | What he last did to himself (shipped defaults) |
 
 ## Commands the local brain knows
 
 `brief me` · `overnight` · `school tonight` · `swim` · `atelier` · `who am I` · `sleep` ·
 `research watch` · `help`
+
+## Self-edit (dials, not source)
+
+Say `what can you change`. He can move accent, orb size, boot speed, typing speed,
+scanlines, starfield, speaking rate, pitch, the wake line, and the bridge probe.
+Each change is written to `jarvis.settings.json` and applied live — no reload.
+
+He **cannot** rewrite his own HTML/CSS/JS, add a panel, or touch anything outside
+that file. Asking him to is refused, and Cursor is the part that writes code. This
+is deliberate: a HUD that can rewrite its own source from a spoken command is how
+you get a broken Jarvis at 10pm with no way back.
 
 ## Honesty
 

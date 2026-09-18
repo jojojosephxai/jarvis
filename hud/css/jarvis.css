@@ -24,6 +24,17 @@
   /* Heavy machinery, not jelly: long ease-out, no overshoot past the target. */
   --ease-heavy: cubic-bezier(0.16, 1, 0.3, 1);
   --ease-seat: cubic-bezier(0.22, 1, 0.24, 1);
+
+  /* ——— Self-edit dials ———
+     Written by js/apply-settings.js from jarvis.settings.json. Status colours
+     (--amber, --red, --green) are deliberately NOT themeable: a FLAG has to
+     look like a FLAG no matter what accent Joseph picks. */
+  --orb-size: 400px;
+  --scanline-opacity: 0.08;
+  --boot-speed: 1;
+  --bs: var(--boot-speed); /* short alias used by every cinematic timing */
+  --orb-idle-rgb: 198, 224, 255;
+  --orb-core-rgb: 150, 195, 255;
 }
 
 *,
@@ -87,7 +98,7 @@ body {
   pointer-events: none;
   position: fixed;
   inset: 0;
-  opacity: 0.08;
+  opacity: var(--scanline-opacity);
   background: repeating-linear-gradient(
     0deg,
     transparent,
@@ -452,7 +463,7 @@ body {
 
 .orb {
   position: relative;
-  width: min(74vw, 400px);
+  width: min(74vw, var(--orb-size));
   aspect-ratio: 1;
   margin-bottom: 1.1rem;
 }

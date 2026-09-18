@@ -104,6 +104,14 @@ function dayRow(date) {
 }
 
 function linkRow(bridge) {
+  if (bridge.skipped) {
+    return {
+      id: "link",
+      status: "FLAG",
+      label: "Cursor link",
+      detail: "Probe switched off in my settings, so I didn't check. Assuming not wired.",
+    };
+  }
   if (bridge.reachable && bridge.cursor) {
     return {
       id: "link",
@@ -145,9 +153,10 @@ const PRIVACY = {
 /**
  * Run the audit. Performs the real checks, then returns sorted rows plus counts.
  * @param {Date} [date]
+ * @param {{ probeBridge?: boolean }} [options]
  */
-export async function collectAudit(date = new Date()) {
-  const bridge = await probeBridge();
+export async function collectAudit(date = new Date(), { probeBridge: probe = true } = {}) {
+  const bridge = probe ? await probeBridge() : { reachable: false, cursor: false, skipped: true };
 
   const rows = [
     sessionRow(date),

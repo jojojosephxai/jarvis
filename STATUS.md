@@ -16,6 +16,7 @@ and open <http://localhost:8787>.
 | Voice in (Web Speech) + voice out (browser TTS) | `hud/js/app.js` |
 | Mic button, **Space** to talk, **Esc / Skip** to cut the boot | `hud/js/app.js` |
 | Typed commands + Brief me, answered by a local brain | `hud/js/app.js`, `hud/js/profile-data.js` |
+| **Self-edit dials** — accent, orb, boot, voice; written to `jarvis.settings.json` | `hud/js/self-edit.js`, `hud/self-edit-plugin.mjs` |
 | Knows Joseph — school, swim, near goals, open questions | `hud/js/profile-data.js` ← `JOSEPH.profile.md` |
 | `prefers-reduced-motion` honored end to end | `hud/css/cinematic.css`, `hud/js/motion.js` |
 | No Grok Bot, no new subscriptions, anywhere in the path | — |
@@ -26,6 +27,7 @@ and open <http://localhost:8787>.
 | --- | --- |
 | Overnight email / inbox automation | Nothing in this repo sends or reads mail. Claiming otherwise would be a lie, so the audit says so out loud instead. |
 | Cursor SDK as the live brain | `bridge/` is a stub. The Systems panel reads `NOT WIRED`, and the local brain answers. |
+| Jarvis rewriting his own HTML/CSS/JS from a spoken command | He can turn the dials he exposes. New panels and new behaviour are Cursor's job, so you get a diff to read before it lands. |
 | Multi-agent auditing of other agents | Nothing runs while the browser is closed, so there is nothing honest to audit. |
 | A downloadable desktop app | A second face means agents follow the wrong stack. See "Paths considered and rejected" in [`AESTHETIC.md`](./AESTHETIC.md). |
 
