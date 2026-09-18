@@ -202,8 +202,3 @@ export async function renderAudit(list, audit, seq) {
     await seq.wait(beat(95, 0));
   }
 }
-
-/** Plain-text version for the feed and for spoken replies. */
-export function auditToText(audit) {
-  return audit.rows.map((r) => `${r.status} · ${r.label}: ${r.detail}`).join("\n");
-}

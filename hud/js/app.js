@@ -1,4 +1,4 @@
-import { PROFILE, buildBriefing, greetingLine } from "./profile-data.js";
+import { PROFILE, buildBriefing, dayContext, greetingLine } from "./profile-data.js";
 import { startStarfield } from "./stars.js";
 import { playBootChirp, playAckBlip, unlockAudio } from "./sfx.js";
 import { askBridge } from "./bridge-client.js";
@@ -181,6 +181,7 @@ let delivery = null;
  * voice muted or unavailable.
  */
 async function deliverReply(text, seq, { feed = true } = {}) {
+  if (seq !== state.cmdSeq) return; // a newer command already owns the transcript
   delivery?.cut();
   const ctl = createSequence();
   delivery = ctl;
@@ -208,11 +209,17 @@ function onFirstGesture() {
   if (gestureSeen) return;
   gestureSeen = true;
   unlockAudio();
+
   const held = state.pendingSpeech;
-  if (held) {
-    state.pendingSpeech = null;
-    deliverReply(held, state.cmdSeq, { feed: false });
-  }
+  state.pendingSpeech = null; // audio is unlocked now; re-set it if speech still fails
+  if (!held) return;
+
+  // That click may have been aimed at Brief me or the mic. Give the command it
+  // started a moment to claim the reply rather than talking over it.
+  const seq = state.cmdSeq;
+  window.setTimeout(() => {
+    if (seq === state.cmdSeq) deliverReply(held, seq, { feed: false });
+  }, 140);
 }
 
 /* ——— Panels ——— */
@@ -287,9 +294,14 @@ function jarvisReply(raw) {
   }
 
   if (/school|homework|bio|world|tonight|due/.test(q)) {
+    const today = dayContext();
+    const beforePractice = today.swim.startsWith("UMLY")
+      ? `Homework window ${PROFILE.schoolDay.homeworkWindow}, before practice.`
+      : "No practice tonight — the whole evening is yours.";
     return [
       "School first.",
       `Heavy load: ${PROFILE.schoolDay.heavy.join(", ")}.`,
+      beforePractice,
       "Send what's due — class and task. I'll triage must-submit, must-study, can-slide.",
       "I won't write the assignment. Quiz and map only.",
       PROFILE.schoolDay.homeworkCutoff,
@@ -371,6 +383,11 @@ function cutCinematic() {
 }
 
 async function runOpening() {
+  // Captured once. If Joseph gets a command in before the opening finishes, his
+  // command owns the transcript and the wake line is dropped rather than typed
+  // over the top of his answer.
+  const openingSeq = state.cmdSeq;
+
   // Kick the audit off during boot so its bridge probe is already resolved by
   // the time the panel is ready to type.
   const auditPromise = collectAudit();
@@ -383,8 +400,8 @@ async function runOpening() {
   await playAssemble(sequence);
 
   state.live = true;
-  setState("idle");
-  wireOrb?.setMode("idle");
+  if (state.cmdSeq === openingSeq) setState("idle");
+  wireOrb?.setMode(state.listening ? "listen" : "idle");
 
   const audit = await auditPromise;
   state.audit = audit;
@@ -399,7 +416,7 @@ async function runOpening() {
   await sequence.wait(beat(260, 0));
   await renderAudit(el.audit, audit, sequence);
 
-  await deliverReply(wakeLine(audit), state.cmdSeq);
+  await deliverReply(wakeLine(audit), openingSeq);
 }
 
 /* ——— Voice input ——— */

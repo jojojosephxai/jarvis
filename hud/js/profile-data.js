@@ -37,7 +37,7 @@ export const PROFILE = {
     heavy: ["AP Biology", "AP World History", "Algebra 2"],
     also: ["Spanish 3", "Band/Jazz", "Culinary / Personal Finance"],
     homeworkCutoff: "10:15pm — after that, stop; sleep wins",
-    homeworkWindow: "~3:15–5:20pm on practice nights",
+    homeworkWindow: "~3:15–5:20pm",
   },
   tools: ["Cursor Pro", "SuperGrok", "phone + computer", "Atelier app"],
   avoid: ["Grok Bot heavy use", "new subscriptions", "Ollama/hardware shopping"],

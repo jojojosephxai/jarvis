@@ -28,7 +28,3 @@ export function beat(ms, reduced = 40) {
 export function typeSpeed(ms) {
   return prefersReducedMotion() ? 0 : ms;
 }
-
-export function onMotionPreferenceChange(fn) {
-  QUERY?.addEventListener?.("change", fn);
-}

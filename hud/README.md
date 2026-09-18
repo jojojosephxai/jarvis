@@ -38,6 +38,7 @@ Open **<http://localhost:8787>**.
 | `js/profile-data.js` | Distilled Joseph memory + local brain facts |
 | `js/wire-orb.js` | Arc-reactor wireframe orb |
 | `js/typewriter.js` | Shared typing effect |
+| `js/sequence.js` | Cancellable timeline — what Skip/Esc cuts |
 | `js/motion.js` | `prefers-reduced-motion` helper |
 | `js/stars.js`, `js/sfx.js` | Starfield, boot tones |
 | `js/bridge-client.js` | Health check for the optional, not-wired `bridge/` stub |
