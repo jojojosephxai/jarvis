@@ -375,6 +375,51 @@ body[data-phase="visor"] .visor__rim {
   stroke-linecap: round;
 }
 
+.visor__horizon {
+  fill: none;
+  stroke: rgba(176, 212, 255, 0.4);
+  stroke-width: 1.6;
+}
+
+.visor__horizon--minor {
+  stroke: rgba(176, 212, 255, 0.22);
+  stroke-dasharray: 14 10;
+}
+
+.visor__target {
+  fill: none;
+  stroke: rgba(196, 226, 255, 0.5);
+  stroke-width: 1.6;
+  stroke-dasharray: 9 12;
+}
+
+body[data-phase="visor"] .visor__glass {
+  animation: glass-print 820ms steps(1, end) 0.28s both;
+}
+
+/* The readout stutters onto the glass rather than fading politely. */
+@keyframes glass-print {
+  0% {
+    opacity: 0;
+  }
+  18% {
+    opacity: 0.7;
+  }
+  26% {
+    opacity: 0;
+  }
+  40% {
+    opacity: 1;
+  }
+  48% {
+    opacity: 0.35;
+  }
+  60%,
+  100% {
+    opacity: 1;
+  }
+}
+
 /* Light rakes across the inside of the glass as the plates seat. */
 .visor__glare {
   opacity: 0;
@@ -483,15 +528,17 @@ body[data-phase="assemble"] .visor__half--r {
   animation: visor-part-r 1400ms cubic-bezier(0.55, 0, 0.32, 1) both;
 }
 
+/* The halves overlap across the nose bridge by 104 user units, so parting them
+   by 34 adds depth to the push-through without tearing a seam down the middle. */
 @keyframes visor-part-l {
   to {
-    transform: translateX(-210px);
+    transform: translateX(-34px);
   }
 }
 
 @keyframes visor-part-r {
   to {
-    transform: translateX(210px);
+    transform: translateX(34px);
   }
 }
 
@@ -517,8 +564,39 @@ body[data-phase="visor"] .hud {
     opacity: 0;
   }
   to {
-    opacity: 0.72;
+    opacity: 0.82;
   }
+}
+
+/* The orb ignites while the visor is still down, so there is something alive to
+   see through the eye slits before the camera pushes through. */
+.center {
+  opacity: 0;
+}
+
+body[data-phase="visor"] .center {
+  animation: orb-ignite 1150ms var(--ease-heavy) 240ms both;
+}
+
+@keyframes orb-ignite {
+  0% {
+    opacity: 0;
+    transform: scaleY(0.02);
+    filter: blur(7px) brightness(3.2);
+  }
+  44% {
+    opacity: 0.9;
+  }
+  100% {
+    opacity: 1;
+    transform: none;
+    filter: none;
+  }
+}
+
+body[data-phase="assemble"] .center,
+body[data-phase="live"] .center {
+  opacity: 1;
 }
 
 body[data-phase="assemble"] .hud,
@@ -546,9 +624,6 @@ body[data-phase="live"] .hud {
 }
 .dock[data-plate] {
   --plate-y: 68px;
-}
-.center[data-plate] {
-  --plate-sy: 0.035;
 }
 
 body[data-phase="assemble"] [data-plate],
@@ -738,7 +813,8 @@ body[data-cut="1"] .hud {
   opacity: 1 !important;
 }
 
-body[data-cut="1"] [data-plate] {
+body[data-cut="1"] [data-plate],
+body[data-cut="1"] .center {
   animation: none !important;
   opacity: 1 !important;
   transform: none !important;
@@ -772,6 +848,7 @@ body[data-cut="1"] .hud__scan {
   .dock__mic-ring,
   .visor__rim,
   .visor__glare,
+  .visor__glass,
   .visor__reticle span {
     animation: none !important;
   }
@@ -810,6 +887,12 @@ body[data-cut="1"] .hud__scan {
     filter: none !important;
   }
 
+  body[data-phase="visor"] .center {
+    animation: soft-fade-in 260ms linear both !important;
+    transform: none !important;
+    filter: none !important;
+  }
+
   body[data-phase="assemble"] .frame,
   body[data-phase="live"] .frame {
     animation: none !important;
@@ -820,6 +903,16 @@ body[data-cut="1"] .hud__scan {
   .hud__scan,
   .hud__flicker {
     display: none !important;
+  }
+
+  .audit__row {
+    transition: none !important;
+    opacity: 1;
+    transform: none;
+  }
+
+  .audit__row.is-in .audit__chip {
+    animation: none !important;
   }
 
   @keyframes soft-fade-in {

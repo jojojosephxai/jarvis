@@ -8,9 +8,9 @@ import { typeSpeed } from "./motion.js";
  *
  * @param {HTMLElement | null} node
  * @param {string} text
- * @param {{ seq?: { wait: (ms: number) => Promise<void>, isCut: boolean }, charMs?: number }} [opts]
+ * @param {{ seq?: { wait: (ms: number) => Promise<void>, isCut: boolean }, charMs?: number, chunk?: number }} [opts]
  */
-export async function typeInto(node, text, { seq, charMs = 16 } = {}) {
+export async function typeInto(node, text, { seq, charMs = 16, chunk = 1 } = {}) {
   if (!node) return;
   const perChar = typeSpeed(charMs);
   if (!seq || seq.isCut || perChar <= 0) {
@@ -20,11 +20,19 @@ export async function typeInto(node, text, { seq, charMs = 16 } = {}) {
 
   node.textContent = "";
   node.classList.add("is-typing");
-  for (let i = 1; i <= text.length; i += 1) {
+  for (let i = chunk; i < text.length; i += chunk) {
     node.textContent = text.slice(0, i);
     await seq.wait(perChar);
     if (seq.isCut) break;
   }
   node.textContent = text;
   node.classList.remove("is-typing");
+}
+
+/**
+ * Per-character speed that keeps delivery at a roughly constant ~1.9s no matter
+ * how long the reply is, so a long answer doesn't crawl.
+ */
+export function deliverySpeed(length) {
+  return Math.max(3, Math.min(16, Math.round(1900 / Math.max(length, 1))));
 }

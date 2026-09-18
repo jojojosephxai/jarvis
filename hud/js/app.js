@@ -1,11 +1,12 @@
 import { PROFILE, buildBriefing, greetingLine } from "./profile-data.js";
 import { startStarfield } from "./stars.js";
-import { playBootChirp, playAckBlip } from "./sfx.js";
+import { playBootChirp, playAckBlip, unlockAudio } from "./sfx.js";
 import { askBridge } from "./bridge-client.js";
 import { startWireOrb } from "./wire-orb.js";
 import { createSequence } from "./sequence.js";
 import { playBoot, playVisor, playAssemble, markCut } from "./cinematic.js";
 import { collectAudit, renderAudit } from "./overnight.js";
+import { typeInto, deliverySpeed } from "./typewriter.js";
 import { beat } from "./motion.js";
 
 const state = {
@@ -16,6 +17,11 @@ const state = {
   live: false,
   /** Latest overnight audit, so "overnight" can be re-asked at any time. */
   audit: null,
+  /** Set from the audit's bridge probe. Stays false unless a bridge answered,
+   *  so we don't fire a doomed request (and log a console error) per command. */
+  bridgeOnline: false,
+  /** A line the browser refused to speak before the page was interacted with. */
+  pendingSpeech: null,
   /** Bumps on every new command so stale replies/speech are ignored */
   cmdSeq: 0,
 };
@@ -51,12 +57,18 @@ const el = {
 
 /* ——— HUD state ——— */
 
+/** True when a reply will actually be read out loud, not just printed. */
+function voiceActive() {
+  return state.voiceOn && Boolean(window.speechSynthesis) && !state.pendingSpeech;
+}
+
 function setState(mode) {
   const map = {
     idle: ["STANDBY", "pill--idle"],
     listen: ["LISTENING", "pill--listen"],
     think: ["THINKING", "pill--think"],
-    speak: ["SPEAKING", "pill--speak"],
+    // Don't claim to be speaking when the voice is muted or blocked.
+    speak: [voiceActive() ? "SPEAKING" : "REPLYING", "pill--speak"],
   };
   const [label, cls] = map[mode] || map.idle;
   el.statePill.className = `pill ${cls}`;
@@ -69,7 +81,8 @@ function setState(mode) {
   if (el.listenHint) {
     if (mode === "listen") el.listenHint.textContent = "Listening…";
     else if (mode === "think") el.listenHint.textContent = "Got it — thinking…";
-    else if (mode === "speak") el.listenHint.textContent = "Speaking…";
+    else if (mode === "speak") el.listenHint.textContent = voiceActive() ? "Speaking…" : "Replying…";
+    else if (state.pendingSpeech) el.listenHint.textContent = "Click anywhere to let me speak";
     else el.listenHint.textContent = "Say “Hey Jarvis” or press the mic";
   }
   wireOrb?.setMode(mode);
@@ -120,39 +133,86 @@ function pickVoice() {
 
 /**
  * Speak a reply. Starts the first sentence ASAP and queues the rest so a long
- * answer doesn't delay the first beat.
+ * answer doesn't delay the first beat. Resolves when the voice is done, or
+ * immediately when voice is off or unavailable.
  * @param {string} text
- * @param {number} [seq] command sequence — ignore if a newer command took over
+ * @param {number} seq command sequence — bail if a newer command took over
+ * @returns {Promise<void>}
  */
-function speak(text, seq = state.cmdSeq) {
-  if (!state.voiceOn || !window.speechSynthesis) {
-    if (seq === state.cmdSeq) setState("idle");
-    return;
-  }
-  cancelSpeech();
-  const chunks = sentences(text);
-  const voice = pickVoice();
-  let i = 0;
+function speak(text, seq) {
+  return new Promise((resolve) => {
+    if (!state.voiceOn || !window.speechSynthesis) return resolve();
+    cancelSpeech();
+    const chunks = sentences(text);
+    const voice = pickVoice();
+    let i = 0;
 
-  const next = () => {
-    if (seq !== state.cmdSeq) return;
-    if (i >= chunks.length) {
-      setState("idle");
-      return;
-    }
-    const u = new SpeechSynthesisUtterance(chunks[i]);
-    i += 1;
-    u.rate = 1.04;
-    u.pitch = 0.9;
-    if (voice) u.voice = voice;
-    setState("speak");
-    u.onend = next;
-    u.onerror = () => {
-      if (seq === state.cmdSeq) setState("idle");
+    const next = () => {
+      if (seq !== state.cmdSeq || i >= chunks.length) return resolve();
+      const u = new SpeechSynthesisUtterance(chunks[i]);
+      const isFirst = i === 0;
+      i += 1;
+      u.rate = 1.04;
+      u.pitch = 0.9;
+      if (voice) u.voice = voice;
+      u.onend = next;
+      u.onerror = (ev) => {
+        // Browsers refuse to speak until the page has been interacted with, and
+        // a machine with no voices installed fails outright. Hold the line
+        // rather than dropping it silently.
+        if (isFirst && /not-allowed|synthesis-failed|blocked/i.test(ev.error || "")) {
+          state.pendingSpeech = text;
+        }
+        resolve();
+      };
+      window.speechSynthesis.speak(u);
     };
-    window.speechSynthesis.speak(u);
-  };
-  next();
+    next();
+  });
+}
+
+/** @type {{ cut: () => void } | null} */
+let delivery = null;
+
+/**
+ * Deliver a reply: type it onto the transcript while the voice reads it, and
+ * hold the SPEAKING state until both finish. The state is tied to delivery
+ * rather than to the voice alone, so the HUD still reads correctly with the
+ * voice muted or unavailable.
+ */
+async function deliverReply(text, seq, { feed = true } = {}) {
+  delivery?.cut();
+  const ctl = createSequence();
+  delivery = ctl;
+
+  if (feed) addFeed("Jarvis", text);
+  setState("speak");
+
+  const startedAt = performance.now();
+  const voice = speak(text, seq);
+  await typeInto(el.transcript, text, { seq: ctl, charMs: deliverySpeed(text.length) });
+  await voice;
+
+  // Without a voice — muted, blocked, or motion reduced so the text lands at
+  // once — delivery can finish in a frame. Hold the state long enough to read.
+  const remaining = 420 - (performance.now() - startedAt);
+  if (remaining > 0) await ctl.wait(remaining);
+
+  if (seq === state.cmdSeq) setState("idle");
+}
+
+let gestureSeen = false;
+
+/** First click or keypress unblocks audio and delivers any held wake line. */
+function onFirstGesture() {
+  if (gestureSeen) return;
+  gestureSeen = true;
+  unlockAudio();
+  const held = state.pendingSpeech;
+  if (held) {
+    state.pendingSpeech = null;
+    deliverReply(held, state.cmdSeq, { feed: false });
+  }
 }
 
 /* ——— Panels ——— */
@@ -280,6 +340,7 @@ function jarvisReply(raw) {
 async function handleCommand(text) {
   const seq = ++state.cmdSeq;
   cancelSpeech();
+  delivery?.cut();
 
   const cleaned = text.replace(/^(hey )?jarvis[,!.\s]*/i, "").trim() || text;
 
@@ -293,14 +354,10 @@ async function handleCommand(text) {
   // Let the pill/orb paint one frame, then answer (no fake lag)
   await new Promise((r) => requestAnimationFrame(() => r()));
 
-  const remote = await askBridge(cleaned);
+  const remote = state.bridgeOnline ? await askBridge(cleaned) : null;
   if (seq !== state.cmdSeq) return;
 
-  const reply = remote || jarvisReply(cleaned);
-  addFeed("Jarvis", reply);
-  el.transcript.textContent = reply;
-  speak(reply, seq);
-  if (!state.voiceOn && seq === state.cmdSeq) setState("idle");
+  await deliverReply(remote || jarvisReply(cleaned), seq);
 }
 
 /* ——— Opening sequence ——— */
@@ -331,22 +388,38 @@ async function runOpening() {
 
   const audit = await auditPromise;
   state.audit = audit;
+  const link = audit.rows.find((r) => r.id === "link");
+  state.bridgeOnline = link?.status === "OK";
   if (el.sysCursor) {
-    const link = audit.rows.find((r) => r.id === "link");
-    el.sysCursor.textContent = link?.status === "OK" ? "ONLINE" : "NOT WIRED";
+    el.sysCursor.textContent = state.bridgeOnline ? "ONLINE" : "NOT WIRED";
+    el.sysCursor.classList.toggle("dim", !state.bridgeOnline);
     el.sysCursor.title = link?.detail || "";
   }
 
   await sequence.wait(beat(260, 0));
   await renderAudit(el.audit, audit, sequence);
 
-  const line = wakeLine(audit);
-  addFeed("Jarvis", line);
-  el.transcript.textContent = line;
-  speak(line);
+  await deliverReply(wakeLine(audit), state.cmdSeq);
 }
 
 /* ——— Voice input ——— */
+
+/** Why the mic stopped, in plain English. `null` means "don't say anything". */
+const RECOGNITION_ERRORS = {
+  "audio-capture": "No microphone found. Type instead.",
+  "not-allowed": "Microphone blocked. Allow mic access for this page, then try again.",
+  "service-not-allowed": "This browser's speech service isn't available. Type instead.",
+  network: "Speech service unreachable. Type instead.",
+  "no-speech": "Didn't catch that — say it again.",
+  aborted: null,
+};
+
+/** Errors that mean voice input will not work at all in this browser. */
+const FATAL_RECOGNITION_ERRORS = new Set([
+  "audio-capture",
+  "not-allowed",
+  "service-not-allowed",
+]);
 
 function initVoice() {
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -370,9 +443,15 @@ function initVoice() {
     // Don't clobber THINKING / SPEAKING if a command already started
     if (el.statePill.textContent === "LISTENING") setState("idle");
   };
-  rec.onerror = () => {
+  rec.onerror = (ev) => {
     state.listening = false;
     el.mic.classList.remove("is-hot");
+    const message = RECOGNITION_ERRORS[ev.error] ?? "Mic stopped unexpectedly. Type instead.";
+    if (message) el.transcript.textContent = message;
+    if (FATAL_RECOGNITION_ERRORS.has(ev.error)) {
+      el.sysVoice.textContent = "LIMITED";
+      el.sysVoice.title = message || "";
+    }
     if (el.statePill.textContent === "LISTENING") setState("idle");
   };
   rec.onresult = (ev) => {
@@ -411,6 +490,9 @@ function toggleMic() {
 }
 
 /* ——— Wiring ——— */
+
+window.addEventListener("pointerdown", onFirstGesture, { capture: true });
+window.addEventListener("keydown", onFirstGesture, { capture: true });
 
 el.skip.addEventListener("click", cutCinematic);
 el.mic.addEventListener("click", toggleMic);

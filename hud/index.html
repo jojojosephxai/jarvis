@@ -46,21 +46,24 @@
           </linearGradient>
           <linearGradient id="visor-glare" x1="0" y1="0" x2="1" y2="0">
             <stop offset="0%" stop-color="rgba(190,224,255,0)" />
-            <stop offset="45%" stop-color="rgba(200,230,255,0.42)" />
-            <stop offset="55%" stop-color="rgba(220,240,255,0.55)" />
+            <stop offset="46%" stop-color="rgba(200,230,255,0.14)" />
+            <stop offset="53%" stop-color="rgba(225,242,255,0.26)" />
             <stop offset="100%" stop-color="rgba(190,224,255,0)" />
           </linearGradient>
           <clipPath id="visor-slits">
             <path d="M170 452 L250 396 L690 344 L748 432 L690 524 L250 500 Z" />
             <path d="M1430 452 L1350 396 L910 344 L852 432 L910 524 L1350 500 Z" />
           </clipPath>
+          <pattern id="visor-ticks" width="46" height="900" patternUnits="userSpaceOnUse">
+            <path d="M0 414 V452" stroke="rgba(176,212,255,0.3)" stroke-width="1.4" />
+          </pattern>
         </defs>
 
         <g class="visor__half visor__half--l">
           <path
             fill="url(#visor-plate)"
             fill-rule="evenodd"
-            d="M-700 -400 H800 V1300 H-700 Z M170 452 L250 396 L690 344 L748 432 L690 524 L250 500 Z"
+            d="M-700 -400 H852 V1300 H-700 Z M170 452 L250 396 L690 344 L748 432 L690 524 L250 500 Z"
           />
           <path
             class="visor__rim"
@@ -74,7 +77,7 @@
           <path
             fill="url(#visor-plate)"
             fill-rule="evenodd"
-            d="M800 -400 H2300 V1300 H800 Z M1430 452 L1350 396 L910 344 L852 432 L910 524 L1350 500 Z"
+            d="M748 -400 H2300 V1300 H748 Z M1430 452 L1350 396 L910 344 L852 432 L910 524 L1350 500 Z"
           />
           <path
             class="visor__rim"
@@ -84,7 +87,17 @@
           <path class="visor__cheek" d="M1386 556 L1324 586 L900 604" />
         </g>
 
+        <!-- Instrument readout printed on the inside of the glass -->
         <g clip-path="url(#visor-slits)">
+          <g class="visor__glass">
+            <rect x="0" y="0" width="1600" height="900" fill="url(#visor-ticks)" />
+            <path class="visor__horizon" d="M150 434 H1450" />
+            <path class="visor__horizon visor__horizon--minor" d="M280 392 H660" />
+            <path class="visor__horizon visor__horizon--minor" d="M940 476 H1320" />
+            <circle class="visor__target" cx="1128" cy="434" r="58" />
+            <circle class="visor__target" cx="1128" cy="434" r="24" />
+            <circle class="visor__target" cx="472" cy="434" r="34" />
+          </g>
           <rect class="visor__glare" x="-700" y="-300" width="420" height="1500" fill="url(#visor-glare)" />
         </g>
       </svg>
@@ -135,7 +148,7 @@
           <ol class="tonight" id="tonight-list"></ol>
         </aside>
 
-        <section class="center" data-plate style="--plate-i: 2">
+        <section class="center">
           <div class="orb" id="orb" aria-hidden="true">
             <canvas id="orb-wire" class="orb__wire" width="560" height="560"></canvas>
             <div class="orb__halo"></div>
