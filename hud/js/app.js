@@ -93,6 +93,7 @@ function setState(mode) {
     else if (state.pendingSpeech) el.listenHint.textContent = "Click anywhere to let me speak";
     else el.listenHint.textContent = "Say “Hey Jarvis” or press the mic";
   }
+  el.listenHint?.classList.toggle("is-think", mode === "think");
   wireOrb?.setMode(mode);
 }
 
@@ -123,14 +124,28 @@ function sentences(text) {
   return (parts || [text]).map((s) => s.trim()).filter(Boolean);
 }
 
+/** Cached once voices load — first wake often sees an empty list. */
+let cachedVoice = null;
+
 function pickVoice() {
+  if (cachedVoice) return cachedVoice;
   const voices = window.speechSynthesis?.getVoices?.() || [];
-  return (
+  if (!voices.length) return null;
+  cachedVoice =
     voices.find((v) => /en(-|_)GB/i.test(v.lang) && /male|daniel|george|ryan/i.test(v.name)) ||
     voices.find((v) => /en(-|_)GB/i.test(v.lang)) ||
     voices.find((v) => /en(-|_)US/i.test(v.lang)) ||
-    null
-  );
+    null;
+  return cachedVoice;
+}
+
+function warmVoices() {
+  if (!window.speechSynthesis) return;
+  pickVoice();
+  window.speechSynthesis.addEventListener?.("voiceschanged", () => {
+    cachedVoice = null;
+    pickVoice();
+  });
 }
 
 /**
@@ -381,20 +396,38 @@ async function handleCommand(text) {
   // Live brain next. Premade regex only if Grok isn't keyed
   // (bridge returns fallback: "local") or the bridge isn't up at all.
   if (state.bridgeOnline) {
-    const remote = await askBridge(cleaned, {
-      audit: state.audit
-        ? {
-            ok: state.audit.ok,
-            flags: state.audit.flags,
-            conflicts: state.audit.conflicts,
-            rows: (state.audit.rows || []).map((r) => ({
-              status: r.status,
-              label: r.label,
-              detail: r.detail,
-            })),
-          }
-        : null,
-    });
+    el.transcript.textContent = "Working with the live brain…";
+    el.transcript.classList.add("is-working");
+    const slowHints = [
+      { at: 2200, text: "Still waiting on the live brain…" },
+      { at: 12000, text: "Model is slow — still working…" },
+    ];
+    const timers = slowHints.map(({ at, text }) =>
+      window.setTimeout(() => {
+        if (seq !== state.cmdSeq) return;
+        el.transcript.textContent = text;
+      }, at),
+    );
+    let remote;
+    try {
+      remote = await askBridge(cleaned, {
+        audit: state.audit
+          ? {
+              ok: state.audit.ok,
+              flags: state.audit.flags,
+              conflicts: state.audit.conflicts,
+              rows: (state.audit.rows || []).map((r) => ({
+                status: r.status,
+                label: r.label,
+                detail: r.detail,
+              })),
+            }
+          : null,
+      });
+    } finally {
+      for (const id of timers) window.clearTimeout(id);
+      el.transcript.classList.remove("is-working");
+    }
     if (seq !== state.cmdSeq) return;
     if (remote?.fallback !== "local") {
       const answer = remote?.reply || remote?.error || "The live brain did not answer.";
@@ -603,7 +636,19 @@ el.orb?.addEventListener("dblclick", () => handleCommand("brief me"));
 document.addEventListener("keydown", (e) => {
   if (e.target === el.input) return;
   if (e.key === "Escape") {
-    cutCinematic();
+    if (!state.live) {
+      cutCinematic();
+      return;
+    }
+    // Live: Esc cancels speech, typing, and any in-flight brain call.
+    e.preventDefault();
+    state.cmdSeq += 1;
+    cancelSpeech();
+    delivery?.cut();
+    el.transcript.classList.remove("is-working", "is-typing");
+    if (state.listening) state.recognition?.stop();
+    setState("idle");
+    el.transcript.textContent = "Cancelled.";
     return;
   }
   if (e.code === "Space" && !e.repeat && state.live) {
@@ -638,6 +683,7 @@ async function bootstrap() {
 
   tickClock();
   setInterval(tickClock, 1000);
+  warmVoices();
   initVoice();
 
   await runOpening();

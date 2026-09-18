@@ -1,7 +1,7 @@
 import { typeSpeed } from "./motion.js";
 
 /**
- * Type `text` into `node`, one character at a time.
+ * Type `text` into `node` in small chunks.
  *
  * Collapses to a single assignment when motion is reduced or when the boot
  * sequence has been cut, so Skip never leaves a half-typed line on screen.
@@ -10,7 +10,7 @@ import { typeSpeed } from "./motion.js";
  * @param {string} text
  * @param {{ seq?: { wait: (ms: number) => Promise<void>, isCut: boolean }, charMs?: number, chunk?: number }} [opts]
  */
-export async function typeInto(node, text, { seq, charMs = 16, chunk = 1 } = {}) {
+export async function typeInto(node, text, { seq, charMs = 16, chunk } = {}) {
   if (!node) return;
   const perChar = typeSpeed(charMs);
   if (!seq || seq.isCut || perChar <= 0) {
@@ -18,9 +18,10 @@ export async function typeInto(node, text, { seq, charMs = 16, chunk = 1 } = {})
     return;
   }
 
+  const step = chunk ?? deliveryChunk(text.length);
   node.textContent = "";
   node.classList.add("is-typing");
-  for (let i = chunk; i < text.length; i += chunk) {
+  for (let i = step; i < text.length; i += step) {
     node.textContent = text.slice(0, i);
     await seq.wait(perChar);
     if (seq.isCut) break;
@@ -29,10 +30,21 @@ export async function typeInto(node, text, { seq, charMs = 16, chunk = 1 } = {})
   node.classList.remove("is-typing");
 }
 
+/** Bigger chunks for longer replies — fewer DOM writes, same movie feel. */
+export function deliveryChunk(length) {
+  if (length < 48) return 1;
+  if (length < 140) return 2;
+  if (length < 320) return 4;
+  return 6;
+}
+
 /**
- * Per-character speed that keeps delivery at a roughly constant ~1.9s no matter
- * how long the reply is, so a long answer doesn't crawl.
+ * Per-step typing delay. Short replies finish fast; long ones still land in
+ * about ~1.6s so TTS isn't waiting on a crawl.
  */
 export function deliverySpeed(length) {
-  return Math.max(3, Math.min(16, Math.round(1900 / Math.max(length, 1))));
+  const chunk = deliveryChunk(length);
+  const steps = Math.max(1, Math.ceil(length / chunk));
+  const targetMs = length < 40 ? 520 : length < 120 ? 980 : 1600;
+  return Math.max(8, Math.min(22, Math.round(targetMs / steps)));
 }

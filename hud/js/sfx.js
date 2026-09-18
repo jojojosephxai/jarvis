@@ -49,11 +49,12 @@ export function playAckBlip() {
   const osc = ac.createOscillator();
   const gain = ac.createGain();
   osc.type = "triangle";
-  osc.frequency.value = 520;
-  gain.gain.setValueAtTime(0.03, now);
-  gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.12);
+  osc.frequency.setValueAtTime(560, now);
+  osc.frequency.exponentialRampToValueAtTime(420, now + 0.1);
+  gain.gain.setValueAtTime(0.028, now);
+  gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.11);
   osc.connect(gain);
   gain.connect(ac.destination);
   osc.start(now);
-  osc.stop(now + 0.14);
+  osc.stop(now + 0.13);
 }

@@ -40,18 +40,18 @@ export function markCut() {
  */
 export async function playBoot(el, seq) {
   setPhase("boot");
-  await seq.wait(beat(620));
+  await seq.wait(beat(520));
 
   for (let i = 0; i < BOOT_LINES.length; i += 1) {
     if (seq.isCut) break;
     const li = document.createElement("li");
     el.log.appendChild(li);
-    await typeInto(li, BOOT_LINES[i], { seq, charMs: 6 });
+    await typeInto(li, BOOT_LINES[i], { seq, charMs: 5, chunk: 2 });
 
     const pct = Math.round(((i + 1) / BOOT_LINES.length) * 100);
     el.bar.style.width = `${pct}%`;
     el.pct.textContent = `${pct}%`;
-    await seq.wait(beat(110, 0));
+    await seq.wait(beat(70, 0));
   }
 
   if (seq.isCut) {
@@ -64,7 +64,7 @@ export async function playBoot(el, seq) {
   }
   el.bar.style.width = "100%";
   el.pct.textContent = "100%";
-  await seq.wait(beat(340));
+  await seq.wait(beat(100));
 }
 
 /**
@@ -73,13 +73,13 @@ export async function playBoot(el, seq) {
  */
 export async function playVisor(seq) {
   setPhase("visor");
-  await seq.wait(beat(1180));
+  await seq.wait(beat(980));
 }
 
 /** Camera pushes through the visor while the HUD plates fly in and seat. */
 export async function playAssemble(seq) {
   setPhase("assemble");
-  await seq.wait(beat(1450));
+  await seq.wait(beat(1180));
   setPhase("live");
-  await seq.wait(beat(120, 0));
+  await seq.wait(beat(80, 0));
 }

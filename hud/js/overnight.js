@@ -175,10 +175,9 @@ export async function renderAudit(list, audit, seq) {
   for (const row of audit.rows) {
     const li = rowNode(row);
     list.appendChild(li);
-    // One frame so the chip has a state to flash in from.
-    await seq.wait(beat(45, 0));
+    await seq.wait(beat(28, 0));
     li.classList.add("is-in");
-    await typeInto(li.querySelector(".audit__detail"), row.detail, { seq, charMs: 5 });
-    await seq.wait(beat(95, 0));
+    await typeInto(li.querySelector(".audit__detail"), row.detail, { seq, charMs: 4, chunk: 3 });
+    await seq.wait(beat(55, 0));
   }
 }

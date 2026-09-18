@@ -3,7 +3,8 @@
 | Input | Action |
 | --- | --- |
 | **Esc** during boot | Skip the cinematic, land on a working HUD |
-| **Skip** button (bottom-right of boot) | Same as Esc |
+| **Esc** after live | Cancel speech, typing, or a slow live-brain wait |
+| **Skip** button (bottom-right of boot) | Same as Esc during boot |
 | **Space** (when not typing) | Toggle the mic |
 | **Enter** in the command box | Send |
 | **Mic** button | Push-to-talk |
