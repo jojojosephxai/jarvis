@@ -1,7 +1,8 @@
 # About Joseph — profile (TEMPLATE)
 
-Paste your **merged** Bot + Grok markdown below (replace everything under this line).  
-Then rename this file to `JOSEPH.profile.md`.
+Reference shape for rebuilding `JOSEPH.profile.md` from scratch. The real file already
+exists at the repo root — **don't overwrite it with this.** If you do start over, paste the
+merged markdown below the line and save it as `JOSEPH.profile.md`.
 
 ---
 
@@ -29,7 +30,7 @@ Then rename this file to `JOSEPH.profile.md`.
 
 - Cursor Pro
 - SuperGrok (chat — not Grok Bot for Jarvis)
-- OpenDex Jarvis HUD (desktop face)
+- The in-repo Jarvis HUD (`npm run jarvis`) — the one and only face
 - Phone + computer
 
 ## Rules for Jarvis

@@ -1,66 +1,67 @@
 # Cursor wiring (brain + memory, no Grok Bot)
 
-OpenDex is the **face**. Cursor Pro is the **hands** for coding, long research, and jobs that keep running while you’re away.
+**`hud/` is the face.** Cursor Pro is the **hands** — coding, long research, and jobs that
+keep running while you're away. They are separate on purpose, and the HUD works fine on its own.
+
+## The split
+
+| Job | Where it happens |
+| --- | --- |
+| Wake, HUD, voice, boot, overnight audit | **`hud/`** in this repo — `npm run jarvis` |
+| "Know Joseph" forever | Cursor **Rules** + [`JOSEPH.profile.md`](./JOSEPH.profile.md) |
+| Build apps, fix code, school coding help | Cursor **Agent** (Composer 2.5 daily; stronger models when a problem earns it) |
+| Run while the laptop is closed | Cursor **Cloud Agents** + **Automations** |
+| Phone | Cursor iOS or <https://cursor.com/agents> — same Rules, same profile |
+
+The HUD does **not** call Cursor, and that's fine. It answers from a local brain in
+`hud/js/profile-data.js`. When you want real work done, you open Cursor.
 
 ## Why not Grok Bot?
 
-Grok Bot burns weekly usage fast. SuperGrok stays useful for **chat research in the Grok app**; it is **not** required for the HUD path.
+Grok Bot burns weekly usage fast. SuperGrok stays useful for **research chat in the Grok
+app**; it is **not** part of the HUD path and never needs to be.
 
-## Day-one split (no code required)
+## Rules to paste (Cursor → Settings → Rules)
 
-| Job | Where |
-| --- | --- |
-| Wake, HUD, voice, “movie” feel | OpenDex |
-| “Know Joseph” forever | Cursor **User Rules** + `JOSEPH.profile.md` |
-| Build apps / fix code / school coding help | Cursor Agent (Composer 2.5 daily; stronger models when needed) |
-| Run while laptop closed | Cursor **Cloud Agents** + **Automations** (`/automate`) |
-| Phone | Cursor iOS or https://cursor.com/agents — same Rules |
-
-## User Rule to paste (Customize → Rules → User Rules)
+This repo already ships [`.cursor/rules/jarvis-joseph.mdc`](./.cursor/rules/jarvis-joseph.mdc),
+which applies automatically inside this workspace. Paste this into your **User Rules** so it
+follows you into other projects and onto your phone:
 
 ```text
-You are Jarvis for Joseph (9th grade). Explain simply; he is learning and does not know how to code yet.
+You are Jarvis for Joseph (9th grade). Explain simply; he is learning to code.
 Always read and respect JOSEPH.profile.md when it exists in the workspace.
 Never suggest Grok Bot. Prefer Cursor Agent, Cloud Agents, and Automations.
 Do not buy or recommend new AI subscriptions. He has Cursor Pro and SuperGrok.
 Ask before sending emails, posting publicly, or changing account settings.
-For movie-Jarvis tone: calm, precise, briefly witty — never condescending.
+Tone: calm, precise, briefly witty — answer first, never condescending.
 ```
 
 ## Profile file
 
-1. Rename `JOSEPH.profile.template.md` → `JOSEPH.profile.md` after pasting your merged markdown.  
-2. Keep `JOSEPH.profile.md` in `jarvis/` so every Agent in this repo can `@` it.  
-3. Optional: in chat say `@JOSEPH.profile.md` once so it’s in context.
+- [`JOSEPH.profile.md`](./JOSEPH.profile.md) is the memory. It lives at the repo root so any
+  agent here can `@`-mention it.
+- [`JOSEPH.profile.template.md`](./JOSEPH.profile.template.md) is the blank starting shape,
+  kept only as a reference for rebuilding the file from scratch.
+- The HUD reads a **distilled** copy in `hud/js/profile-data.js` — school, swim, near goals,
+  open questions. Body and medical details are deliberately not in there.
+- **When you edit the profile, update `hud/js/profile-data.js` too**, or the HUD will keep
+  saying the old thing.
 
-## Phase 2 — true “Cursor behind OpenDex” (build later)
+## The bridge (optional, not wired, not required)
 
-OpenDex talks to models via Vercel AI SDK providers (Apple / OpenAI / Anthropic / xAI / Gateway). It does **not** speak Cursor natively today.
-
-To make Cursor the OpenDex brain:
-
-1. Create a small local bridge with `@cursor/sdk` (TypeScript) that accepts a prompt and streams Agent output.  
-2. Expose it as an OpenAI-compatible HTTP endpoint **or** a custom AI SDK provider.  
-3. Point OpenDex at that bridge.  
-4. Bill stays on Cursor Pro usage (API key from Cursor Dashboard → API Keys).
-
-Until that bridge exists: use OpenDex for aesthetic + light chat, Cursor for real work. Same profile text in both places.
-
-### Sketch (for a future coding session)
+[`bridge/`](./bridge/) is a stub sketching what a local Cursor-SDK bridge *would* look like.
+It is **not** running, the HUD does not need it, and the Systems panel says `NOT WIRED`
+rather than pretending otherwise. If it is ever built:
 
 ```text
-OpenDex  --prompt-->  localhost bridge  --@cursor/sdk-->  Cursor Agent (local or cloud)
-                <--stream tokens--
+hud/  --prompt-->  localhost:8790 bridge  --@cursor/sdk-->  Cursor Agent
+      <--reply----
 ```
 
-Cookbook starters: https://github.com/cursor/cookbook (sdk/quickstart)
+Until then, the HUD's local brain is the brain. Don't let a doc tell you otherwise.
 
-## Phone + computer
+## Later, if it's ever worth it
 
-- **Computer:** OpenDex HUD + Cursor desktop Agent.  
-- **Phone:** Cursor Agents app / web — kick off Cloud Agents; no OpenDex on phone.  
-- Shared memory = the same User Rules + profile markdown, not Grok Bot sync.
-
-## Phase 3 (reel Db6KlOhJYLk)
-
-Only after HUD + Cursor memory work: Automations that review PRs / other agent runs (“audit the other agents”). Not required for the movie startup feel.
+Cursor **Automations** can run a scheduled job (review a PR, check a repo, summarize a diff)
+and leave a result behind. If that ever happens, the Overnight panel can report the real
+result of a real run. Until something actually runs, the panel keeps saying so out loud.
