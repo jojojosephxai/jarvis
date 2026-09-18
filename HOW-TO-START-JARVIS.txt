@@ -1,0 +1,3 @@
+Double-click Desktop "Start Jarvis.bat" (or repo Start-Jarvis.bat) — Jarvis opens at http://localhost:8787. Keep the black window open; close it to stop.
+
+Jarvis home: C:\Users\hosef japosef\Documents\GitHub\jarvis
