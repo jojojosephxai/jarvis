@@ -6,9 +6,14 @@
     "jarvis": "vite --config hud/vite.config.ts --host 0.0.0.0 --port 8787",
     "jarvis:open": "vite --config hud/vite.config.ts --host 127.0.0.1 --port 8787 --open",
     "jarvis:bridge": "node bridge/server.mjs",
-    "start": "npm run jarvis"
+    "jarvis:all": "concurrently -k -n hud,brain -c cyan,magenta \"npm run jarvis\" \"npm run jarvis:bridge\"",
+    "start": "npm run jarvis:all"
+  },
+  "dependencies": {
+    "@cursor/sdk": "^1.0.31"
   },
   "devDependencies": {
+    "concurrently": "^9.2.1",
     "vite": "^8.2.0"
   }
 }

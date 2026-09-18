@@ -33,28 +33,26 @@ For movie-Jarvis tone: calm, precise, briefly witty — never condescending.
 2. Keep `JOSEPH.profile.md` in `jarvis/` so every Agent in this repo can `@` it.  
 3. Optional: in chat say `@JOSEPH.profile.md` once so it’s in context.
 
-## Phase 2 — true “Cursor behind OpenDex” (build later)
+## Phase 2 — Cursor (and optional Grok) behind the HUD
 
-OpenDex talks to models via Vercel AI SDK providers (Apple / OpenAI / Anthropic / xAI / Gateway). It does **not** speak Cursor natively today.
+The in-repo HUD talks to `bridge/` on port 8790.
 
-To make Cursor the OpenDex brain:
+1. Copy `.env.example` → `.env`.
+2. Set **`CURSOR_API_KEY`** from [Cursor Cloud Agents / API keys](https://cursor.com/dashboard/cloud-agents) (preferred — bills Cursor Pro).
+3. Optional: set **`XAI_API_KEY`** from [xAI console](https://console.x.ai/) for fast Grok chat. SuperGrok **chat** alone is **not** this key.
+4. `npm run jarvis:all` (HUD + bridge). `JARVIS_BRAIN=auto` uses Cursor first, then Grok.
 
-1. Create a small local bridge with `@cursor/sdk` (TypeScript) that accepts a prompt and streams Agent output.  
-2. Expose it as an OpenAI-compatible HTTP endpoint **or** a custom AI SDK provider.  
-3. Point OpenDex at that bridge.  
-4. Bill stays on Cursor Pro usage (API key from Cursor Dashboard → API Keys).
+Cursor path: `@cursor/sdk` with `tools: []` (text only) + Jarvis system prompt from `JOSEPH.profile.md`.  
+Not Grok Bot. OpenDex can point at the same `/api/chat` later.
 
-Until that bridge exists: use OpenDex for aesthetic + light chat, Cursor for real work. Same profile text in both places.
-
-### Sketch (for a future coding session)
+### Sketch
 
 ```text
-OpenDex  --prompt-->  localhost bridge  --@cursor/sdk-->  Cursor Agent (local or cloud)
-                <--stream tokens--
+HUD  --prompt-->  localhost:8790  --@cursor/sdk or xAI-->  live reply
+                <--stream / JSON--
 ```
 
-Cookbook starters: https://github.com/cursor/cookbook (sdk/quickstart)
-
+Cookbook: https://github.com/cursor/cookbook (sdk/quickstart)
 ## Phone + computer
 
 - **Computer:** OpenDex HUD + Cursor desktop Agent.  

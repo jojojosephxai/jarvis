@@ -187,8 +187,8 @@ function renderBriefing() {
 }
 
 /**
- * Local brain. Profile is silent memory — only dump school/swim/bio when asked.
- * Default tone: dry, helpful, movie Jarvis — not a bio dump.
+ * Offline fallback only — used when the live bridge is down.
+ * Prefer Cursor SDK / Grok via `npm run jarvis:all` + .env keys.
  */
 function jarvisReply(raw) {
   const q = raw.trim().toLowerCase();
@@ -203,56 +203,12 @@ function jarvisReply(raw) {
     return `${b.title} ${b.lines.join(" ")}`;
   }
 
-  if (/school|homework|bio|world|tonight|due/.test(q)) {
-    return [
-      "School first.",
-      `Heavy load: ${PROFILE.schoolDay.heavy.join(", ")}.`,
-      "Send what's due — class and task. I'll triage must-submit, must-study, can-slide.",
-      "I won't write the assignment. Quiz and map only.",
-      PROFILE.schoolDay.homeworkCutoff,
-    ].join(" ");
+  if (/help|what can you do|commands|brain|offline/.test(q)) {
+    return "Live brain needs the bridge: copy .env.example to .env, set CURSOR_API_KEY or XAI_API_KEY, run npm run jarvis:all. Then ask anything — I won't recycle canned lines.";
   }
 
-  if (/swim|practice|umly|breast|meet|vo2/.test(q)) {
-    return [
-      `${PROFILE.swim.team}, ${PROFILE.swim.group}. Events: ${PROFILE.swim.events.join(", ")}.`,
-      "Week:",
-      PROFILE.swim.week.join("; ") + ".",
-      `Near meets: ${PROFILE.meetsNear.join("; ")}.`,
-      "Confirm today: single, double, meet, or off.",
-    ].join(" ");
-  }
-
-  if (/atelier|code|cursor|app/.test(q)) {
-    return "Atelier stays private — no social creep. Smallest finished piece in Cursor. File, bug, done-for-tonight. No new subscriptions.";
-  }
-
-  if (/who am i|about me|profile|remember/.test(q)) {
-    return [
-      `${PROFILE.fullName}. ${PROFILE.grade}, ${PROFILE.school}.`,
-      `Near goals: ${PROFILE.goalsNear.slice(0, 3).join("; ")}.`,
-      "I keep the rest quiet unless you ask.",
-    ].join(" ");
-  }
-
-  if (/faith|church|bible|scripture/.test(q)) {
-    return "Noted. I can close serious character topics with brief biblical and logical support — not a sermon on every homework question.";
-  }
-
-  if (/remind|watch|research topic|ping/.test(q)) {
-    return "Name the topic and the ping rule. School block wins if both fight for the same hour.";
-  }
-
-  if (/sleep|bed|tired|10:15/.test(q)) {
-    return "Sleep is a performance input. After 10:15: homework stops, kitchen closed, phone off the pillow.";
-  }
-
-  if (/help|what can you do|commands/.test(q)) {
-    return "Try: brief me · school tonight · swim · atelier · who am I · sleep. Mic or Space to talk.";
-  }
-
-  // Default — connected, dry, no profile lecture
-  return "Understood. Say the job — school, swim, Atelier, or a quick question — and I'll take it from there.";
+  // Honest default — do not regurgitate keyword scripts
+  return "Live brain offline. Run npm run jarvis:all with CURSOR_API_KEY (or XAI_API_KEY) in .env. Until then I only have a thin offline fallback.";
 }
 
 async function handleCommand(text) {
@@ -274,7 +230,11 @@ async function handleCommand(text) {
   const remote = await askBridge(cleaned);
   if (seq !== state.cmdSeq) return;
 
-  const reply = remote || jarvisReply(cleaned);
+  const reply = remote?.reply || jarvisReply(cleaned);
+  if (remote?.brain && el.sysCursor) {
+    el.sysCursor.textContent = remote.brain.toUpperCase().slice(0, 6);
+    el.sysCursor.classList.toggle("dim", remote.brain === "error");
+  }
   addFeed("Jarvis", reply);
   el.transcript.textContent = reply;
   speak(reply, seq);
@@ -295,11 +255,19 @@ function enterHud() {
     requestAnimationFrame(() => wireOrb?.setMode(state.listening ? "listen" : "idle"));
     renderBriefing();
     if (el.sysCursor) {
-      const up = await bridgeHealth();
-      if (up) {
-        el.sysCursor.textContent = "STUB";
+      const health = await bridgeHealth();
+      if (health?.ok && health.brain) {
+        el.sysCursor.textContent = String(health.brain).toUpperCase().slice(0, 6);
         el.sysCursor.classList.remove("dim");
-        el.sysCursor.title = "Bridge online — Cursor SDK not wired yet";
+        el.sysCursor.title = `Live brain: ${health.brain} (mode=${health.mode || "auto"})`;
+      } else if (health) {
+        el.sysCursor.textContent = "NO KEY";
+        el.sysCursor.classList.add("dim");
+        el.sysCursor.title = health.reason || "Bridge up but no API key";
+      } else {
+        el.sysCursor.textContent = "OFF";
+        el.sysCursor.classList.add("dim");
+        el.sysCursor.title = "Bridge offline — run npm run jarvis:all";
       }
     }
     const open = `${greetingLine()}, ${PROFILE.name}. Online.`;

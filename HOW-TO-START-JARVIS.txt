@@ -1,3 +1,9 @@
 Double-click Desktop "Start Jarvis.bat" (or repo Start-Jarvis.bat) — Jarvis opens at http://localhost:8787. Keep the black window open; close it to stop.
 
+Live brain (not canned lines):
+1. Copy .env.example to .env
+2. Paste CURSOR_API_KEY from https://cursor.com/dashboard/cloud-agents  (preferred)
+   — or XAI_API_KEY from https://console.x.ai/  (optional; not the same as SuperGrok chat)
+3. Start Jarvis (bat starts HUD + bridge together)
+
 Jarvis home: C:\Users\hosef japosef\Documents\GitHub\jarvis

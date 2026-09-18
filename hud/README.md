@@ -4,10 +4,11 @@ Cinematic boot + Iron Man–style HUD that already knows Joseph from `../JOSEPH.
 
 ## Run
 
-From the Atelier repo root:
+From the repo root:
 
 ```bash
-npm run jarvis
+cp .env.example .env   # add CURSOR_API_KEY and/or XAI_API_KEY
+npm run jarvis:all
 ```
 
 Open **http://localhost:8787**
@@ -20,13 +21,16 @@ Open **http://localhost:8787**
 - **Briefing** panel from your schedule (school + UMLY)
 - Mic via Web Speech + typed commands
 - Spoken replies (browser TTS)
-- Commands: `brief me`, `school tonight`, `swim`, `atelier`, `who am I`
+- **Live brain** via bridge (Cursor SDK preferred, optional xAI Grok)
 
-## Not yet (phase 2)
+## Brain status (sys pill)
 
-- Cursor SDK as the live brain (local replies for now)
-- OpenDex packaging — this HUD is the in-repo aesthetic while OpenDex remains optional
+| Pill | Meaning |
+| --- | --- |
+| CURSOR / GROK | Live answers |
+| NO KEY | Bridge up, `.env` missing keys |
+| OFF | Bridge not running — use `jarvis:all` |
 
 ## Profile updates
 
-Edit `hud/js/profile-data.js` after changing `JOSEPH.profile.md` (keep body/medical stats out of the HUD per your omit rule).
+Edit `hud/js/profile-data.js` after changing `JOSEPH.profile.md` (keep body/medical stats out of the HUD per your omit rule). The bridge also reads `JOSEPH.profile.md` into the live system prompt.

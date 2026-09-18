@@ -1,21 +1,25 @@
 /**
- * Phase-2 stub: Cursor SDK bridge for the HUD / OpenDex.
- * Not wired yet — documents the target shape Joseph asked for
- * (movie face → Cursor brain, no Grok Bot).
+ * Phase-2 live brain: HUD → localhost bridge → Cursor SDK and/or xAI Grok.
  *
- * Later: npm i @cursor/sdk && set CURSOR_API_KEY, then
- * `node jarvis/bridge/server.mjs` and point the HUD at /api/chat.
+ * Setup:
+ * 1. Copy .env.example → .env
+ * 2. Set CURSOR_API_KEY (preferred) and/or XAI_API_KEY
+ * 3. npm run jarvis:all   (HUD + bridge)
+ *
+ * JARVIS_BRAIN=auto|cursor|grok
  */
 export const BRIDGE_PLAN = {
-  goal: "OpenDex or jarvis/hud → localhost bridge → @cursor/sdk Agent",
-  env: ["CURSOR_API_KEY"],
+  goal: "OpenDex or jarvis/hud → localhost bridge → Cursor SDK / optional Grok",
+  env: ["CURSOR_API_KEY", "XAI_API_KEY", "JARVIS_BRAIN"],
   endpoints: {
     health: "GET /health",
-    chat: "POST /api/chat { message, profilePath?}",
+    chat: "POST /api/chat { message }",
+    reset: "POST /api/reset",
   },
   notes: [
-    "Bill usage to Cursor Pro, not Grok Bot",
-    "Load JOSEPH.profile.md into the first system turn",
-    "Prefer Composer 2.5 for cheap daily; Sonnet for hard coding",
+    "Bill Cursor usage to Cursor Pro — not Grok Bot",
+    "XAI_API_KEY is an xAI console key; SuperGrok chat alone is not enough",
+    "Cursor path uses tools: [] (chat only) + Jarvis system prompt",
+    "Keyword HUD replies are fallback only when the bridge is down",
   ],
 };
