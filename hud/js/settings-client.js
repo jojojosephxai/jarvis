@@ -1,4 +1,4 @@
-import { DEFAULTS, withDefaults } from "./settings.js";
+import { withDefaults } from "./settings.js";
 
 /**
  * Talks to the dev-server endpoint that owns `jarvis.settings.json`.
@@ -15,7 +15,7 @@ export async function loadSettings() {
     if (!res.ok) return { settings: withDefaults({}), writable: false };
     return { settings: withDefaults(await res.json()), writable: true };
   } catch {
-    return { settings: { ...DEFAULTS }, writable: false };
+    return { settings: withDefaults({}), writable: false };
   }
 }
 

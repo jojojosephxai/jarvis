@@ -63,7 +63,6 @@ export function coerce(key, value) {
   }
 }
 
-/** Strip anything unknown or out of range from an incoming patch. */
 export function sanitize(patch) {
   const clean = {};
   if (!patch || typeof patch !== "object") return clean;
@@ -74,26 +73,22 @@ export function sanitize(patch) {
   return clean;
 }
 
-/** A complete settings object: defaults, overlaid with whatever is on disk. */
 export function withDefaults(stored) {
   return { ...DEFAULTS, ...sanitize(stored) };
 }
 
-/** Step a numeric setting up or down by one notch, clamped. */
 export function nudge(key, current, direction) {
   const spec = SCHEMA[key];
   if (!spec || spec.kind !== "number") return undefined;
   return coerce(key, current + spec.step * direction);
 }
 
-/** True when the value is already pinned at the end of its range. */
 export function atLimit(key, value, direction) {
   const spec = SCHEMA[key];
   if (!spec || spec.kind !== "number") return false;
   return direction > 0 ? value >= spec.max : value <= spec.min;
 }
 
-/** How a setting reads when spoken aloud. */
 export function describe(key, value) {
   const spec = SCHEMA[key];
   if (!spec) return `${key} is ${value}`;
@@ -103,7 +98,6 @@ export function describe(key, value) {
   return `${spec.label} at ${value}`;
 }
 
-/** Only the values that differ from the shipped defaults. */
 export function changedFromDefault(settings) {
   return Object.entries(settings).filter(([key, value]) => DEFAULTS[key] !== value);
 }

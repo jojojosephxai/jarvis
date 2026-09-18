@@ -25,9 +25,9 @@ test("HUD and source changes are file edits", () => {
   assert.equal(wantsFileEdit("can you add a panel"), true);
 });
 
-test("visual dials are file edits when a live Cursor agent is up", () => {
-  assert.equal(wantsFileEdit("make the orb bigger"), true);
-  assert.equal(wantsFileEdit("go amber"), true);
-  assert.equal(wantsFileEdit("stars off"), true);
-  assert.equal(wantsFileEdit("deeper voice"), true);
+test("visual dials stay local (parseSelfEdit), not Cursor file edits", () => {
+  assert.equal(wantsFileEdit("make the orb bigger"), false);
+  assert.equal(wantsFileEdit("go amber"), false);
+  assert.equal(wantsFileEdit("stars off"), false);
+  assert.equal(wantsFileEdit("deeper voice"), false);
 });

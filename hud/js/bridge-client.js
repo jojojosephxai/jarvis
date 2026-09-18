@@ -1,6 +1,6 @@
 const BRIDGE = "http://127.0.0.1:8790";
 
-/** Live model calls are slow. 300ms used to fail-fast to the local brain; that is gone. */
+/** Live model calls can take minutes; do not fail-fast to the local brain. */
 export const ASK_TIMEOUT_MS = 180_000;
 
 /**

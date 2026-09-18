@@ -205,8 +205,8 @@ export function startWireOrb(canvas) {
     if (canvas.width !== w || canvas.height !== h) {
       canvas.width = w;
       canvas.height = h;
+      ctx.setTransform(px, 0, 0, px, 0, 0);
     }
-    ctx.setTransform(px, 0, 0, px, 0, 0);
     return true;
   }
 
@@ -216,7 +216,7 @@ export function startWireOrb(canvas) {
     return [w / 2 + x * f, h / 2 + y * f, z];
   }
 
-  /** Expanding shells — the orb's "breathing out". */
+  /** Expanding shells around the mesh. */
   function shells(w, h, t) {
     const reach = Math.min(w, h) / 2;
     for (let i = 0; i < 4; i += 1) {
@@ -229,7 +229,7 @@ export function startWireOrb(canvas) {
     }
   }
 
-  /** Arc-reactor coil: a segmented ring around a bright triangular core. */
+  /** Segmented coil ring around a triangular core. */
   function reactor(w, h, t) {
     const r = Math.min(w, h) * 0.108 * look.scale;
     const breathe = 0.86 + Math.sin(t * 2.4) * 0.14;
@@ -377,10 +377,14 @@ export function startWireOrb(canvas) {
 
   readAccent();
   resize();
-  const observer = typeof ResizeObserver !== "undefined" ? new ResizeObserver(render) : null;
+  const onResize = () => {
+    resize();
+    if (still) render();
+  };
+  const observer = typeof ResizeObserver !== "undefined" ? new ResizeObserver(onResize) : null;
   observer?.observe(canvas);
   if (canvas.parentElement) observer?.observe(canvas.parentElement);
-  window.addEventListener("resize", render);
+  window.addEventListener("resize", onResize);
   render();
 
   return {
@@ -398,7 +402,7 @@ export function startWireOrb(canvas) {
     destroy() {
       running = false;
       cancelAnimationFrame(raf);
-      window.removeEventListener("resize", render);
+      window.removeEventListener("resize", onResize);
       observer?.disconnect();
     },
   };

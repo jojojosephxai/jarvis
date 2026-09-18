@@ -65,8 +65,6 @@ const el = {
   stars: document.getElementById("starfield"),
 };
 
-/* ——— HUD state ——— */
-
 /** True when a reply will actually be read out loud, not just printed. */
 function voiceActive() {
   return state.voiceOn && Boolean(window.speechSynthesis) && !state.pendingSpeech;
@@ -108,11 +106,7 @@ function flashHeard() {
 }
 
 function cancelSpeech() {
-  try {
-    window.speechSynthesis?.cancel();
-  } catch {
-    /* ignore */
-  }
+  window.speechSynthesis?.cancel();
 }
 
 function tickClock() {
@@ -122,8 +116,6 @@ function tickClock() {
     second: "2-digit",
   });
 }
-
-/* ——— Speech ——— */
 
 /** Split into sentences so voice can start the first beat immediately. */
 function sentences(text) {
@@ -232,8 +224,6 @@ function onFirstGesture() {
   }, 140);
 }
 
-/* ——— Panels ——— */
-
 function addFeed(role, text) {
   const node = document.createElement("div");
   node.className = `msg${role === "You" ? " msg--user" : ""}`;
@@ -286,9 +276,8 @@ function overnightReply() {
   return [head, ...notable.map((r) => `${r.label}: ${r.detail}`)].join("\n");
 }
 
-/* ——— Local brain ———
-   Profile is silent memory. Dry and helpful by default; only dump school/swim
-   detail when Joseph actually asks for it. */
+// Profile is silent memory. Dry and helpful by default; only dump school/swim
+// detail when Joseph actually asks for it.
 
 function jarvisReply(raw) {
   const q = raw.trim().toLowerCase();
@@ -380,18 +369,7 @@ async function handleCommand(text) {
   // Let the pill/orb paint one frame, then answer (no fake lag)
   await new Promise((r) => requestAnimationFrame(() => r()));
 
-  // Live brain first. Premade regex / dials only if Grok isn't keyed
-  // (bridge returns fallback: "local") or the bridge isn't up at all.
-  if (state.bridgeOnline) {
-    const remote = await askBridge(cleaned, { audit: slimAudit(state.audit) });
-    if (seq !== state.cmdSeq) return;
-    if (remote?.fallback !== "local") {
-      const text = remote?.reply || remote?.error || "The live brain did not answer.";
-      await deliverReply(text, seq);
-      return;
-    }
-  }
-
+  // Local dials first so "make the orb bigger" never burns a Cursor turn.
   const edit = parseSelfEdit(cleaned, state.settings);
   if (edit) {
     const reply = await applySelfEdit(edit);
@@ -400,21 +378,32 @@ async function handleCommand(text) {
     return;
   }
 
-  await deliverReply(jarvisReply(cleaned), seq);
-}
+  // Live brain next. Premade regex only if Grok isn't keyed
+  // (bridge returns fallback: "local") or the bridge isn't up at all.
+  if (state.bridgeOnline) {
+    const remote = await askBridge(cleaned, {
+      audit: state.audit
+        ? {
+            ok: state.audit.ok,
+            flags: state.audit.flags,
+            conflicts: state.audit.conflicts,
+            rows: (state.audit.rows || []).map((r) => ({
+              status: r.status,
+              label: r.label,
+              detail: r.detail,
+            })),
+          }
+        : null,
+    });
+    if (seq !== state.cmdSeq) return;
+    if (remote?.fallback !== "local") {
+      const answer = remote?.reply || remote?.error || "The live brain did not answer.";
+      await deliverReply(answer, seq);
+      return;
+    }
+  }
 
-function slimAudit(audit) {
-  if (!audit) return null;
-  return {
-    ok: audit.ok,
-    flags: audit.flags,
-    conflicts: audit.conflicts,
-    rows: (audit.rows || []).map((r) => ({
-      status: r.status,
-      label: r.label,
-      detail: r.detail,
-    })),
-  };
+  await deliverReply(jarvisReply(cleaned), seq);
 }
 
 function paintLink(node, online, detail) {
@@ -443,8 +432,6 @@ async function applySelfEdit({ patch, say }) {
   syncStarfield();
   return `${say} Saved.`;
 }
-
-/* ——— Opening sequence ——— */
 
 const sequence = createSequence();
 
@@ -498,8 +485,6 @@ async function runOpening() {
   }
   await deliverReply(line, openingSeq);
 }
-
-/* ——— Voice input ——— */
 
 /** Why the mic stopped, in plain English. `null` means "don't say anything". */
 const RECOGNITION_ERRORS = {
@@ -585,8 +570,6 @@ function toggleMic() {
     /* already started */
   }
 }
-
-/* ——— Wiring ——— */
 
 window.addEventListener("pointerdown", onFirstGesture, { capture: true });
 window.addEventListener("keydown", onFirstGesture, { capture: true });

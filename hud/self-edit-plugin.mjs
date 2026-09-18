@@ -87,7 +87,12 @@ export function jarvisSelfEdit() {
             return;
           }
           const next = { ...(await read()), ...patch };
-          await fs.writeFile(settingsPath, `${JSON.stringify(next, null, 2)}\n`, "utf8");
+          try {
+            await fs.writeFile(settingsPath, `${JSON.stringify(next, null, 2)}\n`, "utf8");
+          } catch (err) {
+            json(res, 500, { error: err instanceof Error ? err.message : "write failed" });
+            return;
+          }
           json(res, 200, { settings: next, wrote: Object.keys(patch) });
         } catch (err) {
           json(res, 400, { error: err instanceof Error ? err.message : "bad request" });

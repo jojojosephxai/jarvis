@@ -9,6 +9,7 @@ import http from "node:http";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadEnv } from "./load-env.mjs";
+import { redact } from "./redact.mjs";
 import { wantsFileEdit } from "../hud/js/wants-file-edit.js";
 import { buildCursorPrompt, buildSystemPrompt, loadProfile, repoRoot } from "./prompt.mjs";
 import { chatXai as defaultChatXai } from "./xai.mjs";
@@ -35,13 +36,6 @@ function readConfig(env = process.env) {
     cursorKey: trim(env.CURSOR_API_KEY),
     cursorModel: trim(env.CURSOR_MODEL) || "composer-2",
   };
-}
-
-function redact(s) {
-  return String(s)
-    .replace(/cursor_[A-Za-z0-9._-]+/g, "cursor_…")
-    .replace(/xai-[A-Za-z0-9._-]+/g, "xai-…")
-    .replace(/Bearer\s+\S+/gi, "Bearer …");
 }
 
 function readBody(req, limit = 1_000_000) {

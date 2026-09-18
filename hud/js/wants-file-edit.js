@@ -46,13 +46,8 @@ export function wantsFileEdit(raw) {
     return true;
   }
 
-  if (
-    /\b(make (the |yourself )?(orb|visor|scanlines?|starfield|accent)|go (amber|gold|ice|green|crimson)|boot (faster|slower)|stars? (on|off)|scanlines? (on|off)|talk (faster|slower)|deeper voice)\b/.test(
-      q,
-    )
-  ) {
-    return true;
-  }
+  // Visual dials ("make the orb bigger", "go amber") are handled by parseSelfEdit
+  // in the HUD — they are not Cursor file edits.
 
   if (/\b(self-?edit|edit yourself|change your (code|source|html|css|js|ui))\b/.test(q)) {
     return true;
