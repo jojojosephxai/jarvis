@@ -89,6 +89,7 @@ Do **not** merge both blindly. Recommended order:
 ## Live preview evidence (PR #1)
 
 - URL: https://jarvis-git-cursor-jarvis-hud-movie-quality-f732-atelier-3d58.vercel.app
-- Boot frame: reactor + SKIP + progress (screenshot `pr1-preview-boot.png`)
-- Live frame: arc-reactor orb + wake line naming Joseph, conflict/flag counts, "nothing ran / nothing was sent" (screenshot `pr1-preview-settled.png`)
+- Boot frame: reactor + SKIP + progress (`pr1-preview-boot.png`)
+- Live HUD: Systems / Overnight / Briefing / command bar; xAI + Cursor **NOT WIRED** without keys (`jarvis-hud-settled.webp`)
+- **Brief me** works via button and typed command — local fallback briefing (swim/school), no keys required (`jarvis-briefme-response.webp`)
 - Not on `main`: that clone still serves the older HUD + stub bridge only
