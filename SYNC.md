@@ -21,7 +21,7 @@ Open http://localhost:8787.
 | Live xAI talk | **No** | Bridge is a stub (`brain: "stub"`) |
 | Cursor file edits from HUD | **No** | Same stub |
 | School Vercel brain | **No** | No `api/` on main |
-| `/roles` skill | **No** | Open PR #3 only |
+| `/roles` skill | **Yes** | Merged via PR #3 |
 | Overnight email agents | **No** | Never claimed as real on purpose |
 | Multi-agent auditor | **No** | Phase 2 / later |
 
@@ -31,7 +31,7 @@ Open http://localhost:8787.
 | --- | --- | --- | --- |
 | [#1](https://github.com/jojojosephxai/jarvis/pull/1) Movie HUD + live brain | **Draft** | Cinematic boot, honest Overnight, talk→xAI, edits→Cursor, dials, fluid polish, original boot motif, static Vercel build. **Live preview:** https://jarvis-git-cursor-jarvis-hud-movie-quality-f732-atelier-3d58.vercel.app | **Yes — mark Ready when you want this reviewed/merged** |
 | [#2](https://github.com/jojojosephxai/jarvis/pull/2) School + live brain | **Draft** | Local Cursor/Grok chat + Vercel `/api/chat` for school PCs. Preview: https://jarvis-git-cursor-hud-live-brain-5701-atelier-3d58.vercel.app | **Only after you decide how it mixes with #1** |
-| [#3](https://github.com/jojojosephxai/jarvis/pull/3) `/roles` skill | Open (not draft) | One markdown skill — Believer/Skeptic/Investor/Judge | Already ready; Vercel check is **green**; safe merge |
+| [#3](https://github.com/jojojosephxai/jarvis/pull/3) `/roles` skill | **Merged** | Believer/Skeptic/Investor/Judge skill | Done |
 | [#4](https://github.com/jojojosephxai/jarvis/pull/4) This sync doc | Draft | `SYNC.md` + honest `STATUS.md` | Merge anytime for the written truth |
 
 ### Important conflict

@@ -6,7 +6,8 @@
     "jarvis": "vite --config hud/vite.config.ts --host 0.0.0.0 --port 8787",
     "jarvis:open": "vite --config hud/vite.config.ts --host 127.0.0.1 --port 8787 --open",
     "jarvis:bridge": "node bridge/server.mjs",
-    "build:hud": "vite build --config hud/vite.config.ts",
+    "build": "vite build --config hud/vite.config.ts",
+    "build:hud": "npm run build",
     "start": "npm run jarvis"
   },
   "devDependencies": {
