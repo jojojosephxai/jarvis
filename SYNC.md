@@ -1,6 +1,6 @@
 # Project sync — what’s real vs what’s still out
 
-Last checked: 2026-09-18 (preview URLs verified HTTP 200). Source of truth for “is it in the project?” is **`main`**, not draft PRs.
+Last checked: 2026-09-18 (preview URLs verified HTTP 200 + screenshots: boot reactor @8%, then live wake line with honest Overnight counts). Source of truth for “is it in the project?” is **`main`**, not draft PRs.
 
 ## What’s actually on `main` today
 
@@ -84,3 +84,11 @@ Do **not** merge both blindly. Recommended order:
 - Want `/roles`? → PR #3  
 - Want the written map? → PR #4  
 - Want what’s running if you clone today? → **`main` only**
+
+
+## Live preview evidence (PR #1)
+
+- URL: https://jarvis-git-cursor-jarvis-hud-movie-quality-f732-atelier-3d58.vercel.app
+- Boot frame: reactor + SKIP + progress (screenshot `pr1-preview-boot.png`)
+- Live frame: arc-reactor orb + wake line naming Joseph, conflict/flag counts, "nothing ran / nothing was sent" (screenshot `pr1-preview-settled.png`)
+- Not on `main`: that clone still serves the older HUD + stub bridge only
