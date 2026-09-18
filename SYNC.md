@@ -1,6 +1,6 @@
 # Project sync — what’s real vs what’s still out
 
-Last checked: 2026-09-18 (after chat transcript review). Source of truth for “is it in the project?” is **`main`**, not draft PRs.
+Last checked: 2026-09-18 (preview URLs verified HTTP 200). Source of truth for “is it in the project?” is **`main`**, not draft PRs.
 
 ## What’s actually on `main` today
 
@@ -29,8 +29,8 @@ Open http://localhost:8787.
 
 | PR | State | What it really is | Mark Ready? |
 | --- | --- | --- | --- |
-| [#1](https://github.com/jojojosephxai/jarvis/pull/1) Movie HUD + live brain | **Draft** | Cinematic boot, honest Overnight, talk→xAI, edits→Cursor, dials, fluid polish, original boot motif, static Vercel build | **Yes — mark Ready when you want this reviewed/merged** |
-| [#2](https://github.com/jojojosephxai/jarvis/pull/2) School + live brain | **Draft** | Local Cursor/Grok chat + Vercel `/api/chat` for school PCs | **Only after you decide how it mixes with #1** |
+| [#1](https://github.com/jojojosephxai/jarvis/pull/1) Movie HUD + live brain | **Draft** | Cinematic boot, honest Overnight, talk→xAI, edits→Cursor, dials, fluid polish, original boot motif, static Vercel build. **Live preview:** https://jarvis-git-cursor-jarvis-hud-movie-quality-f732-atelier-3d58.vercel.app | **Yes — mark Ready when you want this reviewed/merged** |
+| [#2](https://github.com/jojojosephxai/jarvis/pull/2) School + live brain | **Draft** | Local Cursor/Grok chat + Vercel `/api/chat` for school PCs. Preview: https://jarvis-git-cursor-hud-live-brain-5701-atelier-3d58.vercel.app | **Only after you decide how it mixes with #1** |
 | [#3](https://github.com/jojojosephxai/jarvis/pull/3) `/roles` skill | Open (not draft) | One markdown skill — Believer/Skeptic/Investor/Judge | Already ready; Vercel check is **green**; safe merge |
 | [#4](https://github.com/jojojosephxai/jarvis/pull/4) This sync doc | Draft | `SYNC.md` + honest `STATUS.md` | Merge anytime for the written truth |
 
