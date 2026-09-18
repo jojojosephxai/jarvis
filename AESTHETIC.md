@@ -1,43 +1,64 @@
-# Aesthetic requirements (from the 4 reels + Iron Man vibe)
+# Aesthetic bar — MCU J.A.R.V.I.S.
 
-These are the **must-feel** requirements. Captions from Instagram do not include frame-by-frame video; requirements below combine each reel’s stated demo with the standard “movie Jarvis” visual language those creators sell.
+The target is the movie, not a chat app and not an Instagram SaaS demo. Everything
+below describes **`hud/`**, which is the one and only Jarvis face in this repo.
 
-## Reel → requirement
+## The five things that make it read as Jarvis
 
-| Reel | Stated demo | Aesthetic / UX requirement |
-| --- | --- | --- |
-| `DdRp2rqpwHI` (lukebuildsai) | Wake up; email/replies/support already done; Jarvis “calls” you | **Boot → briefing.** On wake, speak a short status (“systems online… overnight: …”). Dark HUD, calm British-ish or clear assistant voice. |
-| `Dc8RPP8zcAV` (dhaibuilds) | Build-your-own Jarvis inside a chat product | **Polished conversation surface** — not a raw terminal. Mic-reactive UI, clear listening / thinking / speaking states. |
-| `DboqOSvEj_b` (zubair) | Free Jarvis build with a coding agent behind it | **Face ≠ brain.** Cinematic shell in front; real agent (Cursor) does research/build work behind. |
-| `Db6KlOhJYLk` (lukebuildsai) | Jarvis audits other agents, flags conflicts | **Phase 2 only.** Multi-agent oversight after single-assistant HUD works. |
+| Element | What it has to feel like |
+| --- | --- |
+| **Helmet visor** | You are *inside* the helmet. Plates seat with weight, glass catches a reflection, then the camera pushes through the visor into the HUD. |
+| **Ice-cyan palette** | Cold white-blue on near-black. Amber only for "listening" and warnings. Never teal, never purple, never a pastel chat bubble. |
+| **Arc-reactor orb** | A live wireframe core in the center of the stage that reacts to idle / listening / thinking / speaking. |
+| **Hologram plates** | Panels are machined plates that fly in, seat, and settle — not divs that fade in. |
+| **Steward voice** | Dry, brief, British-leaning. Answers first. Never "Sure! I'd be happy to help!" |
 
-## Movie checklist (day one must pass)
+## Motion rules
 
-- [x] **Startup / boot sequence** — `hud/` reactor + system log (`npm run jarvis`)
-- [x] **HUD chrome** — dark + cyan glow, clipped panels, orb rings
-- [x] **Wake** — mic button + Space hotkey (wake-word phrase handled in typed/spoken commands)
-- [x] **Voice in + voice out** — Web Speech STT + TTS
-- [x] **State colors** — idle / listening / thinking / speaking
-- [x] **Personalized greeting** — Joseph + Conestoga / UMLY briefing
-- [x] **Morning briefing script** — Brief me + day-aware swim/school tips
-- [x] **No Grok Bot** in the critical path
-- [ ] **Cursor live brain** — bridge stub in `jarvis/bridge/` (phase 2)
-- [ ] **OpenDex desktop package** — optional alternate face (see INSTALL-OPENDEX.md)
+- **Heavy and precise.** Long ease-out curves (`cubic-bezier(0.16, 1, 0.3, 1)`),
+  tiny settle, no bounce-house overshoot. Machinery, not jelly.
+- **Staggered, never simultaneous.** Plates arrive in sequence so the eye can read the assembly.
+- **Nothing is instant and nothing is slow.** Boot-to-usable stays under ~11 seconds, and
+  **Skip / Esc** must always cut straight to a working HUD.
+- **`prefers-reduced-motion: reduce` is honored.** Same content, same audit, same spoken
+  line — cross-fades instead of flight, no zoom, no scan sweep, no parallax.
 
-## Explicit non-goals (day one)
+## Boot sequence (the required order)
 
-- Buying the Instagram CTA “comment Jarvis” SaaS platforms
-- Perfect Iron Man holograms / AR glasses
-- Multi-agent auditor mesh (reel 4) before the HUD works
-- Burning Grok Bot weekly usage for chat
+1. **Cold start** — arc reactor ignites, system log types in, progress climbs.
+2. **Visor** — helmet plates seat, glass reflection flickers, camera pushes through.
+3. **Assemble** — corner frames snap, topbar drops, plates fly in, orb blooms open.
+4. **Overnight audit** — rows type into the right panel with real `OK` / `FLAG` / `CONFLICT` chips.
+5. **Wake line** — one short spoken sentence from a steward, keyed to the real audit counts.
 
-## Reference open-source faces
+## Honesty rules (non-negotiable)
 
-| Project | Startup strength | HUD strength | Install ease | Cursor brain built-in? |
-| --- | --- | --- | --- | --- |
-| **OpenDex** | Onboarding + themes | **Jarvis HUD theme** | **Signed releases** | No — pluggable models |
-| **jarvis-home** | **Clap → Earth zoom → briefing** | Strong cinematic | Clone + npm | No — BrainAdapter |
-| Anandb71/J.A.R.V.I.S | Cinematic phases | Transparent HUD | Build from source | No |
+The reels sell overnight email agents. We do not have those, so **we never pretend to**.
 
-**Day-one pick:** OpenDex (fastest path to “looks like the reels”).  
-**Upgrade path for boot porn:** jarvis-home Earth’s sequence, or fork OpenDex theme later.
+- Never claim mail was read, drafted, or sent. Nothing sends mail from this repo.
+- Never claim an agent ran overnight. Nothing runs while the browser is closed.
+- The Overnight panel is an **audit of things actually checked at load time** — voice API
+  support, bridge reachability, last local session, and unresolved items in
+  `JOSEPH.profile.md`. If a row can't be verified, it doesn't ship.
+- `CONFLICT` rows come from real unresolved disagreements in the profile. They stay until
+  Joseph resolves them — the HUD does not guess which version is true.
+
+## Paths considered and rejected
+
+Early notes in this repo pointed at other projects as the face. They are **not** the plan
+and should not be installed; keeping two faces around means an agent can follow the wrong one.
+
+| Option | Why not |
+| --- | --- |
+| **OpenDex desktop app** | Needs a paid model API key to be useful (a SuperGrok *chat* plan is not an xAI API key), can't be themed to Joseph's school/swim context, and can't be edited in Cursor. |
+| **jarvis-home** | Nice Earth-zoom boot, but cloning a second full project into this repo creates exactly the two-stacks problem this file exists to prevent. |
+| **Paid "comment JARVIS" SaaS** | New subscription. Out of bounds. |
+
+The boot ideas from those projects were kept; the projects were not.
+
+## Non-goals
+
+- Anything social, public, or shareable. This HUD is private.
+- Sending mail, posting, or changing accounts.
+- Real AR / see-through holograms.
+- Grok Bot in the critical path.

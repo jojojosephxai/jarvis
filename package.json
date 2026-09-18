@@ -3,14 +3,19 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "jarvis": "vite --config hud/vite.config.ts --host 0.0.0.0 --port 8787",
+    "jarvis": "node scripts/run-jarvis.mjs",
+    "jarvis:hud": "vite --config hud/vite.config.ts --host 0.0.0.0 --port 8787",
     "jarvis:open": "vite --config hud/vite.config.ts --host 127.0.0.1 --port 8787 --open",
     "jarvis:bridge": "node bridge/server.mjs",
     "build": "vite build --config hud/vite.config.ts",
     "build:hud": "npm run build",
-    "start": "npm run jarvis"
+    "start": "npm run jarvis",
+    "test": "node --test hud/js/*.test.js bridge/*.test.js"
   },
   "devDependencies": {
     "vite": "^8.2.0"
+  },
+  "dependencies": {
+    "@cursor/sdk": "^1.0.31"
   }
 }
