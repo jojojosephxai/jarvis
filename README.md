@@ -4,30 +4,29 @@ Private home for Joseph’s movie-style Jarvis (HUD face, profile, launchers).
 
 ## Run it
 
-Double-click Desktop **Start Jarvis.bat**, or this repo’s `Start-Jarvis.bat`.
+**School (no Node):** open the Vercel URL — see [`SCHOOL-VERCEL.md`](./SCHOOL-VERCEL.md).
 
-Or in a terminal:
+**Home (with Node):**
 
 ```bash
 npm install
-cp .env.example .env   # then paste CURSOR_API_KEY (and/or XAI_API_KEY)
+cp .env.example .env   # then paste CURSOR_API_KEY and/or XAI_API_KEY
 npm run jarvis:all
 ```
 
-Open **http://localhost:8787** — boot sequence, then talk. Live answers need a key in `.env`.
+Or double-click `Start-Jarvis.bat`. Open **http://localhost:8787**.
 
 ## Layout
 
 | Path | Purpose |
 | --- | --- |
-| [`hud/`](./hud/) | Movie HUD face (Vite on port 8787) |
-| [`bridge/`](./bridge/) | Live brain: Cursor SDK + optional xAI Grok (port 8790) |
+| [`hud/`](./hud/) | Movie HUD face (Vite; also builds for Vercel) |
+| [`api/`](./api/) | Vercel Grok brain (`/api/chat`) — school path |
+| [`bridge/`](./bridge/) | Local brain: Cursor SDK + optional Grok (port 8790) |
+| [`SCHOOL-VERCEL.md`](./SCHOOL-VERCEL.md) | No-Node school setup |
 | [`.env.example`](./.env.example) | API key template |
 | [`JOSEPH.profile.md`](./JOSEPH.profile.md) | Know-me memory |
-| [`AESTHETIC.md`](./AESTHETIC.md) | Look/feel targets from inspiration reels |
-| [`hud/CONTROLS.md`](./hud/CONTROLS.md) | Keyboard / mic controls |
 | [`Start-Jarvis.bat`](./Start-Jarvis.bat) | One-click launcher (HUD + bridge) |
-| [`.cursor/rules/jarvis-joseph.mdc`](./.cursor/rules/jarvis-joseph.mdc) | Agent persona rules |
 
 ## Scope
 

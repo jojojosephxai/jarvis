@@ -1,7 +1,7 @@
 import { PROFILE, buildBriefing, greetingLine } from "./profile-data.js";
 import { startStarfield } from "./stars.js";
 import { playBootChirp, playAckBlip } from "./sfx.js";
-import { askBridge, bridgeHealth } from "./bridge-client.js";
+import { askBridge, bridgeHealth, setAccessKey } from "./bridge-client.js";
 import { startWireOrb } from "./wire-orb.js";
 
 const BOOT_LINES = [
@@ -208,7 +208,7 @@ function jarvisReply(raw) {
   }
 
   // Honest default — do not regurgitate keyword scripts
-  return "Live brain offline. Run npm run jarvis:all with CURSOR_API_KEY (or XAI_API_KEY) in .env. Until then I only have a thin offline fallback.";
+  return "Live brain offline. School: use the Vercel URL (SCHOOL-VERCEL.md). Home: npm run jarvis:all with CURSOR_API_KEY or XAI_API_KEY in .env.";
 }
 
 async function handleCommand(text) {
@@ -216,6 +216,17 @@ async function handleCommand(text) {
   cancelSpeech();
 
   const cleaned = text.replace(/^(hey )?jarvis[,!.\s]*/i, "").trim() || text;
+
+  const unlock = cleaned.match(/^unlock\s+(.+)$/i);
+  if (unlock) {
+    setAccessKey(unlock[1].trim());
+    addFeed("You", text);
+    const reply = "Key saved for this browser tab. Try your question again.";
+    addFeed("Jarvis", reply);
+    el.transcript.textContent = reply;
+    speak(reply, ++state.cmdSeq);
+    return;
+  }
 
   // Immediate "heard you" feedback — before any await
   addFeed("You", text);

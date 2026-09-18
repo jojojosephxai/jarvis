@@ -71,7 +71,10 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  if (req.url === "/health" && req.method === "GET") {
+  if (
+    (req.url === "/health" || req.url === "/api/health") &&
+    req.method === "GET"
+  ) {
     const pick = resolveBrain();
     json(res, 200, {
       ok: Boolean(pick.brain),
@@ -79,6 +82,8 @@ const server = http.createServer(async (req, res) => {
       mode: MODE,
       cursor: cursorAvailable(),
       grok: grokAvailable(),
+      gated: false,
+      unlocked: true,
       reason: pick.reason,
     });
     return;
