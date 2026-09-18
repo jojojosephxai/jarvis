@@ -26,6 +26,7 @@ if not exist "%JARVIS%node_modules\" (
 
 start "" "http://localhost:8787"
 echo Starting Jarvis HUD at http://localhost:8787
+echo Brain (xAI + Cursor) at http://127.0.0.1:8790 — keys from .env, never the HUD
 echo Keep this window open while using Jarvis. Close it to stop.
 echo.
 call npm run jarvis

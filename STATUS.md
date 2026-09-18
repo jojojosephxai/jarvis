@@ -15,8 +15,9 @@ and open <http://localhost:8787>.
 | Arc-reactor orb with idle / listen / think / speak states | `hud/js/wire-orb.js` |
 | Voice in (Web Speech) + voice out (browser TTS) | `hud/js/app.js` |
 | Mic button, **Space** to talk, **Esc / Skip** to cut the boot | `hud/js/app.js` |
-| Typed commands + Brief me, answered by a local brain | `hud/js/app.js`, `hud/js/profile-data.js` |
-| **Self-edit dials** — accent, orb, boot, voice; written to `jarvis.settings.json` | `hud/js/self-edit.js`, `hud/self-edit-plugin.mjs` |
+| Typed commands + Brief me | Live Grok when `XAI_API_KEY` is set; otherwise the local profile — `bridge/`, `hud/js/app.js` |
+| File / HUD edits by command | Local Cursor agent when `CURSOR_API_KEY` is set — `bridge/cursor-agent.mjs` |
+| **Self-edit dials** — accent, orb, boot, voice | Offline fallback when Cursor isn't keyed — `hud/js/self-edit.js` |
 | Knows Joseph — school, swim, near goals, open questions | `hud/js/profile-data.js` ← `JOSEPH.profile.md` |
 | `prefers-reduced-motion` honored end to end | `hud/css/cinematic.css`, `hud/js/motion.js` |
 | No Grok Bot, no new subscriptions, anywhere in the path | — |
@@ -26,17 +27,17 @@ and open <http://localhost:8787>.
 | Thing | Why |
 | --- | --- |
 | Overnight email / inbox automation | Nothing in this repo sends or reads mail. Claiming otherwise would be a lie, so the audit says so out loud instead. |
-| Cursor SDK as the live brain | `bridge/` is a stub. The Systems panel reads `NOT WIRED`, and the local brain answers. |
-| Jarvis rewriting his own HTML/CSS/JS from a spoken command | He can turn the dials he exposes. New panels and new behaviour are Cursor's job, so you get a diff to read before it lands. |
+| Jarvis rewriting his own HTML/CSS/JS with no Cursor key | Without `CURSOR_API_KEY` he can only turn the dials. With the key, the local Cursor agent does the edit and you still get a diff. |
 | Multi-agent auditing of other agents | Nothing runs while the browser is closed, so there is nothing honest to audit. |
 | A downloadable desktop app | A second face means agents follow the wrong stack. See "Paths considered and rejected" in [`AESTHETIC.md`](./AESTHETIC.md). |
 
 ## The honest gap
 
 The Instagram reels sell **platforms** that run overnight email agents. This repo is the
-**face + memory + school/swim briefing**, running on Cursor Pro with no Grok Bot and no new
-subscription. The Overnight panel is a real audit of what was actually checked at load time —
-not a fake "your emails are handled" screen.
+**face + memory + live brain**, running on Cursor Pro + an xAI API key, with no Grok Bot
+and no new subscription. SuperGrok chat is not that xAI key. The Overnight panel is a
+real audit of what was actually checked at load time — not a fake "your emails are handled"
+screen.
 
 ## Open questions the HUD keeps asking
 

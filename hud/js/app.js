@@ -21,9 +21,10 @@ const state = {
   live: false,
   /** Latest overnight audit, so "overnight" can be re-asked at any time. */
   audit: null,
-  /** Set from the audit's bridge probe. Stays false unless a bridge answered,
-   *  so we don't fire a doomed request (and log a console error) per command. */
+  /** True when the bridge is up AND at least one live key is present. */
   bridgeOnline: false,
+  liveXai: false,
+  liveCursor: false,
   /** A line the browser refused to speak before the page was interacted with. */
   pendingSpeech: null,
   /** Jarvis's own settings, as applied. */
@@ -59,6 +60,7 @@ const el = {
   briefBtn: document.getElementById("brief-btn"),
   speakToggle: document.getElementById("speak-toggle"),
   sysVoice: document.getElementById("sys-voice"),
+  sysXai: document.getElementById("sys-xai"),
   sysCursor: document.getElementById("sys-cursor"),
   stars: document.getElementById("starfield"),
 };
@@ -355,10 +357,10 @@ function jarvisReply(raw) {
   }
 
   if (/help|what can you do|commands/.test(q)) {
-    return "Try: brief me · overnight · school tonight · swim · atelier · who am I · sleep. I can also tune myself — say “what can you change” for the dials. Mic or Space to talk.";
+    return "Without an xAI key I only know a few local lines: brief me · overnight · school tonight · swim · atelier · who am I · sleep. Put XAI_API_KEY in .env from console.x.ai (not SuperGrok chat) for a real answer. File edits need CURSOR_API_KEY from cursor.com/dashboard/cloud-agents.";
   }
 
-  return "Understood. Say the job — school, swim, Atelier, or a quick question — and I'll take it from there.";
+  return "Understood. That's a local fallback — I don't have XAI_API_KEY yet. Mint one at console.x.ai (SuperGrok chat is not that key), restart npm run jarvis, then ask again.";
 }
 
 async function handleCommand(text) {
@@ -378,7 +380,18 @@ async function handleCommand(text) {
   // Let the pill/orb paint one frame, then answer (no fake lag)
   await new Promise((r) => requestAnimationFrame(() => r()));
 
-  // Jarvis editing Jarvis comes first — it's the only path that writes a file.
+  // Live brain first. Premade regex / dials only if Grok isn't keyed
+  // (bridge returns fallback: "local") or the bridge isn't up at all.
+  if (state.bridgeOnline) {
+    const remote = await askBridge(cleaned, { audit: slimAudit(state.audit) });
+    if (seq !== state.cmdSeq) return;
+    if (remote?.fallback !== "local") {
+      const text = remote?.reply || remote?.error || "The live brain did not answer.";
+      await deliverReply(text, seq);
+      return;
+    }
+  }
+
   const edit = parseSelfEdit(cleaned, state.settings);
   if (edit) {
     const reply = await applySelfEdit(edit);
@@ -387,10 +400,28 @@ async function handleCommand(text) {
     return;
   }
 
-  const remote = state.bridgeOnline ? await askBridge(cleaned) : null;
-  if (seq !== state.cmdSeq) return;
+  await deliverReply(jarvisReply(cleaned), seq);
+}
 
-  await deliverReply(remote || jarvisReply(cleaned), seq);
+function slimAudit(audit) {
+  if (!audit) return null;
+  return {
+    ok: audit.ok,
+    flags: audit.flags,
+    conflicts: audit.conflicts,
+    rows: (audit.rows || []).map((r) => ({
+      status: r.status,
+      label: r.label,
+      detail: r.detail,
+    })),
+  };
+}
+
+function paintLink(node, online, detail) {
+  if (!node) return;
+  node.textContent = online ? "ONLINE" : "NOT WIRED";
+  node.classList.toggle("dim", !online);
+  node.title = detail || "";
 }
 
 /**
@@ -446,13 +477,14 @@ async function runOpening() {
 
   const audit = await auditPromise;
   state.audit = audit;
-  const link = audit.rows.find((r) => r.id === "link");
-  state.bridgeOnline = link?.status === "OK";
-  if (el.sysCursor) {
-    el.sysCursor.textContent = state.bridgeOnline ? "ONLINE" : "NOT WIRED";
-    el.sysCursor.classList.toggle("dim", !state.bridgeOnline);
-    el.sysCursor.title = link?.detail || "";
-  }
+  const bridge = audit.bridge || { reachable: false, xai: false, cursor: false };
+  state.liveXai = Boolean(bridge.reachable && bridge.xai);
+  state.liveCursor = Boolean(bridge.reachable && bridge.cursor);
+  state.bridgeOnline = state.liveXai || state.liveCursor;
+  const xaiRow = audit.rows.find((r) => r.id === "xai" || r.id === "brain");
+  const cursorRow = audit.rows.find((r) => r.id === "link") || xaiRow;
+  paintLink(el.sysXai, state.liveXai, xaiRow?.detail);
+  paintLink(el.sysCursor, state.liveCursor, cursorRow?.detail);
 
   await sequence.wait(beat(260, 0));
   await renderAudit(el.audit, audit, sequence);

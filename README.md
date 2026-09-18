@@ -13,11 +13,12 @@ Or in a terminal:
 
 ```bash
 npm install
+cp .env.example .env   # paste XAI_API_KEY + CURSOR_API_KEY; see CURSOR-WIRING.md
 npm run jarvis
 ```
 
 Open **<http://localhost:8787>** — boot sequence, visor, HUD assemble, overnight audit, then
-Brief me / school / swim / mic / Space.
+talk. Without keys the HUD still runs; answers stay on the local profile until `.env` is filled.
 
 ## Layout
 
@@ -29,7 +30,7 @@ Brief me / school / swim / mic / Space.
 | [`STATUS.md`](./STATUS.md) | Honest "what actually works today" |
 | [`CURSOR-WIRING.md`](./CURSOR-WIRING.md) | How Cursor Pro does the real work behind the face |
 | [`hud/CONTROLS.md`](./hud/CONTROLS.md) | Keyboard / mic controls |
-| [`bridge/`](./bridge/) | Optional, **not wired** Cursor SDK stub — the HUD never needs it |
+| [`bridge/`](./bridge/) | Live brain — xAI talk + local Cursor file edits. Keys in `.env` only. |
 | [`Start-Jarvis.bat`](./Start-Jarvis.bat) | One-click launcher |
 | [`.cursor/rules/jarvis-joseph.mdc`](./.cursor/rules/jarvis-joseph.mdc) | Agent persona rules |
 

@@ -2,6 +2,7 @@ import { PROFILE, dayContext, openItems } from "./profile-data.js";
 import { probeBridge } from "./bridge-client.js";
 import { typeInto } from "./typewriter.js";
 import { beat } from "./motion.js";
+import { brainRows } from "./brain-rows.js";
 
 /**
  * The Overnight audit.
@@ -103,39 +104,6 @@ function dayRow(date) {
   return { id: "day", status: "OK", label: ctx.weekday, detail };
 }
 
-function linkRow(bridge) {
-  if (bridge.skipped) {
-    return {
-      id: "link",
-      status: "FLAG",
-      label: "Cursor link",
-      detail: "Probe switched off in my settings, so I didn't check. Assuming not wired.",
-    };
-  }
-  if (bridge.reachable && bridge.cursor) {
-    return {
-      id: "link",
-      status: "OK",
-      label: "Cursor link",
-      detail: "Bridge online. Answers routed through Cursor.",
-    };
-  }
-  if (bridge.reachable) {
-    return {
-      id: "link",
-      status: "FLAG",
-      label: "Cursor link",
-      detail: "Bridge answered but the brain is still a stub. Running on the local profile.",
-    };
-  }
-  return {
-    id: "link",
-    status: "FLAG",
-    label: "Cursor link",
-    detail: "Not wired. I'm answering from the resident profile, not a model.",
-  };
-}
-
 const NOTHING_RAN = {
   id: "unattended",
   status: "FLAG",
@@ -156,14 +124,16 @@ const PRIVACY = {
  * @param {{ probeBridge?: boolean }} [options]
  */
 export async function collectAudit(date = new Date(), { probeBridge: probe = true } = {}) {
-  const bridge = probe ? await probeBridge() : { reachable: false, cursor: false, skipped: true };
+  const bridge = probe
+    ? await probeBridge()
+    : { reachable: false, xai: false, cursor: false, skipped: true };
 
   const rows = [
     sessionRow(date),
     PRIVACY,
     voiceRow(),
     dayRow(date),
-    linkRow(bridge),
+    ...brainRows(bridge),
     NOTHING_RAN,
     ...openItems(date),
   ].sort((a, b) => STATUS_ORDER[a.status] - STATUS_ORDER[b.status]);
@@ -173,6 +143,7 @@ export async function collectAudit(date = new Date(), { probeBridge: probe = tru
     ok: rows.filter((r) => r.status === "OK").length,
     flags: rows.filter((r) => r.status === "FLAG").length,
     conflicts: rows.filter((r) => r.status === "CONFLICT").length,
+    bridge,
   };
 }
 

@@ -41,27 +41,35 @@ Open **<http://localhost:8787>**.
 | `js/sequence.js` | Cancellable timeline — what Skip/Esc cuts |
 | `js/motion.js` | `prefers-reduced-motion` helper |
 | `js/stars.js`, `js/sfx.js` | Starfield, boot tones |
-| `js/bridge-client.js` | Health check for the optional, not-wired `bridge/` stub |
+| `js/bridge-client.js` | Talks to the local bridge (xAI + Cursor). Offline is a real, reported state. |
+| `js/wants-file-edit.js` | Shared router: talk vs file/HUD change |
 | `js/settings.js` | The dials Jarvis is allowed to turn on himself |
 | `js/self-edit.js` | Turns a spoken command into a settings patch |
 | `self-edit-plugin.mjs` | Dev-server endpoint that writes `jarvis.settings.json` |
 | `jarvis.settings.json` | What he last did to himself (shipped defaults) |
 
-## Commands the local brain knows
+## Talk
+
+With `XAI_API_KEY` in `.env`, questions go to Grok — not a phrase list. Without that
+key, the local profile still knows:
 
 `brief me` · `overnight` · `school tonight` · `swim` · `atelier` · `who am I` · `sleep` ·
 `research watch` · `help`
 
-## Self-edit (dials, not source)
+## Self-edit
+
+With `CURSOR_API_KEY`, "add a panel" / "make the orb bigger" / "rewrite the css" go to
+a **local** Cursor agent (files on disk, Vite HMR). Without that key, only the safe
+dials work:
 
 Say `what can you change`. He can move accent, orb size, boot speed, typing speed,
 scanlines, starfield, speaking rate, pitch, the wake line, and the bridge probe.
 Each change is written to `jarvis.settings.json` and applied live — no reload.
 
-He **cannot** rewrite his own HTML/CSS/JS, add a panel, or touch anything outside
-that file. Asking him to is refused, and Cursor is the part that writes code. This
-is deliberate: a HUD that can rewrite its own source from a spoken command is how
-you get a broken Jarvis at 10pm with no way back.
+Asking him to rewrite source without a Cursor key is refused out loud.
+
+**SuperGrok chat is not `XAI_API_KEY`.** Mint that at https://console.x.ai. Cursor key
+from https://cursor.com/dashboard/cloud-agents. Both go in `.env`, never in this HUD.
 
 ## Honesty
 

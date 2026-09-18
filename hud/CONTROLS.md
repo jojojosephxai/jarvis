@@ -11,16 +11,17 @@
 | **Voice on / off** button | Mute or unmute spoken replies |
 | **Double-click the orb** | Re-run the briefing salute |
 
-Spoken or typed phrases the local brain knows:
+Spoken or typed: with an xAI key, ask anything. Without it, the local profile knows:
 
 `brief me` · `overnight` · `school tonight` · `swim` · `atelier` · `who am I` · `sleep` ·
 `research watch` · `help`
 
-Jarvis can also **tune himself** (look and pacing, not his source):
+With a Cursor key, HUD/file changes go through a local agent. Without it, only
+the safe dials work:
 
 `what can you change` · `make the orb bigger` · `go amber` · `boot faster` ·
 `stars off` · `keep the wake line brief` · `reset yourself`
 
-Every change is written to `hud/jarvis.settings.json`. `git diff` shows it; `git checkout -- hud/jarvis.settings.json` undoes it. Asking him to add a panel or rewrite his code is refused — that's Cursor's job.
+Dials write `hud/jarvis.settings.json`. `git diff` shows it; `git checkout -- hud/jarvis.settings.json` undoes it.
 
 Say **"Hey Jarvis"** before a command and the wake phrase is stripped before it's answered.
