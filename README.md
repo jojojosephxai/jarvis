@@ -1,6 +1,6 @@
 # Jarvis
 
-Jarvis is a personal assistant you open in a browser. The screen is the **Face**: a near-black HUD, an orb, a graph of the vault notes, and a box where you talk.
+Jarvis is a personal assistant you open in a browser. This version is the **Face**: a near-black screen with a cyan energy orb in the middle, and a thin strip at the bottom where you can talk.
 
 The **brain** answers from the Obsidian vault only. Each answer names the notes it used. If the notes do not say it, Jarvis says so. It does not invent facts and it does not send email.
 
@@ -8,7 +8,7 @@ The **brain** answers from the Obsidian vault only. Each answer names the notes 
 
 **Hands** can save a demo calendar event, show a link stub, or ask before send, spend, and delete. Those show a **plan** and then a **receipt**. Calendar writes are auto-approved. Send, spend, and delete wait for a yes.
 
-**Voice** reads the reply already on screen. It uses this computer's voice, or Sonia (British) when an Azure speech key is set. If neither can speak, it says so. Ring and Cube views are not built. No account is required. Phone calls are refused.
+**Voice** reads the reply already on screen. It uses this computer's voice, or Sonia (British) when an Azure speech key is set. If neither can speak, it says so. There is no Ring view and no Cube view. No account is required. Phone calls are refused.
 
 ## Try it
 
@@ -22,9 +22,9 @@ npm run dev
 Open [http://localhost:4721](http://localhost:4721).
 
 1. A short boot plays. Press **Skip** if you want the main screen now.
-2. You should see a dark screen and a blue wireframe orb. Face is online. Brain says **Vault** when no key is set, or **grok-4.7** when a key is set. Voice says **Not live** until a speaker is available, or **This computer** if this browser can speak. **Mic** and **Speak** sit next to **Send**.
-3. Press **Graph**. You should see the notes from the `vault` folder. Click a note to read a short preview. Press **Orb** to bring the orb back. **Ring** and **Cube** say they are not built yet.
-4. Type `graph` or `orb` and press **Send** if you want. That only changes the view.
+2. You should see a dark screen and a blue wireframe orb in the middle. It spins, and it grows while it is working. Talk is a thin strip at the bottom, not the middle of the screen. Face is online. Brain says **Vault** when no key is set, or **grok-4.7** when a key is set. Voice says **Not live** until a speaker is available, or **This computer** if this browser can speak. **Mic** and **Speak** sit on that strip next to **Send**.
+3. Press **Graph**. You should see the notes from the `vault` folder as dots with lines between them. Click a dot. A preview opens. Press **Orb** to bring the orb back to the middle. There is no Ring button and no Cube button.
+4. Type `graph` or `orb` and press **Send** if you want. That only changes the view. Press **Talk** if you want to hide that line again.
 5. Type this and press **Send**:
 
    `What grade is Joseph in?`
@@ -43,17 +43,24 @@ On a phone using the same Wi-Fi as the computer, the server is open on port **47
 
 ## Hands
 
-These still work. They are not vault answers.
+These still work. They are not vault answers. The orb stays in the middle. The talk strip opens just enough to show the plan.
 
-1. Type `Put soccer practice on my calendar tomorrow at 4pm` and press **Send**. A plan says **Auto-approved**, then a receipt says the event was saved on the demo calendar on this computer. The event also shows above the talk log.
+1. Type `Put soccer practice on my calendar tomorrow at 4pm` and press **Send**. A plan says **Auto-approved**, then a receipt says the event was saved on the demo calendar on this computer. The event also shows in the talk strip.
 2. Type `Open https://example.com` and press **Send**. The receipt status is **stub**. Browser automation is not running, so the page was not opened. The link works only if you click **Open this link yourself**.
 3. Type `Send an email to my coach that practice moved to 5` and press **Send**. Nothing is sent. Press **No, don't** for a declined receipt. Press **Yes, do it** only if you want to try. After a yes, the receipt still says no mail was sent, because no mail hand is connected. Typing yes in the box does not send it.
 4. `Spend $12 on pizza` waits the same way. After a yes, no money is spent.
 5. `Delete soccer practice from my calendar` waits for a yes. **Yes, do it** removes that demo event. **No, don't** leaves it.
 
+## What you see
+
+- The orb or the graph owns the middle
+- **Orb** and **Graph** only. There is no Ring button and no Cube button
+- Talk is a thin strip. Press **Talk** to open the words. It does not take the center
+- Lines on the graph come from folder parents, `[[wikilinks]]`, and shared tags. Notes with no links still connect to their folder. The map will not draw more than 40 notes
+
 ## Morning brief
 
-1. Press **Morning brief** above the talk box. Or type `morning brief` and press **Send**.
+1. Press **Talk**, then **Morning brief**. Or type `morning brief` and press **Send**.
 2. You should see today's date, then two parts: the demo calendar, and priority lines copied from the vault.
 3. With no saved events, the brief says the demo calendar is empty. It does not add a fake practice or a meeting.
 4. The starter vault is thin. You should see the science fair, soccer after school, and the library book due Friday, copied from Goals and School. Swim practice time stays under **Not written down**.
@@ -109,7 +116,7 @@ The demo calendar is saved in `data/calendar.json` on this computer only. It is 
 - It does not spend real money
 - It does not open a live browser
 - It does not invent facts that are not in the vault
-- Ring and Cube views are not built
+- There is no Ring view and no Cube view
 - It does not read a vault write back unless you ask `what changed`
 
 ## Voice

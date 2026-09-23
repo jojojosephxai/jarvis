@@ -4,13 +4,15 @@ export function Reactor({ mode }: { mode: OrbMode }) {
   return (
     <div className="reactor" data-mode={mode} aria-hidden="true">
       <span className="reactor-halo" />
-      <span className="reactor-ring reactor-ring-outer" />
-      <span className="reactor-wire reactor-wire-lat" />
-      <span className="reactor-wire reactor-wire-meridian" />
-      <span className="reactor-wire reactor-wire-tilt" />
-      <span className="reactor-ring reactor-ring-ticks" />
-      <span className="reactor-ring reactor-ring-mid" />
-      <span className="reactor-iris" />
+      <div className="reactor-spin">
+        <span className="reactor-ring reactor-ring-outer" />
+        <span className="reactor-wire reactor-wire-lat" />
+        <span className="reactor-wire reactor-wire-meridian" />
+        <span className="reactor-wire reactor-wire-tilt" />
+        <span className="reactor-ring reactor-ring-ticks" />
+        <span className="reactor-ring reactor-ring-mid" />
+        <span className="reactor-iris" />
+      </div>
       <span className="reactor-core" />
     </div>
   );
