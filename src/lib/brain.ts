@@ -1,9 +1,9 @@
 import { assertNever } from "./assert";
 import { CALL_REFUSAL, demoChatReply } from "./demo-brain";
 import { brainMode, grokChat } from "./grok";
+import { resolveHand } from "./hands";
 import { parseIntent, parseToolJson } from "./intent";
-import { executeTool } from "./tools";
-import type { ChatMessageInput, ChatResponse, Receipt } from "./types";
+import type { ChatMessageInput, ChatResponse } from "./types";
 
 const MAX_MESSAGES = 16;
 const MAX_CONTENT = 2000;
@@ -30,22 +30,6 @@ export function readMessages(body: unknown): ChatMessageInput[] | null {
   return parsed;
 }
 
-function confirmTool(receipt: Receipt): string {
-  if (receipt.status === "failed") return receipt.outcome;
-  switch (receipt.tool) {
-    case "calendar.write":
-      return `Saved “${receipt.input.title}” for ${receipt.input.when}. The receipt is below. This stays on the demo calendar on this computer.`;
-    case "calendar.list":
-      return receipt.outcome;
-    case "notes.recall":
-      return receipt.outcome;
-    case "notes.keep":
-      return "I saved that note. The receipt is below.";
-    default:
-      return assertNever(receipt.tool);
-  }
-}
-
 export async function think(messages: ChatMessageInput[]): Promise<ChatResponse> {
   const latest = messages.at(-1);
   if (!latest || latest.role !== "user") {
@@ -57,8 +41,8 @@ export async function think(messages: ChatMessageInput[]): Promise<ChatResponse>
     case "refuse-call":
       return { reply: CALL_REFUSAL, mode: brainMode(), receipts: [] };
     case "tool": {
-      const receipt = await executeTool(parsed.request);
-      return { reply: confirmTool(receipt), mode: brainMode(), receipts: [receipt] };
+      const hand = await resolveHand(parsed.request);
+      return { reply: hand.reply, mode: brainMode(), receipts: hand.receipts, plan: hand.plan };
     }
     case "chat":
       return talk(messages, latest.content);
@@ -93,8 +77,8 @@ async function talk(messages: ChatMessageInput[], latest: string): Promise<ChatR
         receipts: [],
       };
     case "call": {
-      const receipt = await executeTool(call.request);
-      return { reply: confirmTool(receipt), mode: "grok", receipts: [receipt] };
+      const hand = await resolveHand(call.request);
+      return { reply: hand.reply, mode: "grok", receipts: hand.receipts, plan: hand.plan };
     }
     default:
       return assertNever(call);

@@ -18,7 +18,7 @@ export function VoiceButtons({
       <Button
         type="button"
         variant={listening ? "default" : "outline"}
-        className="h-12 shrink-0 px-3 text-base"
+        className="h-12 shrink-0 rounded-none px-3 text-base"
         aria-pressed={listening}
         disabled={pending}
         onClick={onMic}
@@ -28,7 +28,7 @@ export function VoiceButtons({
       <Button
         type="button"
         variant="outline"
-        className="h-12 shrink-0 px-3 text-base"
+        className="h-12 shrink-0 rounded-none px-3 text-base"
         disabled={pending || listening}
         onClick={onSpeak}
       >
@@ -50,7 +50,7 @@ export function VoiceStatus({ line, notice, mouth }: { line: string; notice: str
         {line}
       </p>
       {notice ? (
-        <p className="text-xs leading-snug text-[var(--clay)]" style={{ flexBasis: "100%" }} role="status">
+        <p className="text-xs leading-snug text-destructive" style={{ flexBasis: "100%" }} role="status">
           {notice}
         </p>
       ) : null}

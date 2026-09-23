@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, it } from "node:test";
 
+import { resolveHand } from "./hands";
 import { executeTool } from "./tools";
 
 const roots: string[] = [];
@@ -39,6 +40,7 @@ describe("executeTool", () => {
     assert.equal(receipt.status, "demo");
     assert.equal(receipt.input.title, "Soccer practice");
     assert.match(receipt.outcome, /demo calendar/);
+    assert.match(receipt.outcome, /Auto-approved/);
     assert.match(receipt.id, /^rcp_/);
 
     const saved = JSON.parse(
@@ -89,5 +91,128 @@ describe("executeTool", () => {
       root,
     );
     assert.match(again.outcome, /poster board/i);
+  });
+
+  it("stubs a browser open and does not claim the page loaded", async () => {
+    const root = await makeRoot();
+    const hand = await resolveHand(
+      { tool: "browser.open", input: { url: "https://example.com" } },
+      undefined,
+      root,
+    );
+    assert.equal(hand.plan.gate, "auto");
+    assert.equal(hand.plan.state, "approved");
+    assert.equal(hand.receipts.length, 1);
+    const receipt = hand.receipts[0];
+    assert.equal(receipt?.status, "stub");
+    assert.match(receipt?.outcome ?? "", /not running/i);
+    assert.match(receipt?.outcome ?? "", /did not open/i);
+    assert.doesNotMatch(receipt?.outcome ?? "", /successfully|I opened the page|page loaded/i);
+  });
+
+  it("waits for a yes before send, spend, or delete", async () => {
+    const root = await makeRoot();
+    const waiting = await resolveHand(
+      { tool: "message.send", input: { to: "coach", body: "Practice moved" } },
+      undefined,
+      root,
+    );
+    assert.equal(waiting.plan.state, "waiting");
+    assert.equal(waiting.plan.gate, "confirm");
+    assert.equal(waiting.receipts.length, 0);
+    assert.match(waiting.reply, /have not sent/i);
+
+    const blocked = await executeTool(
+      { tool: "message.send", input: { to: "coach", body: "Practice moved" } },
+      root,
+    );
+    assert.equal(blocked.status, "blocked");
+    assert.match(blocked.outcome, /did not send/i);
+    assert.doesNotMatch(blocked.outcome, /email sent|sent the email|delivered/i);
+  });
+
+  it("still does not send mail after a yes", async () => {
+    const root = await makeRoot();
+    const hand = await resolveHand(
+      {
+        tool: "message.send",
+        input: { to: "me", body: "the homework overnight" },
+      },
+      "yes",
+      root,
+    );
+    assert.equal(hand.plan.state, "approved");
+    assert.equal(hand.receipts[0]?.status, "stub");
+    assert.match(hand.receipts[0]?.outcome ?? "", /did not send/i);
+    assert.match(hand.receipts[0]?.outcome ?? "", /nothing is queued/i);
+    assert.doesNotMatch(hand.receipts[0]?.outcome ?? "", /email sent|delivered|success/i);
+  });
+
+  it("does not spend money after a yes", async () => {
+    const root = await makeRoot();
+    const hand = await resolveHand(
+      { tool: "money.spend", input: { amount: "$12", item: "pizza" } },
+      "yes",
+      root,
+    );
+    assert.equal(hand.receipts[0]?.status, "stub");
+    assert.match(hand.receipts[0]?.outcome ?? "", /did not spend/i);
+    assert.doesNotMatch(hand.receipts[0]?.outcome ?? "", /charged your|payment sent|success/i);
+  });
+
+  it("deletes a demo event only after yes", async () => {
+    const root = await makeRoot();
+    await executeTool(
+      { tool: "calendar.write", input: { title: "Soccer practice", when: "tomorrow at 4pm" } },
+      root,
+    );
+
+    const waiting = await resolveHand(
+      { tool: "calendar.delete", input: { title: "Soccer practice" } },
+      undefined,
+      root,
+    );
+    assert.equal(waiting.receipts.length, 0);
+    const stillThere = JSON.parse(
+      await readFile(path.join(root, "data", "calendar.json"), "utf8"),
+    ) as Array<{ title: string }>;
+    assert.equal(stillThere.length, 1);
+
+    const declined = await resolveHand(
+      { tool: "calendar.delete", input: { title: "Soccer practice" } },
+      "no",
+      root,
+    );
+    assert.equal(declined.receipts[0]?.status, "declined");
+    const afterNo = JSON.parse(
+      await readFile(path.join(root, "data", "calendar.json"), "utf8"),
+    ) as Array<{ title: string }>;
+    assert.equal(afterNo.length, 1);
+
+    const removed = await resolveHand(
+      { tool: "calendar.delete", input: { title: "soccer practice" } },
+      "yes",
+      root,
+    );
+    assert.equal(removed.receipts[0]?.status, "done");
+    assert.match(removed.receipts[0]?.outcome ?? "", /demo calendar/i);
+    const afterYes = JSON.parse(
+      await readFile(path.join(root, "data", "calendar.json"), "utf8"),
+    ) as Array<{ title: string }>;
+    assert.equal(afterYes.length, 0);
+  });
+
+  it("shows an auto-approved plan for a calendar write", async () => {
+    const root = await makeRoot();
+    const hand = await resolveHand(
+      { tool: "calendar.write", input: { title: "Soccer practice", when: "tomorrow at 4pm" } },
+      undefined,
+      root,
+    );
+    assert.equal(hand.plan.gate, "auto");
+    assert.equal(hand.plan.state, "approved");
+    assert.equal(hand.receipts[0]?.status, "demo");
+    assert.match(hand.plan.steps.join(" "), /auto-approved/i);
+    assert.match(hand.receipts[0]?.outcome ?? "", /Auto-approved/);
   });
 });

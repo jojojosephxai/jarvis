@@ -1,12 +1,12 @@
 # Jarvis
 
-Jarvis is a personal assistant you can open in a browser. It has three parts:
+Jarvis is a personal assistant you open in a browser. This version is the **Face**: a near-black screen, a cyan energy orb, and a box where you can talk.
 
-- **Face** — the screen. A light comes on, then stays in the room while you talk.
-- **Brain** — the conversation. With no key, a small demo brain answers. With an xAI key, Grok answers.
-- **Hands** — tasks such as saving a calendar event. Every task leaves a **receipt** that says what ran, what went in, and what happened.
+The brain is **not live** for ordinary chat. If you type a normal sentence, the screen keeps your words and shows a stub receipt. It will not answer. **Voice** can read a Hands reply out loud when this computer or Azure can speak. It does not make up an answer.
 
-No account is required to try it. Phone calls are not part of this version.
+**Hands** are live for a few tasks. A calendar save, a link, or a send, spend, or delete shows a **plan** and then a **receipt**. Calendar writes are auto-approved. Send, spend, and delete wait for a yes.
+
+No account is required. Phone calls are not part of this version.
 
 ## Try it
 
@@ -19,78 +19,70 @@ npm run dev
 
 Open [http://localhost:4721](http://localhost:4721).
 
-1. Watch the light come on, or press **Skip**.
-2. The corner says **Brain: demo** when no key is set.
-3. Press the first suggestion, or type this and press **Send**:
+1. A short boot plays. Press **Skip** if you want the main screen now.
+2. You should see a dark screen, a blue wireframe orb that grows and shrinks, and three status lines: Face online, Brain not wired, and Voice. Voice says **Not live** until a speaker is available. If this computer can speak, it says **This computer**. The note under them says Hands can still run.
+3. Press **Graph**. You should see the notes from the `vault` folder, a note count, and a connection count. Click a note to read a short preview. The brain still does not answer from it.
+4. Press **Orb** to bring the orb back. **Ring** and **Cube** say they are not built yet.
+5. You can also type `graph` or `orb` and press **Send**. The view changes, and the receipt says the brain is still not wired.
+6. Type anything else, such as `Who are you?`, and press **Send**. Your line shows up, then a stub receipt. There is no chat answer.
 
-   `Put soccer practice on my calendar tomorrow at 4pm`
+A refresh clears those lines. They stay on this screen only.
 
-4. Jarvis replies, a **receipt** appears for `calendar.write`, and the event shows under **Demo calendar**.
+On a phone using the same Wi-Fi as the computer, the server is open on port **4721**. On Windows, run `ipconfig` in a terminal and look for the IPv4 address, then open `http://that-address:4721` in Safari. If Windows asks about a firewall, allow Node on private networks.
 
-That is the whole loop: face, chat, and one tool receipt. It should take a few minutes.
+## Hands
 
-Two more things to try:
+7. Type `Put soccer practice on my calendar tomorrow at 4pm` and press **Send**. A plan says **Auto-approved**, then a receipt says the event was saved on the demo calendar on this computer. The event also shows above the talk log.
+8. Type `Open https://example.com` and press **Send**. The receipt status is **stub**. Browser automation is not running, so the page was not opened. The link works only if you click **Open this link yourself**.
+9. Type `Send an email to my coach that practice moved to 5` and press **Send**. Nothing is sent. Press **No, don't** for a declined receipt. Press **Yes, do it** only if you want to try. After a yes, the receipt still says no mail was sent, because no mail hand is connected. Typing yes in the box does not send it.
+10. `Spend $12 on pizza` waits the same way. After a yes, no money is spent.
+11. `Delete soccer practice from my calendar` waits for a yes. **Yes, do it** removes that demo event. **No, don't** leaves it.
 
-- `What do my notes say about the science fair?`
-- `What's on my calendar?`
+## What this screen does
 
-Each one leaves its own receipt. `Remember that the library book is due Friday` saves a note on this computer.
+- Dark suit-style HUD
+- **Orb** and **Graph** buttons, or type `orb` / `graph`
+- Talk box
+- Honest stub receipt when you send a normal sentence
+- A plan and a receipt when Hands run
+- A yes/no gate before send, spend, or delete
 
-## What works with no key
+Graph reads the `vault` folder. It does not create notes and it does not change them. How to open that folder in Obsidian is in [VAULT.md](VAULT.md). A line is drawn when one note links to another with `[[wikilinks]]`, when notes share a tag, or when a note has a parent note. It will not draw more than 40 notes. If that folder is missing, the graph says so and draws nothing.
 
-- The face, including the opening
-- Demo replies
-- Demo calendar (saved in `data/calendar.json` on this computer only)
-- Searching the notes in `data/notes`, and saving new notes in `data/user-notes`
-- A receipt for every tool
+The demo calendar is saved in `data/calendar.json` on this computer only. It is not Apple Calendar or Google Calendar.
 
-The demo calendar is not Google, Apple, or any other real calendar. Nothing is sent off this computer unless you add a Grok key.
+## What it does not do yet
 
-## Optional: talk to Grok
+- It does not answer questions
+- It does not answer a normal question out loud. Speak only reads a Hands reply, and only when a voice is available.
+- It does not send a real email, even after you press yes
+- It does not spend real money
+- It does not open a live browser
+- Ring and Cube views are not built
+- It does not edit the vault notes
 
-1. Copy `.env.example` to `.env.local`.
-2. Put your key from [console.x.ai](https://console.x.ai) in `XAI_API_KEY`.
-3. Stop the server (Ctrl+C) and run `npm run dev` again.
-4. The corner should say **Brain: Grok**.
-
-The key stays on the server. It is not sent to the browser. Do not commit `.env.local`.
-
-The default model is `grok-4.3`, with reasoning set to `none` so a short chat stays cheaper. You can change `XAI_MODEL` and `XAI_REASONING` in `.env.local`.
-
-If the key is missing or Grok does not answer, Jarvis says so and uses the demo brain. Calendar, notes, and receipts still work.
-
-## Notes and Obsidian
-
-Notes you can search today live in `data/notes`. Notes you save from chat go in `data/user-notes`.
-
-Later, a folder of Obsidian markdown can be searched too. Set `OBSIDIAN_VAULT_PATH` in `.env.local` to that folder. Jarvis only reads it. It does not change the vault. If the folder is missing, the receipt says so and local notes are still searched.
-
-The memory code is in `src/lib/memory.ts`. Local notes and the optional vault folder go through the same search.
+Answering is later brain work. A Grok key in `.env.local` does nothing on this screen yet. Hands still run without that key.
 
 ## Voice
 
-The mic and the speaker do not choose the words. The brain still writes the reply. Voice only listens and reads that reply out loud.
+**Mic** and **Speak** are on the talk box. They do not choose the words and they do not answer a normal question.
 
 Fallback, in order:
 
-1. **Azure Speech**, if `AZURE_SPEECH_KEY` and `AZURE_SPEECH_REGION` are set. The default voice is **Sonia** (`en-GB-SoniaNeural`), a British neural voice. Ryan and Libby are the other built-in choices (`AZURE_SPEECH_VOICE`). Azure's free F0 tier includes 0.5 million neural characters a month. The key stays on the server. The reply text is sent to Microsoft to make the audio.
-2. **This computer's voice**, through the browser. A British voice is used when the computer has one. If it only has another English voice, Jarvis says so. That voice can sound more robotic. Nothing is sent off the computer.
-3. **Not live.** If Azure is not set and this browser cannot speak, the line under the box says the speaker is not live. The light does not pretend to talk.
+1. **Azure Speech**, if `AZURE_SPEECH_KEY` and `AZURE_SPEECH_REGION` are set. The default voice is **Sonia** (`en-GB-SoniaNeural`), a British neural voice. Ryan and Libby are the other choices (`AZURE_SPEECH_VOICE`). Azure's free F0 tier includes 0.5 million neural characters a month. The key stays on the server. A Hands reply is sent to Microsoft to make the audio.
+2. **This computer's voice**, through the browser. A British voice is used when the computer has one. If it only has another English voice, the line says so. Nothing is sent off the computer.
+3. **Not live.** If Azure is not set and this browser cannot speak, the line under the box says the speaker is not live. The orb does not pretend to talk.
 
-Listening uses the browser's own speech recognition, set to British English (`en-GB`). Chrome and Edge can do this. The mic audio is not uploaded to Jarvis. If this browser cannot listen, **Mic** explains that, and you type instead.
+Listening uses the browser's own speech recognition, set to British English (`en-GB`). Chrome and Edge can do this. The mic audio is not uploaded. If this browser cannot listen, **Mic** says so.
 
-With no Azure key, **Speak** still tries the computer's voice. If that fails, the message says nothing was played.
+**Speak** reads the last Hands reply. If there is no Hands reply, it says there is nothing to say. With no Azure key, it tries this computer's voice. If that fails, it says nothing was played.
 
 To try it:
 
-1. Open the app and look at the line under the message box.
-2. Press **Mic** (Chrome or Edge). Allow the microphone, say a question, and wait. The words should land in the box and send.
-3. Press **Speak** to hear the last reply again.
-4. If you add the Azure key, restart `npm run dev`. The line should name Sonia, Ryan, or Libby. If the key is missing or rejected, Jarvis says so instead of pretending.
-
-## Phone calls
-
-Jarvis does not place phone calls. If you ask it to call someone, it refuses and does not run a tool.
+1. Look at the line under the talk box, and at the Voice status lamp.
+2. Press **Mic** in Chrome or Edge, allow the microphone, and say a Hands sentence such as `What's on my calendar?`
+3. Press **Speak** to hear that reply again.
+4. To use Sonia, copy the Azure lines from `.env.example` into `.env.local`, then restart `npm run dev`. If the key is missing or rejected, Jarvis says so.
 
 ## Tests
 

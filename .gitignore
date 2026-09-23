@@ -41,6 +41,9 @@ data/user-notes/
 # compiled unit tests
 .test-dist/
 
+# Obsidian writes this when the vault folder is opened. Keep it local.
+vault/.obsidian/
+
 # vercel
 .vercel
 
