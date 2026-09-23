@@ -14,3 +14,5 @@ On Joseph's computer:
 Full steps and the Brain search path are in `vault/README.md`.
 
 Brain reads this `vault` folder when you ask a question. If `OBSIDIAN_VAULT_PATH` is unset, that folder is the one it uses.
+
+“Remember that…” can add a line here. Ask “what changed” for the receipt. See `WRITEBACK.md`.

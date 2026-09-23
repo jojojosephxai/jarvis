@@ -5,6 +5,8 @@ import { brainMode } from "./grok";
 import { resolveHand } from "./hands";
 import { mentionsCalendar, parseIntent } from "./intent";
 import type { ChatMessageInput, ChatResponse } from "./types";
+import { resolveVaultPath } from "./vault-read";
+import { attachWriteNudge, describeChanges, enrichKeepInput, observeVault, takeNudge } from "./vault-write";
 
 const MAX_MESSAGES = 16;
 const MAX_CONTENT = 2000;
@@ -40,30 +42,59 @@ export async function think(
     return { reply: "Say that once more?", mode: brainMode(), receipts: [] };
   }
 
+  const root = options.root ?? process.cwd();
+  const vaultDir = resolveVaultPath(root, options.vaultPath);
+  await observeVault(root, vaultDir);
+
   const parsed = parseIntent(latest.content);
   switch (parsed.kind) {
     case "refuse-call":
-      return { reply: CALL_REFUSAL, mode: brainMode(), receipts: [] };
+      return finish({ reply: CALL_REFUSAL, mode: brainMode(), receipts: [] }, root);
+    case "changes":
+      return {
+        reply: await describeChanges(root),
+        mode: brainMode(),
+        receipts: [],
+      };
     case "tool": {
       if (parsed.request.tool === "notes.recall") {
         const query = parsed.request.input.query?.trim() ?? "";
         if (!query) {
-          return {
-            reply: "Tell me what to look for in the vault notes.",
-            mode: brainMode(),
-            receipts: [],
-          };
+          return finish(
+            {
+              reply: "Tell me what to look for in the vault notes.",
+              mode: brainMode(),
+              receipts: [],
+            },
+            root,
+          );
         }
-        return fromGrounded(await answerFromVault(query, options));
+        return finish(fromGrounded(await answerFromVault(query, options)), root);
       }
-      const hand = await resolveHand(parsed.request, undefined, options.root ?? process.cwd());
-      return { reply: hand.reply, mode: brainMode(), receipts: hand.receipts, plan: hand.plan };
+      if (parsed.request.tool === "notes.keep") {
+        const enriched = await enrichKeepInput(parsed.request.input.text ?? "", vaultDir);
+        const hand = await resolveHand({ tool: "notes.keep", input: enriched }, undefined, root, vaultDir);
+        return finish(
+          { reply: hand.reply, mode: brainMode(), receipts: hand.receipts, plan: hand.plan },
+          root,
+        );
+      }
+      const hand = await resolveHand(parsed.request, undefined, root, vaultDir);
+      return finish(
+        { reply: hand.reply, mode: brainMode(), receipts: hand.receipts, plan: hand.plan },
+        root,
+      );
     }
     case "chat":
-      return talk(latest.content, options);
+      return finish(await talk(latest.content, options), root);
     default:
       return assertNever(parsed);
   }
+}
+
+async function finish(response: ChatResponse, root: string): Promise<ChatResponse> {
+  const nudge = await takeNudge(root);
+  return attachWriteNudge(response, nudge);
 }
 
 async function talk(latest: string, options: AnswerOptions): Promise<ChatResponse> {

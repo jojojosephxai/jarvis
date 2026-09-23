@@ -37,5 +37,5 @@ Brain answers from this folder. The code is `src/lib/vault-read.ts` and `src/lib
 3. A matching note contains a real word from the question. The reply quotes those lines and names the notes, for example `Notes used: School, Goals.`
 4. If no note says it, the reply says it does not have that, and it lists the notes it checked. It does not fill the gap.
 5. With no model key, that local reading is the whole answer. With an xAI key, Grok may word the same notes. Wording that adds facts is dropped.
-6. Chat does not write into this vault. A saved note still goes to `data/user-notes`.
+6. “Remember that…” can add a line in this vault. Preferences and decisions go on `Preferences.md`. The reply does not read the note back. Ask “what changed” for the file and a short summary. See `WRITEBACK.md` in the project.
 7. If this folder is missing, the reply says **Brain wiring** and does not answer from anywhere else.

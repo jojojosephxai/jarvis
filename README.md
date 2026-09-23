@@ -71,7 +71,15 @@ The key stays on the server. It is not sent to the browser. Do not commit `.env.
 
 The vault is the `vault` folder. Open that folder in Obsidian. See [VAULT.md](VAULT.md).
 
-Brain and the graph both read that folder. Set `OBSIDIAN_VAULT_PATH` in `.env.local` if the notes live somewhere else. Jarvis only reads the vault. It does not change it.
+Brain and the graph both read that folder. Set `OBSIDIAN_VAULT_PATH` in `.env.local` if the notes live somewhere else.
+
+You can also tell Jarvis to remember something. That writes a line into this folder. See [WRITEBACK.md](WRITEBACK.md).
+
+1. Type `Remember that I like quiet reminders` and press **Send**.
+2. Open `vault/Preferences.md`. The new line is there. The reply names the file and does not read the note back. It tells you to ask what changed.
+3. Type `what changed` and press **Send**. The reply names `Preferences.md` and the line you saved.
+
+A password or a long rewrite waits for **Yes, do it** before anything is written. Edits you make in Obsidian are not read out on their own. Ask `what changed` when you want that receipt.
 
 If the folder is missing, the reply starts with **Brain wiring** and does not guess. The graph says the folder is missing and draws nothing.
 
@@ -89,7 +97,7 @@ The demo calendar is saved in `data/calendar.json` on this computer only. It is 
 - It does not open a live browser
 - It does not invent facts that are not in the vault
 - Ring and Cube views are not built
-- It does not edit the vault notes
+- It does not read a vault write back unless you ask `what changed`
 
 ## Tests
 

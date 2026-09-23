@@ -37,6 +37,7 @@ yarn-error.log*
 # local demo data
 data/calendar.json
 data/user-notes/
+data/vault-ledger.json
 
 # compiled unit tests
 .test-dist/

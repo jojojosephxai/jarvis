@@ -6,9 +6,10 @@ import type { MemoryHit, MemorySource } from "./types";
 /**
  * Memory seam.
  *
- * Local notes always work. An Obsidian vault is optional and read-only:
- * set OBSIDIAN_VAULT_PATH to a folder of markdown files. Writing notes
- * stays in data/user-notes so a vault is never modified from here.
+ * Local notes always work. An Obsidian vault is optional for this search:
+ * set OBSIDIAN_VAULT_PATH to a folder of markdown files.
+ * "Remember that…" does not use keepNote. That write goes to the vault
+ * through vault-write.ts. keepNote still saves under data/user-notes.
  */
 export type MemorySearchResult = {
   hits: MemoryHit[];
