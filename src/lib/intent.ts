@@ -1,3 +1,4 @@
+import { safeHttpUrl } from "./http-url";
 import { isToolName, type ToolRequest } from "./types";
 
 export type ParsedTurn =
@@ -63,6 +64,115 @@ function calendarTitle(text: string, when: string): string {
   return clip(title, 180);
 }
 
+const SEND_RE =
+  /^(?:please\s+)?(?:can you\s+)?(?:send(?:\s+an?)?\s+(?:email|e-mail|message|text)|email|e-mail|text)\b\s*(.*)$/i;
+
+const SPEND_RE = /^(?:please\s+)?(?:can you\s+)?(?:spend|pay|purchase|buy)\b\s*(.*)$/i;
+
+const DELETE_RE = /^(?:please\s+)?(?:can you\s+)?(?:delete|remove|erase)\b\s+(.+)$/i;
+
+const BROWSER_RE =
+  /^(?:please\s+)?(?:can you\s+)?(?:open|browse(?:\s+to)?|go\s+to|visit|pull\s+up)\s+(.+)$/i;
+
+function findUrl(text: string): { raw: string; href: string } | null {
+  const explicit = text.match(/https?:\/\/[^\s<>"']+/i);
+  const bare = explicit ? null : text.match(/\b(?:[a-z0-9-]+\.)+[a-z]{2,}(?:\/[^\s<>"']*)?/i);
+  const matched = explicit?.[0] ?? bare?.[0];
+  if (!matched) return null;
+  const raw = matched.replace(/[),.;!?]+$/g, "");
+  const href = safeHttpUrl(raw);
+  if (!href) return null;
+  return { raw, href };
+}
+
+function parseSend(clean: string): ToolRequest | null {
+  const match = SEND_RE.exec(clean);
+  if (!match) return null;
+  const rest = (match[1] ?? "").trim();
+  let to = "unspecified";
+  let body = rest;
+  const directed = /^(?:to\s+)?(.+?)\s+(?:that|about|saying)\s+(.+)$/i.exec(rest);
+  const addressed = /^(me|him|her|them)\b\s*(.*)$/i.exec(rest);
+  if (directed) {
+    to = directed[1].replace(/^to\s+/i, "").trim();
+    body = directed[2].trim();
+  } else if (addressed) {
+    to = addressed[1].toLowerCase();
+    body = addressed[2].trim();
+  } else if (/^to\s+\S+/i.test(rest)) {
+    to = rest.replace(/^to\s+/i, "").trim();
+    body = "";
+  }
+  return {
+    tool: "message.send",
+    input: { to: clip(to, 120), body: clip(body, 500) },
+  };
+}
+
+function parseSpend(clean: string): ToolRequest | null {
+  const match = SPEND_RE.exec(clean);
+  if (!match) return null;
+  const rest = (match[1] ?? "").trim();
+  const amountMatch = rest.match(/\$\s?\d+(?:\.\d{2})?|\b\d+(?:\.\d{2})?\s*(?:dollars|bucks)\b/i);
+  const amount = amountMatch?.[0]?.replace(/\s+/g, " ").trim() || "unspecified";
+  let item = rest;
+  if (amountMatch?.[0]) item = item.replace(amountMatch[0], " ");
+  item = item.replace(/\s+/g, " ").trim().replace(/^(?:for|on)\s+/i, "").trim();
+  return {
+    tool: "money.spend",
+    input: { amount, item: clip(item, 180) || "unspecified" },
+  };
+}
+
+function parseDelete(clean: string): ToolRequest | null {
+  const match = DELETE_RE.exec(clean);
+  if (!match?.[1]) return null;
+  const rest = match[1].trim();
+  if (/\b(?:calendar|schedule)\b/i.test(rest)) {
+    const title = rest
+      .replace(/\b(?:from|on|off)\s+(?:my\s+|the\s+)?(?:calendar|schedule)\b/gi, " ")
+      .replace(/\b(?:event|appointment)\b/gi, " ")
+      .replace(/\s+/g, " ")
+      .replace(/^[\s,.:-]+|[\s,.:-]+$/g, "");
+    return {
+      tool: "calendar.delete",
+      input: { title: clip(title, 180) },
+    };
+  }
+  return {
+    tool: "item.delete",
+    input: { target: clip(rest, 180) },
+  };
+}
+
+function parseBrowser(clean: string): ToolRequest | null {
+  const match = BROWSER_RE.exec(clean);
+  if (!match?.[1]) return null;
+  const rest = match[1].trim();
+  const found = findUrl(rest);
+  if (/\bcalendar\b/i.test(rest) && !found) {
+    return { tool: "calendar.list", input: {} };
+  }
+  if (found) {
+    const leftover = rest
+      .replace(found.raw, " ")
+      .replace(/^(?:and|then)\s+/i, "")
+      .replace(/\s+/g, " ")
+      .trim();
+    const words = leftover.split(" ").filter(Boolean);
+    const looksLikeTask =
+      words.length >= 3 || /\b(read|click|fill|search|tell|check|sign|log|download|submit)\b/i.test(leftover);
+    if (!looksLikeTask) {
+      return { tool: "browser.open", input: { url: found.href } };
+    }
+    return {
+      tool: "browser.task",
+      input: { url: found.href, task: clip(leftover || rest, 400) },
+    };
+  }
+  return { tool: "browser.task", input: { task: clip(rest, 400) } };
+}
+
 function recallQuery(rest: string): string {
   return clip(
     rest
@@ -100,6 +210,18 @@ export function parseIntent(text: string): ParsedTurn {
       },
     };
   }
+
+  const send = parseSend(clean);
+  if (send) return { kind: "tool", request: send };
+
+  const spend = parseSpend(clean);
+  if (spend) return { kind: "tool", request: spend };
+
+  const remove = parseDelete(clean);
+  if (remove) return { kind: "tool", request: remove };
+
+  const browser = parseBrowser(clean);
+  if (browser) return { kind: "tool", request: browser };
 
   if (LIST_RE.test(clean)) {
     return { kind: "tool", request: { tool: "calendar.list", input: {} } };

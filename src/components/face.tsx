@@ -4,10 +4,20 @@ import { useEffect, useRef, useState } from "react";
 
 import { BootScreen } from "@/components/boot-screen";
 import { NoteGraph } from "@/components/note-graph";
+import { PlanCard } from "@/components/plan-card";
+import { ReceiptCard } from "@/components/receipt-card";
 import { orbLabel, Reactor, type OrbMode } from "@/components/reactor";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { makeId } from "@/lib/ids";
+import {
+  isHandPlan,
+  isReceipt,
+  type CalendarEvent,
+  type ChatResponse,
+  type HandPlan,
+  type Receipt,
+} from "@/lib/types";
 import { FACE_VIEWS, parseViewIntent, viewLabel, type FaceView } from "@/lib/view-intent";
 
 const BOOT_KEY = "jarvis-boot";
@@ -26,7 +36,8 @@ function markBootDone() {
 
 type LogItem =
   | { kind: "you"; id: string; text: string; at: string }
-  | { kind: "stub"; id: string; heard: string; at: string; view: FaceView | null };
+  | { kind: "stub"; id: string; heard: string; at: string; view: FaceView | null }
+  | { kind: "hand"; id: string; at: string; reply: string; plan?: HandPlan; receipts: Receipt[] };
 
 function stubOutcome(view: FaceView | null): string {
   const lead = view ? `View is now ${viewLabel(view)}. ` : "";
@@ -65,6 +76,8 @@ export function Face() {
   const [orb, setOrb] = useState<OrbMode>("standby");
   const [viewMode, setViewMode] = useState<FaceView>("orb");
   const [booting, setBooting] = useState(true);
+  const [pending, setPending] = useState(false);
+  const [events, setEvents] = useState<CalendarEvent[]>([]);
   const endRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const bootTimer = useRef<number | null>(null);
@@ -78,6 +91,7 @@ export function Face() {
       markBootDone();
       setBooting(false);
     }, delay);
+    void loadCalendar(setEvents);
     return () => {
       if (bootTimer.current !== null) window.clearTimeout(bootTimer.current);
       if (ackTimer.current !== null) window.clearTimeout(ackTimer.current);
@@ -97,24 +111,99 @@ export function Face() {
     endRef.current?.scrollIntoView({ block: "end" });
   }, [items]);
 
-  function send(text: string) {
-    const trimmed = text.trim();
-    if (!trimmed) return;
-    const view = parseViewIntent(trimmed);
-    if (view) setViewMode(view);
-    const at = new Date().toISOString();
-    setItems((current) =>
-      [
-        ...current,
-        { kind: "you" as const, id: makeId("you"), text: trimmed, at },
-        { kind: "stub" as const, id: makeId("stub"), heard: trimmed, at, view },
-      ].slice(-40),
-    );
-    setDraft("");
+  function pulseOrb() {
     setOrb("ack");
     if (ackTimer.current !== null) window.clearTimeout(ackTimer.current);
     ackTimer.current = window.setTimeout(() => setOrb("standby"), 900);
     if (window.matchMedia("(pointer: fine)").matches) inputRef.current?.focus();
+  }
+
+  async function send(text: string) {
+    const trimmed = text.trim();
+    if (!trimmed || pending) return;
+    const view = parseViewIntent(trimmed);
+    const at = new Date().toISOString();
+    if (view) {
+      setViewMode(view);
+      setItems((current) =>
+        [
+          ...current,
+          { kind: "you" as const, id: makeId("you"), text: trimmed, at },
+          { kind: "stub" as const, id: makeId("stub"), heard: trimmed, at, view },
+        ].slice(-40),
+      );
+      setDraft("");
+      pulseOrb();
+      return;
+    }
+
+    setItems((current) => [...current, { kind: "you" as const, id: makeId("you"), text: trimmed, at }].slice(-40));
+    setDraft("");
+    setPending(true);
+    setOrb("ack");
+    try {
+      const response = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ messages: [{ role: "user", content: trimmed }] }),
+      });
+      const payload: unknown = await response.json();
+      if (!response.ok || !isChatResponse(payload) || !isHandsTurn(payload)) {
+        setItems((current) =>
+          [...current, { kind: "stub" as const, id: makeId("stub"), heard: trimmed, at, view: null }].slice(-40),
+        );
+        return;
+      }
+      setItems((current) =>
+        [
+          ...current,
+          {
+            kind: "hand" as const,
+            id: makeId("hand"),
+            at,
+            reply: payload.reply,
+            plan: payload.plan,
+            receipts: payload.receipts,
+          },
+        ].slice(-40),
+      );
+      if (touchesCalendar(payload.plan?.tool, payload.receipts)) void loadCalendar(setEvents);
+    } catch {
+      setItems((current) =>
+        [...current, { kind: "stub" as const, id: makeId("stub"), heard: trimmed, at, view: null }].slice(-40),
+      );
+    } finally {
+      setPending(false);
+      pulseOrb();
+    }
+  }
+
+  async function decide(itemId: string, plan: HandPlan, decision: "yes" | "no") {
+    if (plan.state !== "waiting" || plan.gate !== "confirm" || pending) return;
+    setPending(true);
+    setOrb("ack");
+    try {
+      const response = await fetch("/api/hands", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tool: plan.tool, input: plan.input, decision }),
+      });
+      const payload: unknown = await response.json();
+      if (!response.ok || !isHandResponse(payload)) return;
+      setItems((current) =>
+        current.map((item) =>
+          item.kind === "hand" && item.id === itemId
+            ? { ...item, reply: payload.reply, plan: payload.plan, receipts: payload.receipts }
+            : item,
+        ),
+      );
+      if (touchesCalendar(payload.plan.tool, payload.receipts)) void loadCalendar(setEvents);
+    } catch {
+      // The plan stays waiting so it can be tried again.
+    } finally {
+      setPending(false);
+      pulseOrb();
+    }
   }
 
   return (
@@ -168,7 +257,7 @@ export function Face() {
               </dd>
             </div>
           </dl>
-          <p className="status-note">Brain and voice are off. Sending keeps your words here and does not get an answer.</p>
+          <p className="status-note">Brain and voice are off. Hands can save a demo calendar event, open a link stub, or ask before send, spend, and delete.</p>
         </section>
         <section className="comms" aria-label="Talk">
           <div className="comms-head">
@@ -183,14 +272,33 @@ export function Face() {
             ) : null}
           </div>
           <div className="talk-log">
+            {events.length > 0 ? (
+              <div className="stub-receipt" style={{ marginBottom: "0.85rem" }}>
+                <p>Demo calendar ({events.length})</p>
+                <ul>
+                  {events.map((event) => (
+                    <li key={event.id}>
+                      {event.title} — {event.when}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
             {items.length === 0 ? (
               <p className="empty-talk">
-                Nothing said yet. Use Orb or Graph above, or type below. You will get a receipt, and Jarvis will not answer.
+                Nothing said yet. Use Orb or Graph above. Type a calendar line or a link below to see a plan and a receipt. Other words stay on this screen.
               </p>
             ) : (
               <div className="talk-list" aria-live="polite">
                 {items.map((item) => (
-                  <LogItemView key={item.id} item={item} />
+                  <LogItemView
+                    key={item.id}
+                    item={item}
+                    pending={pending}
+                    onDecide={(choice) => {
+                      if (item.kind === "hand" && item.plan) void decide(item.id, item.plan, choice);
+                    }}
+                  />
                 ))}
               </div>
             )}
@@ -221,7 +329,7 @@ export function Face() {
             <Button
               type="submit"
               className="h-12 shrink-0 rounded-none px-4 text-base"
-              disabled={draft.trim() === ""}
+              disabled={pending || draft.trim() === ""}
             >
               Send
             </Button>
@@ -265,7 +373,15 @@ function ViewStub({ view }: { view: "ring" | "cube" }) {
   );
 }
 
-function LogItemView({ item }: { item: LogItem }) {
+function LogItemView({
+  item,
+  pending,
+  onDecide,
+}: {
+  item: LogItem;
+  pending: boolean;
+  onDecide: (decision: "yes" | "no") => void;
+}) {
   switch (item.kind) {
     case "you":
       return (
@@ -300,9 +416,75 @@ function LogItemView({ item }: { item: LogItem }) {
           <time dateTime={item.at}>{formatStamp(item.at)}</time>
         </article>
       );
+    case "hand":
+      return (
+        <div className="talk-list">
+          <p className="line-text">{item.reply}</p>
+          {item.plan ? (
+            <PlanCard
+              plan={item.plan}
+              pending={pending}
+              onDecide={item.plan.state === "waiting" && item.plan.gate === "confirm" ? onDecide : undefined}
+            />
+          ) : null}
+          {item.receipts.map((receipt) => (
+            <ReceiptCard key={receipt.id} receipt={receipt} />
+          ))}
+        </div>
+      );
     default: {
       const neverItem: never = item;
       return neverItem;
     }
+  }
+}
+
+function isChatResponse(value: unknown): value is ChatResponse {
+  if (!value || typeof value !== "object") return false;
+  const record = value as Partial<ChatResponse> & { receipts?: unknown };
+  return (
+    typeof record.reply === "string" &&
+    (record.mode === "grok" || record.mode === "demo") &&
+    Array.isArray(record.receipts) &&
+    record.receipts.every(isReceipt) &&
+    (record.plan === undefined || isHandPlan(record.plan))
+  );
+}
+
+function isHandResponse(value: unknown): value is { reply: string; receipts: Receipt[]; plan: HandPlan } {
+  if (!value || typeof value !== "object") return false;
+  const record = value as { reply?: unknown; receipts?: unknown; plan?: unknown };
+  return (
+    typeof record.reply === "string" &&
+    Array.isArray(record.receipts) &&
+    record.receipts.every(isReceipt) &&
+    isHandPlan(record.plan)
+  );
+}
+
+function isHandsTurn(payload: ChatResponse): boolean {
+  return Boolean(payload.plan) || payload.receipts.length > 0 || /phone call/i.test(payload.reply);
+}
+
+function touchesCalendar(tool: string | undefined, receipts: Receipt[]): boolean {
+  return tool?.startsWith("calendar.") === true || receipts.some((receipt) => receipt.tool.startsWith("calendar."));
+}
+
+function isCalendarEvent(value: unknown): value is CalendarEvent {
+  if (!value || typeof value !== "object") return false;
+  const event = value as Partial<CalendarEvent>;
+  return typeof event.id === "string" && typeof event.title === "string" && typeof event.when === "string";
+}
+
+async function loadCalendar(setEvents: (events: CalendarEvent[]) => void) {
+  try {
+    const response = await fetch("/api/calendar");
+    const payload: unknown = await response.json();
+    if (!payload || typeof payload !== "object") return;
+    const list = (payload as { events?: unknown }).events;
+    if (!Array.isArray(list)) return;
+    setEvents(list.filter(isCalendarEvent));
+  } catch {
+    // The talk log still shows the receipt if a later hand runs.
   }
 }
