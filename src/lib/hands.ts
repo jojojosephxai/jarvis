@@ -17,7 +17,17 @@ function shown(value: string | undefined, fallback: string): string {
   return trimmed || fallback;
 }
 
-function planCopy(tool: ToolName, input: Record<string, string>): { title: string; steps: string[] } {
+function clipPreview(value: string | undefined): string {
+  const trimmed = (value ?? "").replace(/\s+/g, " ").trim();
+  if (trimmed.length <= 100) return trimmed || "the words you gave";
+  return `${trimmed.slice(0, 100).trim()}…`;
+}
+
+function planCopy(
+  tool: ToolName,
+  input: Record<string, string>,
+  state: PlanState,
+): { title: string; steps: string[] } {
   switch (tool) {
     case "calendar.write":
       return {
@@ -55,15 +65,31 @@ function planCopy(tool: ToolName, input: Record<string, string>): { title: strin
           "Notes are read. They are not changed.",
         ],
       };
-    case "notes.keep":
+    case "notes.keep": {
+      const file = shown(input.file, "a vault note");
+      if (input.needsConfirm === "yes") {
+        const steps = [
+          `This would change ${file}.`,
+          "It is sensitive or a large rewrite, so nothing is written until you press Yes, do it.",
+        ];
+        if (state === "waiting") {
+          steps.push(`Preview: ${clipPreview(input.text)}`);
+        } else if (state === "approved") {
+          steps.push('You said yes. I did not read the note back. Ask "what changed" if you want the receipt.');
+        } else {
+          steps.push("You said no. I did not write the note.");
+        }
+        return { title: "Update a vault note", steps };
+      }
       return {
-        title: "Save a note",
+        title: "Update a vault note",
         steps: [
-          "Save the words you gave as a note on this computer.",
-          "Saving a note is auto-approved.",
-          "The note is not written into an Obsidian vault.",
+          `Save this in ${file}.`,
+          "A short note like this is auto-approved.",
+          'I will not read the note back. Ask "what changed" if you want the receipt.',
         ],
       };
+    }
     case "browser.open":
       return {
         title: "Open a link",
@@ -118,14 +144,14 @@ function planCopy(tool: ToolName, input: Record<string, string>): { title: strin
 }
 
 function makePlan(request: ToolRequest, state: PlanState): HandPlan {
-  const copy = planCopy(request.tool, request.input);
+  const copy = planCopy(request.tool, request.input, state);
   return {
     id: makeId("plan"),
     tool: request.tool,
     title: copy.title,
     steps: copy.steps,
     input: request.input,
-    gate: gateFor(request.tool),
+    gate: gateFor(request.tool, request.input),
     state,
   };
 }
@@ -140,10 +166,11 @@ function declineReply(tool: ToolName): string {
       return "Okay. I did not delete the event.";
     case "item.delete":
       return "Okay. I did not delete anything.";
+    case "notes.keep":
+      return "Okay. I did not write the note.";
     case "calendar.write":
     case "calendar.list":
     case "notes.recall":
-    case "notes.keep":
     case "browser.open":
     case "browser.task":
       return "Okay. I left that alone.";
@@ -162,10 +189,11 @@ function waitingReply(tool: ToolName): string {
       return "Here is the plan. I have not deleted the event. Press Yes, do it or No, don't.";
     case "item.delete":
       return "Here is the plan. I have not deleted anything. Press Yes, do it or No, don't.";
+    case "notes.keep":
+      return 'I have not written that. It is sensitive or a large rewrite. Press Yes, do it or No, don\'t. After a yes, ask "what changed" if you want the receipt.';
     case "calendar.write":
     case "calendar.list":
     case "notes.recall":
-    case "notes.keep":
     case "browser.open":
     case "browser.task":
       return "Here is the plan.";
@@ -186,7 +214,7 @@ function doneReply(receipt: Receipt): string {
     case "notes.recall":
       return receipt.outcome;
     case "notes.keep":
-      return "I saved that note. The receipt is below.";
+      return receipt.outcome;
     case "browser.open":
     case "browser.task":
       return "I did not drive a browser. The plan and the receipt are below.";
@@ -205,7 +233,7 @@ function declineReceipt(request: ToolRequest): Receipt {
   return {
     id: makeId("rcp"),
     tool: request.tool,
-    title: planCopy(request.tool, request.input).title,
+    title: planCopy(request.tool, request.input, "declined").title,
     input: request.input,
     outcome: declineReply(request.tool),
     status: "declined",
@@ -217,8 +245,9 @@ export async function resolveHand(
   request: ToolRequest,
   decision?: HandDecision,
   root = process.cwd(),
+  vaultDir?: string,
 ): Promise<HandResult> {
-  const gate = gateFor(request.tool);
+  const gate = gateFor(request.tool, request.input);
 
   if (gate === "confirm" && decision === "no") {
     return {
@@ -236,7 +265,7 @@ export async function resolveHand(
     };
   }
 
-  const receipt = await executeTool(request, root, { approved: true });
+  const receipt = await executeTool(request, root, { approved: true, vaultDir });
   return {
     reply: doneReply(receipt),
     plan: makePlan(request, "approved"),

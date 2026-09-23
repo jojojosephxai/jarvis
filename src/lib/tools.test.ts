@@ -70,8 +70,10 @@ describe("executeTool", () => {
     assert.match(receipt.outcome, /time/);
   });
 
-  it("searches local notes and saves a new one", async () => {
+  it("searches local notes and writes a vault note", async () => {
     const root = await makeRoot();
+    await mkdir(path.join(root, "vault"), { recursive: true });
+    await writeFile(path.join(root, "vault", "Preferences.md"), "# Preferences\n\n- Notes live here.\n", "utf8");
     const found = await executeTool(
       { tool: "notes.recall", input: { query: "science fair" } },
       root,
@@ -80,17 +82,18 @@ describe("executeTool", () => {
     assert.match(found.outcome, /plants grow/);
 
     const kept = await executeTool(
-      { tool: "notes.keep", input: { text: "Buy poster board" } },
+      { tool: "notes.keep", input: { text: "I like quiet reminders" } },
       root,
+      { approved: true },
     );
     assert.equal(kept.status, "done");
-    assert.match(kept.outcome, /Saved a note/);
-
-    const again = await executeTool(
-      { tool: "notes.recall", input: { query: "poster board" } },
-      root,
-    );
-    assert.match(again.outcome, /poster board/i);
+    assert.equal(kept.input.file, "Preferences.md");
+    assert.equal(kept.input.text, undefined);
+    assert.match(kept.outcome, /Wrote Preferences\.md/);
+    assert.match(kept.outcome, /what changed/i);
+    assert.doesNotMatch(kept.outcome, /quiet reminders/);
+    const saved = await readFile(path.join(root, "vault", "Preferences.md"), "utf8");
+    assert.match(saved, /I like quiet reminders/);
   });
 
   it("stubs a browser open and does not claim the page loaded", async () => {

@@ -331,8 +331,8 @@ html[data-boot="done"] .boot-screen {
 .optic-frame {
   position: relative;
   display: grid;
-  width: min(62vmin, 520px);
-  height: min(62vmin, 520px);
+  width: min(72vmin, 58vh, 560px);
+  height: min(72vmin, 58vh, 560px);
   place-items: center;
 }
 
@@ -555,20 +555,39 @@ html[data-boot="done"] .boot-screen {
 
 .talk-drawer {
   display: flex;
-  flex: none;
+  flex: 0 0 auto;
   flex-direction: column;
   min-height: 0;
-  max-height: 34%;
-  margin: 0.35rem 0.7rem max(0.7rem, env(safe-area-inset-bottom));
+  max-height: 6.6rem;
+  margin: 0 0.55rem max(0.45rem, env(safe-area-inset-bottom));
   border: 1px solid rgba(73, 212, 255, 0.28);
   background: rgba(4, 10, 16, 0.9);
 }
 
+.talk-drawer[data-open="true"] {
+  max-height: min(28vh, 14rem);
+}
+
 .talk-bar {
   display: flex;
+  flex: none;
+  flex-wrap: nowrap;
   align-items: center;
-  gap: 0.55rem;
-  padding: 0.45rem 0.55rem;
+  gap: 0.45rem;
+  padding: 0.4rem 0.45rem;
+}
+
+.voice-line {
+  max-height: 1.35rem;
+  overflow: hidden;
+  padding: 0 0.7rem 0.28rem;
+}
+
+.voice-line p {
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .talk-toggle {
@@ -613,14 +632,21 @@ html[data-boot="done"] .boot-screen {
   text-transform: uppercase;
 }
 
+.comms-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.35rem;
+}
+
 .talk-log {
   min-height: 0;
-  max-height: min(28vh, 16rem);
-  flex: none;
+  max-height: min(18vh, 9rem);
+  flex: 1 1 auto;
   overflow-y: auto;
   border-bottom: 1px solid rgba(73, 212, 255, 0.16);
   padding-top: 0.35rem;
-  padding-bottom: 0.85rem;
+  padding-bottom: 0.7rem;
 }
 
 .talk-list {
@@ -704,12 +730,22 @@ html[data-boot="done"] .boot-screen {
   margin-top: 0.7rem;
 }
 
+.brief-card ul {
+  margin: 0.35rem 0 0;
+  padding-left: 1.15rem;
+}
+
+.brief-card li + li {
+  margin-top: 0.28rem;
+}
+
 .composer {
   display: flex;
   min-width: 0;
-  flex: 1;
+  flex: 1 1 auto;
+  flex-wrap: nowrap;
   align-items: center;
-  gap: 0.5rem;
+  gap: 0.4rem;
   padding-top: 0;
   padding-bottom: 0;
 }
@@ -867,12 +903,9 @@ html[data-boot="done"] .boot-screen {
     border-left: none;
   }
 
-  .talk-bar {
-    flex-wrap: wrap;
-  }
-
+  .talk-bar,
   .composer {
-    flex: 1 1 100%;
+    flex-wrap: nowrap;
   }
 
   .status-bar .status-note {

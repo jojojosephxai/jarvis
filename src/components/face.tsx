@@ -7,23 +7,26 @@ import { NoteGraph } from "@/components/note-graph";
 import { PlanCard } from "@/components/plan-card";
 import { ReceiptCard } from "@/components/receipt-card";
 import { orbLabel, Reactor, type OrbMode } from "@/components/reactor";
+import { useVoice } from "@/components/use-voice";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { VoiceButtons, VoiceStatus } from "@/components/voice-controls";
 import { makeId } from "@/lib/ids";
 import {
   isHandPlan,
+  isMorningBrief,
   isReceipt,
   type CalendarEvent,
   type ChatResponse,
   type HandPlan,
+  type MorningBrief,
   type Receipt,
 } from "@/lib/types";
 import { FACE_VIEWS, parseViewIntent, viewLabel, type FaceView } from "@/lib/view-intent";
 
 const BOOT_KEY = "jarvis-boot";
 
-const STUB_OUTCOME =
-  "Brain is not wired yet. Voice is not live. Your words stayed on this screen. Nothing was answered, sent, or saved.";
+type BrainLabel = "Vault" | "grok-4.7" | "Brain wiring";
 
 function markBootDone() {
   try {
@@ -36,12 +39,13 @@ function markBootDone() {
 
 type LogItem =
   | { kind: "you"; id: string; text: string; at: string }
-  | { kind: "stub"; id: string; heard: string; at: string; view: FaceView | null }
-  | { kind: "hand"; id: string; at: string; reply: string; plan?: HandPlan; receipts: Receipt[] };
+  | { kind: "stub"; id: string; heard: string; at: string; view: FaceView }
+  | { kind: "answer"; id: string; text: string; notice?: string; at: string; failed?: boolean }
+  | { kind: "hand"; id: string; at: string; reply: string; plan?: HandPlan; receipts: Receipt[] }
+  | { kind: "brief"; id: string; at: string; brief: MorningBrief };
 
-function stubOutcome(view: FaceView | null): string {
-  const lead = view ? `View is now ${viewLabel(view)}. ` : "";
-  return `${lead}${STUB_OUTCOME}`;
+function stubOutcome(view: FaceView): string {
+  return `View is now ${viewLabel(view)}. That change stays on this screen.`;
 }
 
 function formatStamp(iso: string): string {
@@ -61,11 +65,18 @@ export function Face() {
   const [talkOpen, setTalkOpen] = useState(false);
   const [booting, setBooting] = useState(true);
   const [pending, setPending] = useState(false);
+  const [brainLabel, setBrainLabel] = useState<BrainLabel>("Vault");
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const endRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const bootTimer = useRef<number | null>(null);
   const ackTimer = useRef<number | null>(null);
+  const pendingRef = useRef(false);
+  const speakingRef = useRef(false);
+  const voice = useVoice((active) => {
+    speakingRef.current = active;
+    setOrb(active ? "ack" : "standby");
+  });
 
   useEffect(() => {
     const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -79,6 +90,29 @@ export function Face() {
     return () => {
       if (bootTimer.current !== null) window.clearTimeout(bootTimer.current);
       if (ackTimer.current !== null) window.clearTimeout(ackTimer.current);
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/status")
+      .then((response) => response.json())
+      .then((payload: unknown) => {
+        if (cancelled) return;
+        if (!payload || typeof payload !== "object") {
+          setBrainLabel("Brain wiring");
+          return;
+        }
+        const mode = (payload as { mode?: unknown }).mode;
+        if (mode === "grok") setBrainLabel("grok-4.7");
+        else if (mode === "demo") setBrainLabel("Vault");
+        else setBrainLabel("Brain wiring");
+      })
+      .catch(() => {
+        if (!cancelled) setBrainLabel("Brain wiring");
+      });
+    return () => {
+      cancelled = true;
     };
   }, []);
 
@@ -96,6 +130,7 @@ export function Face() {
   }, [items]);
 
   function pulseOrb() {
+    if (speakingRef.current) return;
     setOrb("ack");
     if (ackTimer.current !== null) window.clearTimeout(ackTimer.current);
     ackTimer.current = window.setTimeout(() => setOrb("standby"), 900);
@@ -104,7 +139,8 @@ export function Face() {
 
   async function send(text: string) {
     const trimmed = text.trim();
-    if (!trimmed || pending) return;
+    if (!trimmed || pendingRef.current) return;
+    voice.stop();
     const view = parseViewIntent(trimmed);
     const at = new Date().toISOString();
     setTalkOpen(true);
@@ -124,6 +160,7 @@ export function Face() {
 
     setItems((current) => [...current, { kind: "you" as const, id: makeId("you"), text: trimmed, at }].slice(-40));
     setDraft("");
+    pendingRef.current = true;
     setPending(true);
     setOrb("ack");
     try {
@@ -133,9 +170,41 @@ export function Face() {
         body: JSON.stringify({ messages: [{ role: "user", content: trimmed }] }),
       });
       const payload: unknown = await response.json();
-      if (!response.ok || !isChatResponse(payload) || !isHandsTurn(payload)) {
+      if (!response.ok || !isChatResponse(payload)) {
+        const error =
+          payload && typeof payload === "object" && typeof (payload as { error?: unknown }).error === "string"
+            ? (payload as { error: string }).error
+            : "Brain wiring: the brain did not answer. Nothing was invented.";
         setItems((current) =>
-          [...current, { kind: "stub" as const, id: makeId("stub"), heard: trimmed, at, view: null }].slice(-40),
+          [
+            ...current,
+            { kind: "answer" as const, id: makeId("ans"), text: error, at, failed: true },
+          ].slice(-40),
+        );
+        return;
+      }
+      if (isHandsTurn(payload)) {
+        setItems((current) =>
+          [
+            ...current,
+            {
+              kind: "hand" as const,
+              id: makeId("hand"),
+              at,
+              reply: payload.reply,
+              plan: payload.plan,
+              receipts: payload.receipts,
+            },
+          ].slice(-40),
+        );
+        if (touchesCalendar(payload.plan?.tool, payload.receipts)) void loadCalendar(setEvents);
+        await voice.speak(payload.reply);
+        return;
+      }
+      const brief = payload.brief;
+      if (brief && isMorningBrief(brief)) {
+        setItems((current) =>
+          [...current, { kind: "brief" as const, id: makeId("brief"), at, brief }].slice(-40),
         );
         return;
       }
@@ -143,28 +212,84 @@ export function Face() {
         [
           ...current,
           {
-            kind: "hand" as const,
-            id: makeId("hand"),
+            kind: "answer" as const,
+            id: makeId("ans"),
+            text: payload.reply,
+            notice: payload.notice,
             at,
-            reply: payload.reply,
-            plan: payload.plan,
-            receipts: payload.receipts,
           },
         ].slice(-40),
       );
-      if (touchesCalendar(payload.plan?.tool, payload.receipts)) void loadCalendar(setEvents);
+      await voice.speak(payload.reply);
     } catch {
       setItems((current) =>
-        [...current, { kind: "stub" as const, id: makeId("stub"), heard: trimmed, at, view: null }].slice(-40),
+        [
+          ...current,
+          {
+            kind: "answer" as const,
+            id: makeId("ans"),
+            text: "Brain wiring: I couldn't reach the brain. Check that the server is running, then try again.",
+            at,
+            failed: true,
+          },
+        ].slice(-40),
       );
     } finally {
+      pendingRef.current = false;
+      setPending(false);
+      pulseOrb();
+    }
+  }
+
+  async function runBrief() {
+    if (pendingRef.current) return;
+    pendingRef.current = true;
+    setTalkOpen(true);
+    const at = new Date().toISOString();
+    setItems((current) =>
+      [...current, { kind: "you" as const, id: makeId("you"), text: "Morning brief", at }].slice(-40),
+    );
+    setPending(true);
+    setOrb("ack");
+    try {
+      const response = await fetch("/api/brief");
+      const payload: unknown = await response.json();
+      if (!response.ok || !isMorningBrief(payload)) {
+        const error =
+          payload && typeof payload === "object" && typeof (payload as { error?: unknown }).error === "string"
+            ? (payload as { error: string }).error
+            : "The morning brief did not load. Nothing was invented from the calendar or the vault.";
+        setItems((current) =>
+          [...current, { kind: "answer" as const, id: makeId("ans"), text: error, at, failed: true }].slice(-40),
+        );
+        return;
+      }
+      setItems((current) =>
+        [...current, { kind: "brief" as const, id: makeId("brief"), at, brief: payload }].slice(-40),
+      );
+    } catch {
+      setItems((current) =>
+        [
+          ...current,
+          {
+            kind: "answer" as const,
+            id: makeId("ans"),
+            text: "The morning brief did not load. Check that the server is running, then try again. Nothing was invented.",
+            at,
+            failed: true,
+          },
+        ].slice(-40),
+      );
+    } finally {
+      pendingRef.current = false;
       setPending(false);
       pulseOrb();
     }
   }
 
   async function decide(itemId: string, plan: HandPlan, decision: "yes" | "no") {
-    if (plan.state !== "waiting" || plan.gate !== "confirm" || pending) return;
+    if (plan.state !== "waiting" || plan.gate !== "confirm" || pendingRef.current) return;
+    pendingRef.current = true;
     setPending(true);
     setOrb("ack");
     try {
@@ -183,9 +308,11 @@ export function Face() {
         ),
       );
       if (touchesCalendar(payload.plan.tool, payload.receipts)) void loadCalendar(setEvents);
+      await voice.speak(payload.reply);
     } catch {
       // The plan stays waiting so it can be tried again.
     } finally {
+      pendingRef.current = false;
       setPending(false);
       pulseOrb();
     }
@@ -230,19 +357,18 @@ export function Face() {
           <div>
             <dt>Brain</dt>
             <dd>
-              <span className="lamp" />
-              Not wired
+              <span className={brainLabel === "Brain wiring" ? "lamp" : "lamp lamp-on"} />
+              {brainLabel}
             </dd>
           </div>
           <div>
             <dt>Voice</dt>
             <dd>
-              <span className="lamp" />
-              Not live
+              <span className={voice.mouth === "azure" || voice.mouth === "browser" ? "lamp lamp-on" : "lamp"} />
+              {voiceLamp(voice.mouth)}
             </dd>
           </div>
         </dl>
-        <p className="status-note">Brain and voice are off. Hands can still show a plan.</p>
       </div>
       <section className="talk-drawer" data-open={talkOpen ? "true" : "false"} aria-label="Talk">
         {talkOpen ? (
@@ -250,13 +376,32 @@ export function Face() {
             <div className="comms-head">
               <div className="comms-title">
                 <h2>Talk</h2>
-                <p>Stub</p>
+                <p>{pending ? "Reading" : "Vault"}</p>
               </div>
-              {items.length > 0 ? (
-                <Button type="button" variant="ghost" className="h-11 px-3" onClick={() => setItems([])}>
-                  Clear
+              <div className="comms-actions">
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="h-11 rounded-none px-3"
+                  disabled={pending}
+                  onClick={() => void runBrief()}
+                >
+                  Morning brief
                 </Button>
-              ) : null}
+                {items.length > 0 ? (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    className="h-11 px-3"
+                    onClick={() => {
+                      voice.stop();
+                      setItems([]);
+                    }}
+                  >
+                    Clear
+                  </Button>
+                ) : null}
+              </div>
             </div>
             {events.length > 0 ? (
               <div className="stub-receipt" style={{ marginBottom: "0.85rem" }}>
@@ -272,7 +417,7 @@ export function Face() {
             ) : null}
             {items.length === 0 ? (
               <p className="empty-talk">
-                Nothing said yet. The orb stays in the middle. Type a calendar line or a link to see a plan and a receipt. Other words stay on this screen. Nothing is answered.
+                Ask about the notes, or press Morning brief. The orb stays in the middle. This strip only holds the words.
               </p>
             ) : (
               <div className="talk-list" aria-live="polite">
@@ -300,14 +445,13 @@ export function Face() {
             onClick={() => setTalkOpen((open) => !open)}
           >
             Talk
-            <span className="talk-stub">Stub</span>
             {items.length > 0 ? <span className="talk-count">{items.length}</span> : null}
           </Button>
           <form
             className="composer"
             onSubmit={(event) => {
               event.preventDefault();
-              send(draft);
+              void send(draft);
             }}
           >
             <label className="sr-only" htmlFor="talk">
@@ -324,6 +468,23 @@ export function Face() {
               className="h-12 min-w-0 flex-1 rounded-none border-border bg-card px-3 text-base md:text-base"
               onChange={(event) => setDraft(event.target.value)}
               onFocus={() => inputRef.current?.scrollIntoView({ block: "nearest" })}
+              disabled={pending}
+            />
+            <VoiceButtons
+              listening={voice.listening}
+              pending={pending}
+              onMic={() => {
+                voice.pressMic((text, isFinal) => {
+                  if (isFinal) {
+                    void send(text);
+                    return;
+                  }
+                  setDraft(text);
+                });
+              }}
+              onSpeak={() => {
+                void voice.speak(lastSpoken(items));
+              }}
             />
             <Button
               type="submit"
@@ -334,9 +495,36 @@ export function Face() {
             </Button>
           </form>
         </div>
+        <div className="voice-line">
+          <VoiceStatus line={voice.line} notice={voice.notice} mouth={voice.mouth} />
+        </div>
       </section>
     </div>
   );
+}
+
+function lastSpoken(items: LogItem[]): string {
+  for (const item of [...items].reverse()) {
+    if (item.kind === "brief" && item.brief.reply.trim()) return item.brief.reply;
+    if (item.kind === "hand" && item.reply.trim()) return item.reply;
+    if (item.kind === "answer" && !item.failed && item.text.trim()) return item.text;
+  }
+  return "";
+}
+
+function voiceLamp(mouth: string): string {
+  switch (mouth) {
+    case "unknown":
+      return "Checking";
+    case "azure":
+      return "British";
+    case "browser":
+      return "This computer";
+    case "not-live":
+      return "Not live";
+    default:
+      return "Not live";
+  }
 }
 
 function OpticStage({ view, orb }: { view: FaceView; orb: OrbMode }) {
@@ -385,27 +573,34 @@ function LogItemView({
       return (
         <article className="stub-receipt">
           <div className="stub-head">
-            <p>Stub receipt</p>
-            <p>Not live</p>
+            <p>View</p>
+            <p>This screen</p>
           </div>
-          <h3>{item.view ? "face.view" : "face.hear"}</h3>
-          <p className="stub-lead">{item.view ? "View changed on this screen only." : "Heard on this screen only."}</p>
+          <h3>face.view</h3>
+          <p className="stub-lead">View changed on this screen only.</p>
           <dl>
             <div>
               <dt>You said</dt>
               <dd>{item.heard}</dd>
             </div>
-            {item.view ? (
-              <div>
-                <dt>View</dt>
-                <dd>{viewLabel(item.view)}</dd>
-              </div>
-            ) : null}
+            <div>
+              <dt>View</dt>
+              <dd>{viewLabel(item.view)}</dd>
+            </div>
           </dl>
           <p className="stub-outcome">{stubOutcome(item.view)}</p>
           <time dateTime={item.at}>{formatStamp(item.at)}</time>
         </article>
       );
+    case "answer":
+      return (
+        <div className="talk-list">
+          <p className="line-text">{item.text}</p>
+          {item.notice ? <p className="stub-lead">{item.notice}</p> : null}
+        </div>
+      );
+    case "brief":
+      return <BriefCard at={item.at} brief={item.brief} />;
     case "hand":
       return (
         <div className="talk-list">
@@ -427,6 +622,60 @@ function LogItemView({
       return neverItem;
     }
   }
+}
+
+function BriefCard({ brief, at }: { brief: MorningBrief; at: string }) {
+  return (
+    <article className="stub-receipt brief-card">
+      <div className="stub-head">
+        <p>Morning brief</p>
+        <p>{brief.heading}</p>
+      </div>
+      <h3>daily.brief</h3>
+      <p className="stub-lead">Demo calendar</p>
+      <p className="stub-outcome">{brief.calendarNote}</p>
+      {brief.events.length > 0 ? (
+        <ul>
+          {brief.events.map((event, index) => (
+            <li key={`${event.title}-${event.when}-${index}`}>
+              {event.title} — {event.when}
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="stub-lead">No events are listed.</p>
+      )}
+      <p className="stub-lead">Vault priorities</p>
+      <p className="stub-outcome">{brief.vaultNote}</p>
+      {brief.priorities.length > 0 ? (
+        <ul>
+          {brief.priorities.map((item, index) => (
+            <li key={`${item.note}-${index}`}>
+              {item.note}: {item.line}
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="stub-lead">No priority lines are listed.</p>
+      )}
+      {brief.gaps.length > 0 ? (
+        <>
+          <p className="stub-lead">Not written down</p>
+          <ul>
+            {brief.gaps.map((gap, index) => (
+              <li key={`${gap.note}-${gap.field}-${index}`}>
+                {gap.note}: {gap.field}
+              </li>
+            ))}
+          </ul>
+        </>
+      ) : null}
+      <p className="stub-outcome">{brief.mail}</p>
+      {brief.checked.length > 0 ? <p className="stub-lead">Notes checked: {brief.checked.join(", ")}.</p> : null}
+      {brief.escalate ? <p className="stub-lead">{brief.escalate}</p> : null}
+      <time dateTime={at}>{formatStamp(at)}</time>
+    </article>
+  );
 }
 
 function isChatResponse(value: unknown): value is ChatResponse {

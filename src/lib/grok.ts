@@ -1,5 +1,12 @@
 import type { BrainMode, ChatMessageInput } from "./types";
 
+const PHRASE_PROMPT = `You are Jarvis. You may only use the note text in the user message.
+Every fact must appear in those notes. Cite the note title in parentheses, like (School).
+If the notes do not say it, reply exactly: I don't have that in the vault notes.
+Do not add facts. Do not mention email, messages, or overnight unless the notes do.
+Do not call tools. Do not output JSON. Short sentences. No emoji.
+Stay on words from the notes. Extra words get the reply thrown away.`;
+
 const SYSTEM_PROMPT = `You are Jarvis, a calm personal assistant speaking in a quiet room.
 Use short, clear sentences. No emoji. No bullet lists unless the user asks for a list.
 
@@ -15,7 +22,7 @@ You may request exactly one tool by replying with only a JSON object and no othe
 calendar.write stores an event on a demo calendar on this computer. It does not sync anywhere.
 calendar.list reads that same demo calendar.
 notes.recall searches local markdown notes and, if configured, an Obsidian vault folder. It does not modify a vault.
-notes.keep saves a local note. It does not write into a vault.
+notes.keep writes a line into the Obsidian vault. It does not read that note back. A sensitive or large rewrite waits for a yes.
 
 If you do not need a tool, answer in plain sentences. Never claim a tool ran. Never invent a receipt.`;
 
@@ -32,15 +39,17 @@ export function brainMode(): BrainMode {
   return grokConfigured() ? "grok" : "demo";
 }
 
+/** Talk model lock. The API id is grok-4.7. Other ids, including grok-4.3, are not used. */
+export const LOCKED_XAI_MODEL = "grok-4.7";
+
 export function grokModel(): string {
-  return process.env.XAI_MODEL?.trim() || "grok-4.3";
+  return LOCKED_XAI_MODEL;
 }
 
 function reasoningEffort(model: string): string | null {
   const chosen = process.env.XAI_REASONING?.trim();
   if (chosen) return chosen;
-  if (model.startsWith("grok-4.3")) return "none";
-  if (/grok-4\.(5|6|7)/.test(model)) return "low";
+  if (model === LOCKED_XAI_MODEL) return "low";
   return null;
 }
 
@@ -66,25 +75,9 @@ function messageText(content: unknown): string {
     .trim();
 }
 
-export async function grokChat(messages: ChatMessageInput[]): Promise<GrokResult> {
+async function postChat(body: Record<string, unknown>, timeoutMs = 20_000): Promise<GrokResult> {
   const key = process.env.XAI_API_KEY?.trim();
   if (!key) return { ok: false, reason: "no key is set" };
-
-  const model = grokModel();
-  const effort = reasoningEffort(model);
-  const body: Record<string, unknown> = {
-    model,
-    temperature: 0.4,
-    max_tokens: 400,
-    messages: [
-      { role: "system", content: SYSTEM_PROMPT },
-      ...messages.slice(-8).map((message) => ({
-        role: message.role,
-        content: message.content.slice(0, 1500),
-      })),
-    ],
-  };
-  if (effort) body.reasoning_effort = effort;
 
   try {
     const response = await fetch("https://api.x.ai/v1/chat/completions", {
@@ -95,7 +88,7 @@ export async function grokChat(messages: ChatMessageInput[]): Promise<GrokResult
       },
       body: JSON.stringify(body),
       cache: "no-store",
-      signal: AbortSignal.timeout(20_000),
+      signal: AbortSignal.timeout(timeoutMs),
     });
 
     if (!response.ok) return { ok: false, reason: failureReason(response.status) };
@@ -110,6 +103,48 @@ export async function grokChat(messages: ChatMessageInput[]): Promise<GrokResult
     }
     return { ok: false, reason: "the request could not be sent" };
   }
+}
+
+function chatBody(
+  model: string,
+  temperature: number,
+  maxTokens: number,
+  messages: Array<{ role: string; content: string }>,
+): Record<string, unknown> {
+  const body: Record<string, unknown> = {
+    model,
+    max_tokens: maxTokens,
+    messages,
+  };
+  const effort = reasoningEffort(model);
+  if (effort) body.reasoning_effort = effort;
+  if (!effort || effort === "none") body.temperature = temperature;
+  return body;
+}
+
+export async function grokChat(messages: ChatMessageInput[]): Promise<GrokResult> {
+  const model = grokModel();
+  return postChat(
+    chatBody(model, 0.4, 400, [
+      { role: "system", content: SYSTEM_PROMPT },
+      ...messages.slice(-8).map((message) => ({
+        role: message.role,
+        content: message.content.slice(0, 1500),
+      })),
+    ]),
+  );
+}
+
+export async function grokPhraseNotes(question: string, packet: string): Promise<GrokResult> {
+  const model = grokModel();
+  const user = (packet.startsWith("Question:") ? packet : `Question:\n${question}\n\n${packet}`).slice(0, 12000);
+  return postChat(
+    chatBody(model, 0, 350, [
+      { role: "system", content: PHRASE_PROMPT },
+      { role: "user", content: user },
+    ]),
+    45_000,
+  );
 }
 
 function readChoice(payload: unknown): string {

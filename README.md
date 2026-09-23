@@ -2,11 +2,13 @@
 
 Jarvis is a personal assistant you open in a browser. This version is the **Face**: a near-black screen with a cyan energy orb in the middle, and a thin strip at the bottom where you can talk.
 
-The brain and the voice are **not live** for ordinary chat. If you type a normal sentence, the screen keeps your words and shows a stub receipt. It will not answer or speak.
+The **brain** answers from the Obsidian vault only. Each answer names the notes it used. If the notes do not say it, Jarvis says so. It does not invent facts and it does not send email.
 
-**Hands** are live for a few tasks. A calendar save, a link, or a send, spend, or delete shows a **plan** and then a **receipt**. Calendar writes are auto-approved. Send, spend, and delete wait for a yes.
+**Morning brief** reads the demo calendar and the priority lines written in the vault. If the calendar is empty, or a note is blank, the brief says that. It does not invent events or an overnight email, and it does not call Grok.
 
-No account is required. Phone calls are not part of this version.
+**Hands** can save a demo calendar event, show a link stub, or ask before send, spend, and delete. Those show a **plan** and then a **receipt**. Calendar writes are auto-approved. Send, spend, and delete wait for a yes.
+
+**Voice** reads the reply already on screen. It uses this computer's voice, or Sonia (British) when an Azure speech key is set. If neither can speak, it says so. There is no Ring view and no Cube view. No account is required. Phone calls are refused.
 
 ## Try it
 
@@ -20,48 +22,123 @@ npm run dev
 Open [http://localhost:4721](http://localhost:4721).
 
 1. A short boot plays. Press **Skip** if you want the main screen now.
-2. You should see a dark screen and a blue wireframe orb in the middle. It slowly spins, and it grows and shrinks. Under it: Face online, Brain not wired, Voice not live. Talk is a thin strip at the bottom, not the middle of the screen.
-3. Press **Graph**. You should see the notes from the `vault` folder as dots with lines between them, plus a note count and a connection count. Click a dot. A preview opens on the side. The brain still does not answer from it.
-4. Press **Orb** to bring the orb back to the middle. There is no Ring button and no Cube button.
-5. You can also type `graph` or `orb` and press **Send**. The view changes, and the receipt says the brain is still not wired. Press **Talk** if you want to hide that receipt again.
-6. Type anything else, such as `Who are you?`, and press **Send**. Your line shows up in the talk strip, then a stub receipt. There is no chat answer. The orb gets bigger for a moment while it hears you.
+2. You should see a dark screen and a blue wireframe orb in the middle. It spins, and it grows while it is working. Talk is a thin strip at the bottom, not the middle of the screen. Face is online. Brain says **Vault** when no key is set, or **grok-4.7** when a key is set. Voice says **Not live** until a speaker is available, or **This computer** if this browser can speak. **Mic** and **Speak** sit on that strip next to **Send**.
+3. Press **Graph**. You should see the notes from the `vault` folder as dots with lines between them. Click a dot. A preview opens. Press **Orb** to bring the orb back to the middle. There is no Ring button and no Cube button.
+4. Type `graph` or `orb` and press **Send** if you want. That only changes the view. Press **Talk** if you want to hide that line again.
+5. Type this and press **Send**:
 
-A refresh clears those lines. They stay on this screen only.
+   `What grade is Joseph in?`
+
+   The reply quotes the vault and ends with the note names, such as About and School. It says 9th grade. It does not invent a school name.
+
+More questions:
+
+- `What is the science fair project about?` — Goals says the project is how light changes how fast plants grow.
+- `What time is swim practice?` — Swim leaves the time blank, and the reply says that.
+- `Did you email me overnight?` — the notes do not say that. Jarvis says it does not have it. It will not claim an email was sent.
+
+A refresh clears the talk lines. They stay on this screen only.
 
 On a phone using the same Wi-Fi as the computer, the server is open on port **4721**. On Windows, run `ipconfig` in a terminal and look for the IPv4 address, then open `http://that-address:4721` in Safari. If Windows asks about a firewall, allow Node on private networks.
 
 ## Hands
 
-7. Type `Put soccer practice on my calendar tomorrow at 4pm` and press **Send**. The talk strip opens. A plan says **Auto-approved**, then a receipt says the event was saved on the demo calendar on this computer. The event also shows in that strip. The orb stays in the middle.
-8. Type `Open https://example.com` and press **Send**. The receipt status is **stub**. Browser automation is not running, so the page was not opened. The link works only if you click **Open this link yourself**.
-9. Type `Send an email to my coach that practice moved to 5` and press **Send**. Nothing is sent. Press **No, don't** for a declined receipt. Press **Yes, do it** only if you want to try. After a yes, the receipt still says no mail was sent, because no mail hand is connected. Typing yes in the box does not send it.
-10. `Spend $12 on pizza` waits the same way. After a yes, no money is spent.
-11. `Delete soccer practice from my calendar` waits for a yes. **Yes, do it** removes that demo event. **No, don't** leaves it.
+These still work. They are not vault answers. The orb stays in the middle. The talk strip opens just enough to show the plan.
 
-## What this screen does
+1. Type `Put soccer practice on my calendar tomorrow at 4pm` and press **Send**. A plan says **Auto-approved**, then a receipt says the event was saved on the demo calendar on this computer. The event also shows in the talk strip.
+2. Type `Open https://example.com` and press **Send**. The receipt status is **stub**. Browser automation is not running, so the page was not opened. The link works only if you click **Open this link yourself**.
+3. Type `Send an email to my coach that practice moved to 5` and press **Send**. Nothing is sent. Press **No, don't** for a declined receipt. Press **Yes, do it** only if you want to try. After a yes, the receipt still says no mail was sent, because no mail hand is connected. Typing yes in the box does not send it.
+4. `Spend $12 on pizza` waits the same way. After a yes, no money is spent.
+5. `Delete soccer practice from my calendar` waits for a yes. **Yes, do it** removes that demo event. **No, don't** leaves it.
 
-- Dark suit-style HUD
-- **Orb** and **Graph** buttons, or type `orb` / `graph`
-- Thin talk strip
-- Honest stub receipt when you send a normal sentence
-- A plan and a receipt when Hands run
-- A yes/no gate before send, spend, or delete
+## What you see
 
-Graph reads the `vault` folder. It does not create notes and it does not change them. How to open that folder in Obsidian is in [VAULT.md](VAULT.md). A line is drawn when one note links to another with `[[wikilinks]]`, when notes share a tag, or when notes share a folder. Notes with no links still connect to their folder, so the map has wires. It will not draw more than 40 notes. If that folder is missing, the graph says so and draws nothing.
+- The orb or the graph owns the middle
+- **Orb** and **Graph** only. There is no Ring button and no Cube button
+- Talk is a thin strip. Press **Talk** to open the words. It does not take the center
+- Lines on the graph come from folder parents, `[[wikilinks]]`, and shared tags. Notes with no links still connect to their folder. The map will not draw more than 40 notes
+
+## Morning brief
+
+1. Press **Talk**, then **Morning brief**. Or type `morning brief` and press **Send**.
+2. You should see today's date, then two parts: the demo calendar, and priority lines copied from the vault.
+3. With no saved events, the brief says the demo calendar is empty. It does not add a fake practice or a meeting.
+4. The starter vault is thin. You should see the science fair, soccer after school, and the library book due Friday, copied from Goals and School. Swim practice time stays under **Not written down**.
+5. The brief says no mail was read. It will not claim an overnight email.
+6. Grok is not called for the brief. If you want Brain to read a note, ask in the talk box. Example: `What time is swim practice?`
+
+Using the brief on three school days is a habit for later. The button and the command are the part that works now.
+
+## Model
+
+The talk model is locked to xAI **grok-4.7**. Claude is not used. grok-4.3 is not used.
+
+1. Copy `.env.example` to `.env.local`.
+2. Put your key from [console.x.ai](https://console.x.ai) in `XAI_API_KEY`.
+3. Leave `XAI_MODEL` as `grok-4.7`. The server sends that model id even if the line is changed.
+4. Stop the server (Ctrl+C) and run `npm run dev` again.
+5. The Brain line should say **grok-4.7**.
+
+Grok only sees the notes that matched the question. If its wording adds a fact that is not in those notes, Jarvis drops that wording and shows the local reading instead.
+
+With no key, Jarvis still answers by quoting the notes. A missing key does not block you. Hands still run without a key.
+
+The key stays on the server. It is not sent to the browser. Do not commit `.env.local`.
+
+`XAI_REASONING` can be `none`, `low`, `medium`, or `high`. grok-4.7 uses `low` when that line is empty.
+
+## Notes and Obsidian
+
+The vault is the `vault` folder. Open that folder in Obsidian. See [VAULT.md](VAULT.md).
+
+Brain and the graph both read that folder. Set `OBSIDIAN_VAULT_PATH` in `.env.local` if the notes live somewhere else.
+
+You can also tell Jarvis to remember something. That writes a line into this folder. See [WRITEBACK.md](WRITEBACK.md).
+
+1. Type `Remember that I like quiet reminders` and press **Send**.
+2. Open `vault/Preferences.md`. The new line is there. The reply names the file and does not read the note back. It tells you to ask what changed.
+3. Type `what changed` and press **Send**. The reply names `Preferences.md` and the line you saved.
+
+A password or a long rewrite waits for **Yes, do it** before anything is written. Edits you make in Obsidian are not read out on their own. Ask `what changed` when you want that receipt.
+
+If the folder is missing, the reply starts with **Brain wiring** and does not guess. The graph says the folder is missing and draws nothing.
+
+Question answers are not taken from `data/notes`. Those old files are not the vault.
+
+The answer code is `src/lib/grounded-answer.ts` and `src/lib/vault-read.ts`.
 
 The demo calendar is saved in `data/calendar.json` on this computer only. It is not Apple Calendar or Google Calendar.
 
-## What it does not do yet
+## What it does not do
 
-- It does not answer questions
-- It does not speak
+- It does not invent words to speak. **Speak** only reads the reply already on screen, and only when a voice is available.
 - It does not send a real email, even after you press yes
 - It does not spend real money
 - It does not open a live browser
+- It does not invent facts that are not in the vault
 - There is no Ring view and no Cube view
-- It does not edit the vault notes
+- It does not read a vault write back unless you ask `what changed`
 
-Answering is later brain work. A Grok key in `.env.local` does nothing on this screen yet. Hands still run without that key.
+## Voice
+
+**Mic** and **Speak** are on the talk box. They do not choose the words. The brain still writes the reply.
+
+Fallback, in order:
+
+1. **Azure Speech**, if `AZURE_SPEECH_KEY` and `AZURE_SPEECH_REGION` are set. The default voice is **Sonia** (`en-GB-SoniaNeural`), a British neural voice. Ryan and Libby are the other choices (`AZURE_SPEECH_VOICE`). Azure's free F0 tier includes 0.5 million neural characters a month. The key stays on the server. The reply text is sent to Microsoft to make the audio.
+2. **This computer's voice**, through the browser. A British voice is used when the computer has one. If it only has another English voice, the line says so. Nothing is sent off the computer.
+3. **Not live.** If Azure is not set and this browser cannot speak, the line under the box says the speaker is not live. The orb does not pretend to talk.
+
+Listening uses the browser's own speech recognition, set to British English (`en-GB`). Chrome and Edge can do this. The mic audio is not uploaded. If this browser cannot listen, **Mic** says so.
+
+**Speak** reads the last vault answer or Hands reply. If there is nothing to read, it says there is nothing to say. With no Azure key, it tries this computer's voice. If that fails, it says nothing was played.
+
+To try it:
+
+1. Look at the line under the talk box, and at the Voice status lamp.
+2. Press **Mic** in Chrome or Edge, allow the microphone, and ask a question. The words land in the box and send.
+3. Press **Speak** to hear that reply again.
+4. To use Sonia, copy the Azure lines from `.env.example` into `.env.local`, then restart `npm run dev`. If the key is missing or rejected, Jarvis says so.
 
 ## Tests
 

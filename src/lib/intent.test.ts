@@ -42,6 +42,11 @@ describe("parseIntent", () => {
     assert.match(parsed.request.input.text, /library book is due Friday/);
   });
 
+  it("reads a vault receipt request", () => {
+    assert.equal(parseIntent("what changed").kind, "changes");
+    assert.equal(parseIntent("What did you change in my notes?").kind, "changes");
+  });
+
   it("searches notes", () => {
     const parsed = parseIntent("What do my notes say about the science fair?");
     assert.equal(parsed.kind, "tool");

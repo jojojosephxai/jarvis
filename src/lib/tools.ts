@@ -3,12 +3,15 @@ import { addCalendarEvent, listCalendarEvents, removeCalendarEventsByTitle } fro
 import { gateFor } from "./hands-policy";
 import { safeHttpUrl } from "./http-url";
 import { makeId } from "./ids";
-import { keepNote, searchMemory } from "./memory";
+import { searchMemory } from "./memory";
 import type { Receipt, ToolName, ToolRequest } from "./types";
+import { resolveVaultPath } from "./vault-read";
+import { commitVaultWrite } from "./vault-write";
 
 type ToolOutcome = {
   outcome: string;
   status: Receipt["status"];
+  file?: string;
 };
 
 const TOOL_TITLES: Record<ToolName, string> = {
@@ -16,7 +19,7 @@ const TOOL_TITLES: Record<ToolName, string> = {
   "calendar.list": "Read the demo calendar",
   "calendar.delete": "Delete a demo calendar event",
   "notes.recall": "Search notes",
-  "notes.keep": "Save a note",
+  "notes.keep": "Update a vault note",
   "browser.open": "Open a link",
   "browser.task": "Do a web task",
   "message.send": "Send a message",
@@ -200,10 +203,11 @@ function blockedOutcome(tool: ToolName): string {
       return "Stopped. Deleting needs a yes first. I did not delete the event.";
     case "item.delete":
       return "Stopped. Deleting needs a yes first. I did not delete anything.";
+    case "notes.keep":
+      return "Stopped. This write needs a yes first. I did not change the vault.";
     case "calendar.write":
     case "calendar.list":
     case "notes.recall":
-    case "notes.keep":
     case "browser.open":
     case "browser.task":
       return "Stopped. This hand was asked to wait, so nothing ran.";
@@ -215,22 +219,28 @@ function blockedOutcome(tool: ToolName): string {
 async function runKeep(
   input: Record<string, string>,
   root: string,
+  approved: boolean,
+  vaultDir?: string,
 ): Promise<ToolOutcome> {
   const text = clip(input.text, 2000);
   if (!text) {
     return { status: "failed", outcome: "I need the words to save before I can write a note." };
   }
-  await keepNote(text, root);
-  return {
-    status: "done",
-    outcome: "Saved a note on this computer. It was not written into an Obsidian vault.",
-  };
+  const result = await commitVaultWrite(
+    root,
+    vaultDir ?? resolveVaultPath(root),
+    { ...input, text },
+    approved,
+  );
+  return { status: result.status, outcome: result.outcome, file: result.file };
 }
 
 async function runNamed(
   tool: ToolName,
   input: Record<string, string>,
   root: string,
+  approved: boolean,
+  vaultDir?: string,
 ): Promise<ToolOutcome> {
   switch (tool) {
     case "calendar.write":
@@ -242,7 +252,7 @@ async function runNamed(
     case "notes.recall":
       return runRecall(input, root);
     case "notes.keep":
-      return runKeep(input, root);
+      return runKeep(input, root, approved, vaultDir);
     case "browser.open":
       return runBrowserOpen(input);
     case "browser.task":
@@ -258,31 +268,38 @@ async function runNamed(
   }
 }
 
+function receiptFields(tool: ToolName, input: Record<string, string>): Record<string, string> {
+  if (tool !== "notes.keep") return input;
+  const file = input.file?.trim();
+  return file ? { file } : {};
+}
+
 export async function executeTool(
   request: ToolRequest,
   root = process.cwd(),
-  options?: { approved?: boolean },
+  options?: { approved?: boolean; vaultDir?: string },
 ): Promise<Receipt> {
   const at = new Date().toISOString();
   const input = cleanInput(request.input);
-  if (gateFor(request.tool) === "confirm" && options?.approved !== true) {
+  const shown = receiptFields(request.tool, input);
+  if (gateFor(request.tool, input) === "confirm" && options?.approved !== true) {
     return {
       id: makeId("rcp"),
       tool: request.tool,
       title: TOOL_TITLES[request.tool],
-      input,
+      input: shown,
       outcome: blockedOutcome(request.tool),
       status: "blocked",
       at,
     };
   }
   try {
-    const result = await runNamed(request.tool, input, root);
+    const result = await runNamed(request.tool, input, root, options?.approved === true, options?.vaultDir);
     return {
       id: makeId("rcp"),
       tool: request.tool,
       title: TOOL_TITLES[request.tool],
-      input,
+      input: result.file ? { file: result.file } : shown,
       outcome: result.outcome,
       status: result.status,
       at,
@@ -292,7 +309,7 @@ export async function executeTool(
       id: makeId("rcp"),
       tool: request.tool,
       title: TOOL_TITLES[request.tool],
-      input,
+      input: shown,
       outcome: "The tool stopped before it finished.",
       status: "failed",
       at,
