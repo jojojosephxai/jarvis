@@ -1,5 +1,7 @@
 import { assertNever } from "./assert";
-import { addCalendarEvent, listCalendarEvents } from "./calendar-store";
+import { addCalendarEvent, listCalendarEvents, removeCalendarEventsByTitle } from "./calendar-store";
+import { gateFor } from "./hands-policy";
+import { safeHttpUrl } from "./http-url";
 import { makeId } from "./ids";
 import { keepNote, searchMemory } from "./memory";
 import type { Receipt, ToolName, ToolRequest } from "./types";
@@ -12,8 +14,14 @@ type ToolOutcome = {
 const TOOL_TITLES: Record<ToolName, string> = {
   "calendar.write": "Save on the demo calendar",
   "calendar.list": "Read the demo calendar",
+  "calendar.delete": "Delete a demo calendar event",
   "notes.recall": "Search notes",
   "notes.keep": "Save a note",
+  "browser.open": "Open a link",
+  "browser.task": "Do a web task",
+  "message.send": "Send a message",
+  "money.spend": "Spend money",
+  "item.delete": "Delete something",
 };
 
 function clip(value: string | undefined, max: number): string {
@@ -22,10 +30,16 @@ function clip(value: string | undefined, max: number): string {
   return trimmed.slice(0, max).trim();
 }
 
+function fieldMax(key: string): number {
+  if (key === "text" || key === "body" || key === "task") return 2000;
+  if (key === "url") return 500;
+  return 240;
+}
+
 function cleanInput(input: Record<string, string>): Record<string, string> {
   const next: Record<string, string> = {};
   for (const [key, value] of Object.entries(input)) {
-    const clipped = clip(value, key === "text" ? 2000 : 240);
+    const clipped = clip(value, fieldMax(key));
     if (clipped) next[key] = clipped;
   }
   return next;
@@ -49,7 +63,7 @@ async function runCalendarWrite(
   );
   return {
     status: "demo",
-    outcome: `Saved “${event.title}” for ${event.when} on the demo calendar on this computer. Nothing was sent to a real calendar.`,
+    outcome: `Auto-approved. Saved “${event.title}” for ${event.when} on the demo calendar on this computer. Nothing was sent to Apple Calendar or Google Calendar.`,
   };
 }
 
@@ -100,6 +114,104 @@ async function runRecall(
   };
 }
 
+async function runCalendarDelete(
+  input: Record<string, string>,
+  root: string,
+): Promise<ToolOutcome> {
+  const title = clip(input.title, 180);
+  if (!title) {
+    return { status: "failed", outcome: "Tell me which demo calendar event to delete." };
+  }
+  const removed = await removeCalendarEventsByTitle(title, root);
+  if (removed.length === 0) {
+    return {
+      status: "failed",
+      outcome: `No demo calendar event is named “${title}”. I did not delete anything else.`,
+    };
+  }
+  const names = removed.map((event) => `“${event.title}” (${event.when})`).join(", ");
+  return {
+    status: "done",
+    outcome: `Deleted ${removed.length} demo calendar event${removed.length === 1 ? "" : "s"}: ${names}. Only the demo calendar on this computer changed.`,
+  };
+}
+
+async function runBrowserOpen(input: Record<string, string>): Promise<ToolOutcome> {
+  const href = safeHttpUrl(input.url);
+  if (!href) {
+    return {
+      status: "failed",
+      outcome: "I did not open a browser. I need an http or https link, and browser automation is not running.",
+    };
+  }
+  return {
+    status: "stub",
+    outcome: `Browser automation is not running. I did not open a window, load ${href}, or sign in anywhere. Nothing was clicked or submitted. The link is on the plan if you want to open it yourself.`,
+  };
+}
+
+async function runBrowserTask(input: Record<string, string>): Promise<ToolOutcome> {
+  const task = clip(input.task, 400) || "the web task";
+  const href = safeHttpUrl(input.url);
+  const where = href ? ` at ${href}` : "";
+  return {
+    status: "stub",
+    outcome: `Browser automation is not running. I did not do “${task}”${where}. I did not open a page, fill a form, or submit anything.`,
+  };
+}
+
+async function runSend(input: Record<string, string>): Promise<ToolOutcome> {
+  const to = clip(input.to, 120) || "someone";
+  const body = clip(input.body, 500);
+  const lines = [
+    "No mail hand is connected, so I did not send this.",
+    `To: ${to}.`,
+    body ? `Message: ${body}` : "There was no message body.",
+    "Nothing left this computer. Nothing is queued for later, including overnight.",
+  ];
+  return { status: "stub", outcome: lines.join("\n") };
+}
+
+async function runSpend(input: Record<string, string>): Promise<ToolOutcome> {
+  const amount = clip(input.amount, 40) || "any money";
+  const item = clip(input.item, 180);
+  const onItem = item ? ` on ${item}` : "";
+  return {
+    status: "stub",
+    outcome: `No payment hand is connected, so I did not spend ${amount}${onItem}. No card was charged and no order was placed.`,
+  };
+}
+
+async function runItemDelete(input: Record<string, string>): Promise<ToolOutcome> {
+  const target = clip(input.target, 180) || "that";
+  return {
+    status: "stub",
+    outcome: `I do not delete mail, files, or accounts. I did not delete “${target}”. Nothing was removed.`,
+  };
+}
+
+function blockedOutcome(tool: ToolName): string {
+  switch (tool) {
+    case "message.send":
+      return "Stopped. Sending needs a yes first. I did not send a message, and nothing is scheduled.";
+    case "money.spend":
+      return "Stopped. Spending needs a yes first. I did not spend money.";
+    case "calendar.delete":
+      return "Stopped. Deleting needs a yes first. I did not delete the event.";
+    case "item.delete":
+      return "Stopped. Deleting needs a yes first. I did not delete anything.";
+    case "calendar.write":
+    case "calendar.list":
+    case "notes.recall":
+    case "notes.keep":
+    case "browser.open":
+    case "browser.task":
+      return "Stopped. This hand was asked to wait, so nothing ran.";
+    default:
+      return assertNever(tool);
+  }
+}
+
 async function runKeep(
   input: Record<string, string>,
   root: string,
@@ -125,10 +237,22 @@ async function runNamed(
       return runCalendarWrite(input, root);
     case "calendar.list":
       return runCalendarList(root);
+    case "calendar.delete":
+      return runCalendarDelete(input, root);
     case "notes.recall":
       return runRecall(input, root);
     case "notes.keep":
       return runKeep(input, root);
+    case "browser.open":
+      return runBrowserOpen(input);
+    case "browser.task":
+      return runBrowserTask(input);
+    case "message.send":
+      return runSend(input);
+    case "money.spend":
+      return runSpend(input);
+    case "item.delete":
+      return runItemDelete(input);
     default:
       return assertNever(tool);
   }
@@ -137,9 +261,21 @@ async function runNamed(
 export async function executeTool(
   request: ToolRequest,
   root = process.cwd(),
+  options?: { approved?: boolean },
 ): Promise<Receipt> {
   const at = new Date().toISOString();
   const input = cleanInput(request.input);
+  if (gateFor(request.tool) === "confirm" && options?.approved !== true) {
+    return {
+      id: makeId("rcp"),
+      tool: request.tool,
+      title: TOOL_TITLES[request.tool],
+      input,
+      outcome: blockedOutcome(request.tool),
+      status: "blocked",
+      at,
+    };
+  }
   try {
     const result = await runNamed(request.tool, input, root);
     return {

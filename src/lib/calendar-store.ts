@@ -34,10 +34,28 @@ export async function addCalendarEvent(
     createdAt: new Date().toISOString(),
   };
   const next = [event, ...events].slice(0, MAX_EVENTS);
+  await writeEvents(next, root);
+  return event;
+}
+
+export async function removeCalendarEventsByTitle(
+  title: string,
+  root = process.cwd(),
+): Promise<CalendarEvent[]> {
+  const needle = title.trim().toLowerCase();
+  if (!needle) return [];
+  const events = await listCalendarEvents(root);
+  const removed = events.filter((event) => event.title.trim().toLowerCase() === needle);
+  if (removed.length === 0) return [];
+  const kept = events.filter((event) => event.title.trim().toLowerCase() !== needle);
+  await writeEvents(kept, root);
+  return removed;
+}
+
+async function writeEvents(events: CalendarEvent[], root: string): Promise<void> {
   const file = calendarFile(root);
   await fs.mkdir(path.dirname(file), { recursive: true });
-  await fs.writeFile(file, JSON.stringify(next, null, 2), "utf8");
-  return event;
+  await fs.writeFile(file, JSON.stringify(events, null, 2), "utf8");
 }
 
 function isCalendarEvent(value: unknown): value is CalendarEvent {

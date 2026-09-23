@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 
 import { BootScreen } from "@/components/boot-screen";
+import { PlanCard } from "@/components/plan-card";
 import { Presence, presenceLabel } from "@/components/presence";
 import { ReceiptCard } from "@/components/receipt-card";
 import { Button } from "@/components/ui/button";
@@ -15,7 +16,7 @@ import {
   subscribeThread,
   type ThreadEntry,
 } from "@/lib/thread-storage";
-import type { BrainMode, CalendarEvent, ChatResponse, Receipt } from "@/lib/types";
+import { isHandPlan, isReceipt, type BrainMode, type CalendarEvent, type ChatResponse } from "@/lib/types";
 
 type PresenceMode = "idle" | "thinking" | "speaking";
 type ShownMode = BrainMode | "unknown";
@@ -24,24 +25,11 @@ const BOOT_KEY = "jarvis-boot";
 
 const SUGGESTIONS = [
   "Put soccer practice on my calendar tomorrow at 4pm",
+  "Open https://example.com",
+  "Send an email to my coach that practice moved to 5",
   "What do my notes say about the science fair?",
   "What's on my calendar?",
 ];
-
-function isReceipt(value: unknown): value is Receipt {
-  if (!value || typeof value !== "object") return false;
-  const receipt = value as Partial<Receipt>;
-  return (
-    typeof receipt.id === "string" &&
-    typeof receipt.tool === "string" &&
-    typeof receipt.title === "string" &&
-    typeof receipt.outcome === "string" &&
-    typeof receipt.at === "string" &&
-    (receipt.status === "done" || receipt.status === "demo" || receipt.status === "failed") &&
-    !!receipt.input &&
-    typeof receipt.input === "object"
-  );
-}
 
 function isChatResponse(value: unknown): value is ChatResponse {
   if (!value || typeof value !== "object") return false;
@@ -50,7 +38,19 @@ function isChatResponse(value: unknown): value is ChatResponse {
     typeof record.reply === "string" &&
     (record.mode === "grok" || record.mode === "demo") &&
     Array.isArray(record.receipts) &&
-    record.receipts.every(isReceipt)
+    record.receipts.every(isReceipt) &&
+    (record.plan === undefined || isHandPlan(record.plan))
+  );
+}
+
+function isHandResponse(value: unknown): value is Pick<ChatResponse, "reply" | "receipts" | "plan"> {
+  if (!value || typeof value !== "object") return false;
+  const record = value as Partial<ChatResponse> & { receipts?: unknown; plan?: unknown };
+  return (
+    typeof record.reply === "string" &&
+    Array.isArray(record.receipts) &&
+    record.receipts.every(isReceipt) &&
+    isHandPlan(record.plan)
   );
 }
 
@@ -208,6 +208,7 @@ export function Room() {
           text: payload.reply,
           at: new Date().toISOString(),
           receipts: payload.receipts,
+          plan: payload.plan,
           notice: payload.notice,
         },
       ]);
@@ -219,6 +220,59 @@ export function Room() {
       saveThread([
         ...getThreadSnapshot(),
         failedEntry("I couldn't reach the brain. Check that the server is running, then try again."),
+      ]);
+      setPresence("idle");
+    } finally {
+      setPending(false);
+      if (window.matchMedia("(pointer: fine)").matches) inputRef.current?.focus();
+    }
+  }
+
+  async function decide(entryId: string, decision: "yes" | "no") {
+    const entry = getThreadSnapshot().find((item) => item.id === entryId);
+    if (!entry?.plan || entry.plan.state !== "waiting" || entry.plan.gate !== "confirm" || pending) return;
+
+    setPending(true);
+    setPresence("thinking");
+    try {
+      const response = await fetch("/api/hands", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          tool: entry.plan.tool,
+          input: entry.plan.input,
+          decision,
+        }),
+      });
+      const payload: unknown = await response.json();
+      if (!response.ok || !isHandResponse(payload)) {
+        const message = errorText(payload) ?? "The hand hit a problem.";
+        saveThread([...getThreadSnapshot(), failedEntry(message)]);
+        setPresence("idle");
+        return;
+      }
+
+      saveThread(
+        getThreadSnapshot().map((item) =>
+          item.id === entryId
+            ? {
+                ...item,
+                text: payload.reply,
+                receipts: payload.receipts,
+                plan: payload.plan,
+                failed: false,
+              }
+            : item,
+        ),
+      );
+      if (payload.receipts.some((receipt) => receipt.tool.startsWith("calendar."))) {
+        void loadCalendar();
+      }
+      showSpeaking(payload.reply);
+    } catch {
+      saveThread([
+        ...getThreadSnapshot(),
+        failedEntry("I couldn't reach the hands. Check that the server is running, then try again."),
       ]);
       setPresence("idle");
     } finally {
@@ -305,6 +359,19 @@ export function Room() {
                     <p className="turn-label">{entry.role === "user" ? "You" : "Jarvis"}</p>
                     <p className={entry.failed ? "turn-text turn-failed" : "turn-text"}>{entry.text}</p>
                     {entry.notice ? <p className="thread-note">{entry.notice}</p> : null}
+                    {entry.plan ? (
+                      <div className="receipt-stack">
+                        <PlanCard
+                          plan={entry.plan}
+                          pending={pending}
+                          onDecide={
+                            entry.plan.state === "waiting" && entry.plan.gate === "confirm"
+                              ? (choice) => void decide(entry.id, choice)
+                              : undefined
+                          }
+                        />
+                      </div>
+                    ) : null}
                     {entry.receipts.length > 0 ? (
                       <div className="receipt-stack">
                         {entry.receipts.map((receipt) => (

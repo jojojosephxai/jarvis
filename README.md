@@ -4,7 +4,7 @@ Jarvis is a personal assistant you can open in a browser. It has three parts:
 
 - **Face** — the screen. A light comes on, then stays in the room while you talk.
 - **Brain** — the conversation. With no key, a small demo brain answers. With an xAI key, Grok answers.
-- **Hands** — tasks such as saving a calendar event. Every task leaves a **receipt** that says what ran, what went in, and what happened.
+- **Hands** — tasks such as saving a calendar event or opening a link. Every task shows a **plan**, then a **receipt** once it runs. Send, spend, and delete wait for a yes.
 
 No account is required to try it. Phone calls are not part of this version.
 
@@ -25,9 +25,16 @@ Open [http://localhost:4721](http://localhost:4721).
 
    `Put soccer practice on my calendar tomorrow at 4pm`
 
-4. Jarvis replies, a **receipt** appears for `calendar.write`, and the event shows under **Demo calendar**.
+4. Jarvis replies, a **plan** and a **receipt** appear for `calendar.write`, and the event shows under **Demo calendar**. Calendar writes are auto-approved. The receipt says this is the demo calendar, not Apple or Google.
 
-That is the whole loop: face, chat, and one tool receipt. It should take a few minutes.
+That is the whole loop: face, chat, and one tool with a plan and a receipt. It should take a few minutes.
+
+Two more hands:
+
+5. Press **Open https://example.com**, or type it and press **Send**. A plan and a stub receipt appear. Browser automation is not running, so Jarvis does not claim the page opened. The link works only if you click **Open this link yourself**.
+6. Press **Send an email to my coach that practice moved to 5**. Jarvis shows a plan and waits. Nothing is sent until you press **Yes, do it**. After a yes, the receipt still says no mail was sent, because no mail hand is connected. **No, don't** leaves a declined receipt and sends nothing. Typing yes in the box does not send it.
+
+Spend and delete wait the same way. Try `Spend $12 on pizza` or `Delete soccer practice from my calendar`. A delete removes a demo event only after **Yes, do it**.
 
 Two more things to try:
 
@@ -42,7 +49,9 @@ Each one leaves its own receipt. `Remember that the library book is due Friday` 
 - Demo replies
 - Demo calendar (saved in `data/calendar.json` on this computer only)
 - Searching the notes in `data/notes`, and saving new notes in `data/user-notes`
-- A receipt for every tool
+- A plan for every tool, and a receipt once it runs
+- Browser link and web-task stubs (they do not pretend a browser ran)
+- A yes/no gate before send, spend, or delete
 
 The demo calendar is not Google, Apple, or any other real calendar. Nothing is sent off this computer unless you add a Grok key.
 

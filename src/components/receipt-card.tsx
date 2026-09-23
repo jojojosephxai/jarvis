@@ -1,4 +1,13 @@
-import type { Receipt } from "@/lib/types";
+import type { Receipt, ReceiptStatus } from "@/lib/types";
+
+const STATUS_COLOR: Record<ReceiptStatus, string> = {
+  done: "var(--moss)",
+  demo: "var(--ember)",
+  failed: "var(--clay)",
+  stub: "var(--ember)",
+  declined: "var(--clay)",
+  blocked: "var(--clay)",
+};
 
 function formatStamp(iso: string): string {
   const date = new Date(iso);
@@ -15,10 +24,12 @@ export function ReceiptCard({ receipt }: { receipt: Receipt }) {
   const rows = Object.entries(receipt.input).filter(([, value]) => value.trim() !== "");
 
   return (
-    <article className="receipt" data-status={receipt.status}>
+    <article className="receipt" data-status={receipt.status} style={{ borderLeftColor: STATUS_COLOR[receipt.status] }}>
       <div className="flex items-baseline justify-between gap-3">
         <p className="text-[0.68rem] tracking-[0.16em] text-muted-foreground uppercase">Receipt</p>
-        <p className="receipt-status">{receipt.status}</p>
+        <p className="receipt-status" style={{ color: STATUS_COLOR[receipt.status] }}>
+          {receipt.status}
+        </p>
       </div>
       <h3 className="mt-2 font-mono text-sm">{receipt.tool}</h3>
       <p className="text-sm text-muted-foreground">{receipt.title}</p>

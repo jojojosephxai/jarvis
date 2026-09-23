@@ -1,4 +1,4 @@
-import type { Receipt } from "./types";
+import { isHandPlan, isReceipt, type HandPlan, type Receipt } from "./types";
 
 export type ThreadEntry = {
   id: string;
@@ -6,6 +6,7 @@ export type ThreadEntry = {
   text: string;
   at: string;
   receipts: Receipt[];
+  plan?: HandPlan;
   notice?: string;
   failed?: boolean;
 };
@@ -17,22 +18,6 @@ let cachedRaw: string | null = null;
 let cached: ThreadEntry[] = EMPTY;
 const listeners = new Set<() => void>();
 
-function isReceipt(value: unknown): value is Receipt {
-  if (!value || typeof value !== "object") return false;
-  const receipt = value as Partial<Receipt>;
-  return (
-    typeof receipt.id === "string" &&
-    typeof receipt.tool === "string" &&
-    typeof receipt.title === "string" &&
-    typeof receipt.outcome === "string" &&
-    typeof receipt.at === "string" &&
-    (receipt.status === "done" || receipt.status === "demo" || receipt.status === "failed") &&
-    !!receipt.input &&
-    typeof receipt.input === "object" &&
-    !Array.isArray(receipt.input)
-  );
-}
-
 function isThreadEntry(value: unknown): value is ThreadEntry {
   if (!value || typeof value !== "object") return false;
   const entry = value as Partial<ThreadEntry>;
@@ -42,7 +27,8 @@ function isThreadEntry(value: unknown): value is ThreadEntry {
     typeof entry.text === "string" &&
     typeof entry.at === "string" &&
     Array.isArray(entry.receipts) &&
-    entry.receipts.every(isReceipt)
+    entry.receipts.every(isReceipt) &&
+    (entry.plan === undefined || isHandPlan(entry.plan))
   );
 }
 
