@@ -67,6 +67,27 @@ Later, a folder of Obsidian markdown can be searched too. Set `OBSIDIAN_VAULT_PA
 
 The memory code is in `src/lib/memory.ts`. Local notes and the optional vault folder go through the same search.
 
+## Voice
+
+The mic and the speaker do not choose the words. The brain still writes the reply. Voice only listens and reads that reply out loud.
+
+Fallback, in order:
+
+1. **Azure Speech**, if `AZURE_SPEECH_KEY` and `AZURE_SPEECH_REGION` are set. The default voice is **Sonia** (`en-GB-SoniaNeural`), a British neural voice. Ryan and Libby are the other built-in choices (`AZURE_SPEECH_VOICE`). Azure's free F0 tier includes 0.5 million neural characters a month. The key stays on the server. The reply text is sent to Microsoft to make the audio.
+2. **This computer's voice**, through the browser. A British voice is used when the computer has one. If it only has another English voice, Jarvis says so. That voice can sound more robotic. Nothing is sent off the computer.
+3. **Not live.** If Azure is not set and this browser cannot speak, the line under the box says the speaker is not live. The light does not pretend to talk.
+
+Listening uses the browser's own speech recognition, set to British English (`en-GB`). Chrome and Edge can do this. The mic audio is not uploaded to Jarvis. If this browser cannot listen, **Mic** explains that, and you type instead.
+
+With no Azure key, **Speak** still tries the computer's voice. If that fails, the message says nothing was played.
+
+To try it:
+
+1. Open the app and look at the line under the message box.
+2. Press **Mic** (Chrome or Edge). Allow the microphone, say a question, and wait. The words should land in the box and send.
+3. Press **Speak** to hear the last reply again.
+4. If you add the Azure key, restart `npm run dev`. The line should name Sonia, Ryan, or Libby. If the key is missing or rejected, Jarvis says so instead of pretending.
+
 ## Phone calls
 
 Jarvis does not place phone calls. If you ask it to call someone, it refuses and does not run a tool.

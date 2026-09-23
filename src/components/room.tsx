@@ -5,8 +5,10 @@ import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { BootScreen } from "@/components/boot-screen";
 import { Presence, presenceLabel } from "@/components/presence";
 import { ReceiptCard } from "@/components/receipt-card";
+import { useVoice } from "@/components/use-voice";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { VoiceButtons, VoiceStatus } from "@/components/voice-controls";
 import { makeId } from "@/lib/ids";
 import {
   getThreadServerSnapshot,
@@ -92,8 +94,15 @@ export function Room() {
   const [booting, setBooting] = useState(true);
   const endRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
-  const speakTimer = useRef<number | null>(null);
   const bootTimer = useRef<number | null>(null);
+  const pendingRef = useRef(false);
+  const turnRef = useRef(0);
+  const voice = useVoice((active) => {
+    setPresence((current) => {
+      if (active) return "speaking";
+      return current === "speaking" ? "idle" : current;
+    });
+  });
 
   useEffect(() => {
     const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -110,12 +119,6 @@ export function Room() {
     endRef.current?.scrollIntoView({ block: "end" });
   }, [items, pending, events.length]);
 
-  useEffect(() => {
-    return () => {
-      if (speakTimer.current !== null) window.clearTimeout(speakTimer.current);
-    };
-  }, []);
-
   function finishBoot() {
     if (bootTimer.current !== null) {
       window.clearTimeout(bootTimer.current);
@@ -128,13 +131,6 @@ export function Room() {
       // Session storage can be blocked. The boot still ends.
     }
     setBooting(false);
-  }
-
-  function showSpeaking(text: string) {
-    if (speakTimer.current !== null) window.clearTimeout(speakTimer.current);
-    setPresence("speaking");
-    const ms = Math.min(6000, Math.max(1200, text.length * 36));
-    speakTimer.current = window.setTimeout(() => setPresence("idle"), ms);
   }
 
   async function loadStatus() {
@@ -165,7 +161,11 @@ export function Room() {
 
   async function send(text: string) {
     const trimmed = text.trim();
-    if (!trimmed || pending) return;
+    if (!trimmed || pendingRef.current) return;
+
+    const turn = ++turnRef.current;
+    pendingRef.current = true;
+    voice.stop();
 
     const userEntry: ThreadEntry = {
       id: makeId("msg"),
@@ -214,7 +214,10 @@ export function Room() {
       if (payload.receipts.some((receipt) => receipt.tool.startsWith("calendar."))) {
         void loadCalendar();
       }
-      showSpeaking(payload.reply);
+      if (turn !== turnRef.current) return;
+      const played = await voice.speak(payload.reply);
+      if (turn !== turnRef.current) return;
+      if (!played) setPresence("idle");
     } catch {
       saveThread([
         ...getThreadSnapshot(),
@@ -222,14 +225,21 @@ export function Room() {
       ]);
       setPresence("idle");
     } finally {
+      pendingRef.current = false;
       setPending(false);
       if (window.matchMedia("(pointer: fine)").matches) inputRef.current?.focus();
     }
   }
 
   function clearChat() {
+    voice.stop();
     saveThread([]);
     setPresence("idle");
+  }
+
+  function speakLast() {
+    const last = [...items].reverse().find((entry) => entry.role === "assistant" && !entry.failed && entry.text.trim());
+    void voice.speak(last?.text ?? "");
   }
 
   return (
@@ -321,6 +331,7 @@ export function Room() {
           </div>
           <form
             className="composer"
+            style={{ flexWrap: "wrap" }}
             onSubmit={(event) => {
               event.preventDefault();
               void send(draft);
@@ -340,9 +351,24 @@ export function Room() {
               onChange={(event) => setDraft(event.target.value)}
               disabled={pending}
             />
+            <VoiceButtons
+              listening={voice.listening}
+              pending={pending}
+              onMic={() => {
+                voice.pressMic((text, isFinal) => {
+                  if (isFinal) {
+                    void send(text);
+                    return;
+                  }
+                  setDraft(text);
+                });
+              }}
+              onSpeak={() => speakLast()}
+            />
             <Button type="submit" className="h-12 shrink-0 px-4 text-base" disabled={pending || draft.trim() === ""}>
               Send
             </Button>
+            <VoiceStatus line={voice.line} notice={voice.notice} mouth={voice.mouth} />
           </form>
         </section>
       </div>
