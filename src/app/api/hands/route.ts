@@ -23,9 +23,6 @@ export async function POST(request: Request) {
   if (!isToolName(record.tool)) {
     return Response.json({ error: "That is not a hand I can run." }, { status: 400 });
   }
-  if (gateFor(record.tool) !== "confirm") {
-    return Response.json({ error: "That hand does not wait for a yes." }, { status: 400 });
-  }
 
   const decision = readDecision(record.decision);
   if (!decision) {
@@ -35,6 +32,9 @@ export async function POST(request: Request) {
   const input = record.input ?? {};
   if (!isStringRecord(input)) {
     return Response.json({ error: "The plan inputs were not in the right shape." }, { status: 400 });
+  }
+  if (gateFor(record.tool, input) !== "confirm") {
+    return Response.json({ error: "That hand does not wait for a yes." }, { status: 400 });
   }
 
   try {

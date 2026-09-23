@@ -4,6 +4,7 @@ import { isToolName, type ToolRequest } from "./types";
 export type ParsedTurn =
   | { kind: "tool"; request: ToolRequest }
   | { kind: "refuse-call" }
+  | { kind: "changes" }
   | { kind: "chat" };
 
 const DAY =
@@ -18,7 +19,10 @@ const PHONE_RE =
   /^(?:please\s+)?(?:can you\s+)?(?:place\s+a\s+)?(?:phone\s+call|call|phone|dial|ring)\b/i;
 
 const KEEP_RE =
-  /^(?:please\s+)?(?:remember(?:\s+that)?|note(?:\s+this)?|save(?:\s+a)?\s+note|keep(?:\s+a)?\s+note)\s*[:\-]?\s+(.+)$/i;
+  /^(?:please\s+)?(?:remember(?:\s+this|\s+that)?|don'?t forget(?:\s+that)?|note(?:\s+that|\s+this)?|write(?:\s+this|\s+that)?\s+down|save(?:\s+a)?\s+note|keep(?:\s+a)?\s+note|add(?:\s+this)?\s+to(?:\s+my)?\s+(?:notes|preferences)(?:\s+that)?|update(?:\s+my)?\s+preferences(?:\s+to)?)\s*[:\-]?\s+(.+)$/i;
+
+const CHANGES_RE =
+  /^(?:please\s+)?(?:what(?:'s|\s+is|\s+has)?\s+changed|what\s+changed|what\s+did\s+you\s+(?:change|write|save|update|remember)|what\s+did\s+i\s+(?:change|edit|update)|show(?:\s+me)?\s+what\s+changed)(?:\s+in\s+(?:the\s+|my\s+)?(?:notes|vault|obsidian))?[?.!]*$/i;
 
 const RECALL_RE =
   /^(?:please\s+)?(?:what do my notes say(?:\s+about)?|what(?:'s| is) in my notes(?:\s+about)?|search(?:\s+my)?\s+notes(?:\s+for)?|look(?:\s+it)?\s+up in(?:\s+my)?\s+notes|recall|what did i (?:write|note) about)\b\s*(.*)$/i;
@@ -188,6 +192,7 @@ export function parseIntent(text: string): ParsedTurn {
   if (!clean) return { kind: "chat" };
 
   if (PHONE_RE.test(clean)) return { kind: "refuse-call" };
+  if (CHANGES_RE.test(clean)) return { kind: "changes" };
 
   const keep = KEEP_RE.exec(clean);
   if (keep?.[1]) {

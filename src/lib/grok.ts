@@ -22,7 +22,7 @@ You may request exactly one tool by replying with only a JSON object and no othe
 calendar.write stores an event on a demo calendar on this computer. It does not sync anywhere.
 calendar.list reads that same demo calendar.
 notes.recall searches local markdown notes and, if configured, an Obsidian vault folder. It does not modify a vault.
-notes.keep saves a local note. It does not write into a vault.
+notes.keep writes a line into the Obsidian vault. It does not read that note back. A sensitive or large rewrite waits for a yes.
 
 If you do not need a tool, answer in plain sentences. Never claim a tool ran. Never invent a receipt.`;
 
