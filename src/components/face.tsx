@@ -3,10 +3,12 @@
 import { useEffect, useRef, useState } from "react";
 
 import { BootScreen } from "@/components/boot-screen";
+import { NoteGraph } from "@/components/note-graph";
 import { orbLabel, Reactor, type OrbMode } from "@/components/reactor";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { makeId } from "@/lib/ids";
+import { FACE_VIEWS, parseViewIntent, viewLabel, type FaceView } from "@/lib/view-intent";
 
 const BOOT_KEY = "jarvis-boot";
 
@@ -24,7 +26,29 @@ function markBootDone() {
 
 type LogItem =
   | { kind: "you"; id: string; text: string; at: string }
-  | { kind: "stub"; id: string; heard: string; at: string };
+  | { kind: "stub"; id: string; heard: string; at: string; view: FaceView | null };
+
+function stubOutcome(view: FaceView | null): string {
+  const lead = view ? `View is now ${viewLabel(view)}. ` : "";
+  return `${lead}${STUB_OUTCOME}`;
+}
+
+function stageLabel(view: FaceView, orb: OrbMode): string {
+  switch (view) {
+    case "orb":
+      return orbLabel(orb);
+    case "graph":
+      return "Graph";
+    case "ring":
+      return "Ring later";
+    case "cube":
+      return "Cube later";
+    default: {
+      const neverView: never = view;
+      return neverView;
+    }
+  }
+}
 
 function formatStamp(iso: string): string {
   const date = new Date(iso);
@@ -39,6 +63,7 @@ export function Face() {
   const [items, setItems] = useState<LogItem[]>([]);
   const [draft, setDraft] = useState("");
   const [orb, setOrb] = useState<OrbMode>("standby");
+  const [viewMode, setViewMode] = useState<FaceView>("orb");
   const [booting, setBooting] = useState(true);
   const endRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -75,12 +100,14 @@ export function Face() {
   function send(text: string) {
     const trimmed = text.trim();
     if (!trimmed) return;
+    const view = parseViewIntent(trimmed);
+    if (view) setViewMode(view);
     const at = new Date().toISOString();
     setItems((current) =>
       [
         ...current,
         { kind: "you" as const, id: makeId("you"), text: trimmed, at },
-        { kind: "stub" as const, id: makeId("stub"), heard: trimmed, at },
+        { kind: "stub" as const, id: makeId("stub"), heard: trimmed, at, view },
       ].slice(-40),
     );
     setDraft("");
@@ -102,14 +129,22 @@ export function Face() {
       </header>
       <div className="hud-stage">
         <section className="optic" aria-label="Status">
-          <div className="optic-frame">
-            <span className="tick tick-tl" />
-            <span className="tick tick-tr" />
-            <span className="tick tick-bl" />
-            <span className="tick tick-br" />
-            <Reactor mode={orb} />
+          <div className="view-switch" role="group" aria-label="View">
+            {FACE_VIEWS.map((view) => (
+              <Button
+                key={view}
+                type="button"
+                variant={viewMode === view ? "default" : "outline"}
+                aria-pressed={viewMode === view}
+                className="view-button h-11 rounded-none px-3"
+                onClick={() => setViewMode(view)}
+              >
+                {viewLabel(view)}
+              </Button>
+            ))}
           </div>
-          <p className="orb-state">{orbLabel(orb)}</p>
+          <OpticStage view={viewMode} orb={orb} />
+          <p className="orb-state">{stageLabel(viewMode, orb)}</p>
           <dl className="status-grid">
             <div>
               <dt>Face</dt>
@@ -149,7 +184,9 @@ export function Face() {
           </div>
           <div className="talk-log">
             {items.length === 0 ? (
-              <p className="empty-talk">Nothing said yet. Type below. You will get a receipt, and Jarvis will not answer.</p>
+              <p className="empty-talk">
+                Nothing said yet. Use Orb or Graph above, or type below. You will get a receipt, and Jarvis will not answer.
+              </p>
             ) : (
               <div className="talk-list" aria-live="polite">
                 {items.map((item) => (
@@ -195,6 +232,39 @@ export function Face() {
   );
 }
 
+function OpticStage({ view, orb }: { view: FaceView; orb: OrbMode }) {
+  switch (view) {
+    case "orb":
+      return (
+        <div className="optic-frame">
+          <span className="tick tick-tl" />
+          <span className="tick tick-tr" />
+          <span className="tick tick-bl" />
+          <span className="tick tick-br" />
+          <Reactor mode={orb} />
+        </div>
+      );
+    case "graph":
+      return <NoteGraph />;
+    case "ring":
+    case "cube":
+      return <ViewStub view={view} />;
+    default: {
+      const neverView: never = view;
+      return neverView;
+    }
+  }
+}
+
+function ViewStub({ view }: { view: "ring" | "cube" }) {
+  return (
+    <div className="view-stub">
+      <p>{viewLabel(view)} is not built yet.</p>
+      <p>Orb and Graph are the views that work.</p>
+    </div>
+  );
+}
+
 function LogItemView({ item }: { item: LogItem }) {
   switch (item.kind) {
     case "you":
@@ -212,15 +282,21 @@ function LogItemView({ item }: { item: LogItem }) {
             <p>Stub receipt</p>
             <p>Not live</p>
           </div>
-          <h3>face.hear</h3>
-          <p className="stub-lead">Heard on this screen only.</p>
+          <h3>{item.view ? "face.view" : "face.hear"}</h3>
+          <p className="stub-lead">{item.view ? "View changed on this screen only." : "Heard on this screen only."}</p>
           <dl>
             <div>
               <dt>You said</dt>
               <dd>{item.heard}</dd>
             </div>
+            {item.view ? (
+              <div>
+                <dt>View</dt>
+                <dd>{viewLabel(item.view)}</dd>
+              </div>
+            ) : null}
           </dl>
-          <p className="stub-outcome">{STUB_OUTCOME}</p>
+          <p className="stub-outcome">{stubOutcome(item.view)}</p>
           <time dateTime={item.at}>{formatStamp(item.at)}</time>
         </article>
       );

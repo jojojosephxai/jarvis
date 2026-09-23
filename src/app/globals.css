@@ -207,11 +207,120 @@ html[data-boot="done"] .boot-screen {
 
 .optic {
   display: flex;
-  flex: 0 0 auto;
+  min-height: 0;
+  flex: 0 1 auto;
   flex-direction: column;
   align-items: center;
   gap: 0.55rem;
+  overflow: auto;
   padding: 0.7rem 1rem 0.35rem;
+}
+
+.view-switch {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.4rem;
+  width: 100%;
+}
+
+.view-button {
+  min-width: 4.6rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.view-stub {
+  width: min(100%, 18rem);
+  border: 1px solid rgba(73, 212, 255, 0.28);
+  padding: 1rem 0.9rem;
+  text-align: center;
+}
+
+.view-stub p:last-child {
+  margin-top: 0.35rem;
+  color: var(--muted-foreground);
+}
+
+.graph-panel {
+  width: min(100%, 36rem);
+  border: 1px solid rgba(73, 212, 255, 0.28);
+  background: rgba(4, 12, 18, 0.72);
+  padding: 0.75rem;
+}
+
+.graph-stats {
+  color: #d7f6ff;
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.12em;
+  text-align: center;
+  text-transform: uppercase;
+}
+
+.graph-empty-frame {
+  width: 112px;
+  height: 84px;
+  margin: 0.4rem auto 0.2rem;
+}
+
+.graph-svg {
+  display: block;
+  width: 100%;
+  height: 168px;
+}
+
+.graph-node {
+  cursor: pointer;
+}
+
+.graph-legend {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.7rem;
+  margin-top: 0.35rem;
+  color: var(--muted-foreground);
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.12em;
+  list-style: none;
+  text-transform: uppercase;
+}
+
+.graph-picks {
+  display: flex;
+  max-height: 7.5rem;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-top: 0.55rem;
+  overflow: auto;
+}
+
+.graph-pick {
+  min-height: 2.75rem;
+  border: 1px solid rgba(73, 212, 255, 0.35);
+  background: transparent;
+  padding: 0.35rem 0.6rem;
+  color: var(--foreground);
+  font-size: 0.85rem;
+}
+
+.graph-pick-on {
+  border-color: #7ee7ff;
+  background: rgba(73, 212, 255, 0.14);
+}
+
+.graph-inspector {
+  margin-top: 0.7rem;
+  border: 1px solid rgba(73, 212, 255, 0.32);
+  padding: 0.7rem 0.75rem 0.8rem;
+  text-align: left;
+}
+
+.graph-inspector h3 {
+  margin-top: 0.25rem;
+  font-size: 1rem;
 }
 
 .optic-frame {
@@ -261,6 +370,11 @@ html[data-boot="done"] .boot-screen {
   width: 78%;
   height: 78%;
   place-items: center;
+  animation: orb-breathe 5.2s ease-in-out infinite;
+}
+
+.reactor[data-mode="ack"] {
+  animation-duration: 0.85s;
 }
 
 .reactor-halo,
@@ -277,8 +391,28 @@ html[data-boot="done"] .boot-screen {
   animation: halo-pulse 3.6s ease-in-out infinite;
 }
 
-.reactor-ring {
+.reactor-ring,
+.reactor-wire {
   border-radius: 50%;
+}
+
+.reactor-wire {
+  position: absolute;
+  border: 1px solid rgba(150, 226, 255, 0.78);
+}
+
+.reactor-wire-lat {
+  inset: 22% 0;
+}
+
+.reactor-wire-meridian {
+  inset: 0 22%;
+}
+
+.reactor-wire-tilt {
+  inset: 10%;
+  border-color: rgba(110, 210, 255, 0.55);
+  transform: rotate(58deg) scaleY(0.42);
 }
 
 .reactor-ring-outer {
@@ -385,7 +519,7 @@ html[data-boot="done"] .boot-screen {
 
 .comms {
   display: flex;
-  min-height: 0;
+  min-height: 11rem;
   flex: 1;
   flex-direction: column;
   margin: 0.35rem 0.7rem 0.7rem;
@@ -483,6 +617,10 @@ html[data-boot="done"] .boot-screen {
   margin-top: 0.65rem;
 }
 
+.stub-receipt dl div + div {
+  margin-top: 0.45rem;
+}
+
 .stub-receipt dt {
   color: var(--muted-foreground);
   font-family: var(--font-mono);
@@ -567,6 +705,16 @@ html[data-boot="done"] .boot-screen {
   padding: 0.9rem 1rem 1rem;
 }
 
+@keyframes orb-breathe {
+  0%,
+  100% {
+    transform: scale(0.78);
+  }
+  50% {
+    transform: scale(1);
+  }
+}
+
 @keyframes reactor-spin {
   to {
     transform: rotate(360deg);
@@ -640,6 +788,10 @@ html[data-boot="done"] .boot-screen {
     height: min(38vh, 320px);
   }
 
+  .graph-svg {
+    height: 240px;
+  }
+
   .status-note {
     text-align: center;
   }
@@ -672,6 +824,7 @@ html[data-boot="done"] .boot-screen {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .reactor,
   .reactor-halo,
   .reactor-ring-ticks,
   .reactor-core,
