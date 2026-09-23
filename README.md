@@ -61,20 +61,11 @@ If the key is missing or Grok does not answer, Jarvis says so and uses the demo 
 
 ## Notes and Obsidian
 
-Open the `vault` folder in Obsidian. On Joseph's computer that path is:
+Notes you can search today live in `data/notes`. Notes you save from chat go in `data/user-notes`.
 
-`C:\Users\hosef japosef\Documents\tmp-310a2048b18e7d16\vault`
+Later, a folder of Obsidian markdown can be searched too. Set `OBSIDIAN_VAULT_PATH` in `.env.local` to that folder. Jarvis only reads it. It does not change the vault. If the folder is missing, the receipt says so and local notes are still searched.
 
-1. Open Obsidian.
-2. Choose **Open folder as vault**.
-3. Select the `vault` folder (the folder itself, not a note inside it).
-4. You should see About, Goals, Swim, School, and Preferences.
-
-Steps and the Brain search path are also written in `vault/README.md`.
-
-Notes the demo still searches on its own live in `data/notes`. Notes you save from chat go in `data/user-notes`. To search the Obsidian folder as well, set `OBSIDIAN_VAULT_PATH=vault` in `.env.local` (that value is already in `.env.example`). Jarvis only reads the vault. It does not change those notes. If the folder is missing, the receipt says so and local notes are still searched.
-
-The memory code is in `src/lib/memory.ts`. Local notes and the vault folder go through the same search. A later change (JOS-10) is what makes answers come from the vault.
+The memory code is in `src/lib/memory.ts`. Local notes and the optional vault folder go through the same search.
 
 ## Phone calls
 
