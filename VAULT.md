@@ -12,3 +12,5 @@ On Joseph's computer:
 4. You should see About, Goals, Swim, School, Preferences, and a README.
 
 Full steps and the Brain search path are in `vault/README.md`.
+
+Brain reads this `vault` folder when you ask a question. If `OBSIDIAN_VAULT_PATH` is unset, that folder is the one it uses.

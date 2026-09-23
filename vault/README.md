@@ -26,17 +26,16 @@ Edit any note and save. That is the whole check.
 
 About, School, and Goals repeat the few facts from the old `data/notes` files (9th grade, soccer after school, library book due Friday, science fair on light and plant growth). Swim has no facts yet because none were stored. Preferences only records how this vault is meant to be used.
 
-`data/notes` is still in the project. The current demo search still reads that folder. This `vault` folder is the one to open in Obsidian, and the one Brain should use next.
+`data/notes` is still in the project. Chat answers do not read it. This `vault` folder is the one to open in Obsidian, and the one Brain reads.
 
-## How Brain searches (for JOS-10)
+## How Brain answers
 
-Brain does not read this folder automatically today. The search code is `src/lib/memory.ts`. It works like this:
+Brain answers from this folder. The code is `src/lib/vault-read.ts` and `src/lib/grounded-answer.ts`.
 
-1. It always searches markdown files directly inside `data/notes` and `data/user-notes` (not subfolders).
-2. It also searches an Obsidian folder only when `OBSIDIAN_VAULT_PATH` is set.
-3. That path should be this folder. From the project root, the value is `vault`. On Joseph's PC the full path is `C:\Users\hosef japosef\Documents\tmp-310a2048b18e7d16\vault`.
-4. Inside that folder it reads `.md` files, including subfolders, up to 5 levels deep and up to 250 files. It skips hidden folders (names that start with `.`) and `node_modules`. A file bigger than 300 KB is skipped.
-5. A hit is a note whose title or body contains a word from the question (words of one letter are ignored). The note title is the first `#` heading.
+1. If `OBSIDIAN_VAULT_PATH` is set, that folder is the vault. If it is unset, Brain uses the `vault` folder in the project. On Joseph's PC the full path is `C:\Users\hosef japosef\Documents\tmp-310a2048b18e7d16\vault`.
+2. It reads `.md` files, including subfolders, up to 5 levels deep and up to 250 files. It skips hidden folders (names that start with `.`) and `node_modules`. A file bigger than 300 KB is skipped.
+3. A matching note contains a real word from the question. The reply quotes those lines and names the notes, for example `Notes used: School, Goals.`
+4. If no note says it, the reply says it does not have that, and it lists the notes it checked. It does not fill the gap.
+5. With no model key, that local reading is the whole answer. With an xAI key, Grok may word the same notes. Wording that adds facts is dropped.
 6. Chat does not write into this vault. A saved note still goes to `data/user-notes`.
-
-JOS-10 is the later change that should make answers come from this vault. This file only records the path. It does not change Brain.
+7. If this folder is missing, the reply says **Brain wiring** and does not answer from anywhere else.

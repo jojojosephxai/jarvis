@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start -p 4721 -H 0.0.0.0",
     "lint": "eslint",
-    "test": "tsc -p tsconfig.test.json && node --test .test-dist/lib/intent.test.js .test-dist/lib/tools.test.js .test-dist/lib/view-intent.test.js .test-dist/lib/note-graph.test.js .test-dist/lib/voice/policy.test.js .test-dist/lib/voice/azure.test.js"
+    "test": "tsc -p tsconfig.test.json && node --test .test-dist/lib/intent.test.js .test-dist/lib/tools.test.js .test-dist/lib/grounded-answer.test.js .test-dist/lib/grok-model.test.js .test-dist/lib/view-intent.test.js .test-dist/lib/note-graph.test.js .test-dist/lib/voice/policy.test.js .test-dist/lib/voice/azure.test.js"
   },
   "dependencies": {
     "@base-ui/react": "^1.8.0",

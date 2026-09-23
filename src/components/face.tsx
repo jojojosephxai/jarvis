@@ -24,8 +24,7 @@ import { FACE_VIEWS, parseViewIntent, viewLabel, type FaceView } from "@/lib/vie
 
 const BOOT_KEY = "jarvis-boot";
 
-const STUB_OUTCOME =
-  "Brain is not wired yet. Voice is not live. Your words stayed on this screen. Nothing was answered, sent, or saved.";
+type BrainLabel = "Vault" | "grok-4.7" | "Brain wiring";
 
 function markBootDone() {
   try {
@@ -38,12 +37,12 @@ function markBootDone() {
 
 type LogItem =
   | { kind: "you"; id: string; text: string; at: string }
-  | { kind: "stub"; id: string; heard: string; at: string; view: FaceView | null }
+  | { kind: "stub"; id: string; heard: string; at: string; view: FaceView }
+  | { kind: "answer"; id: string; text: string; notice?: string; at: string; failed?: boolean }
   | { kind: "hand"; id: string; at: string; reply: string; plan?: HandPlan; receipts: Receipt[] };
 
-function stubOutcome(view: FaceView | null): string {
-  const lead = view ? `View is now ${viewLabel(view)}. ` : "";
-  return `${lead}${STUB_OUTCOME}`;
+function stubOutcome(view: FaceView): string {
+  return `View is now ${viewLabel(view)}. That change stays on this screen.`;
 }
 
 function stageLabel(view: FaceView, orb: OrbMode): string {
@@ -79,6 +78,7 @@ export function Face() {
   const [viewMode, setViewMode] = useState<FaceView>("orb");
   const [booting, setBooting] = useState(true);
   const [pending, setPending] = useState(false);
+  const [brainLabel, setBrainLabel] = useState<BrainLabel>("Vault");
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const endRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -103,6 +103,29 @@ export function Face() {
     return () => {
       if (bootTimer.current !== null) window.clearTimeout(bootTimer.current);
       if (ackTimer.current !== null) window.clearTimeout(ackTimer.current);
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/status")
+      .then((response) => response.json())
+      .then((payload: unknown) => {
+        if (cancelled) return;
+        if (!payload || typeof payload !== "object") {
+          setBrainLabel("Brain wiring");
+          return;
+        }
+        const mode = (payload as { mode?: unknown }).mode;
+        if (mode === "grok") setBrainLabel("grok-4.7");
+        else if (mode === "demo") setBrainLabel("Vault");
+        else setBrainLabel("Brain wiring");
+      })
+      .catch(() => {
+        if (!cancelled) setBrainLabel("Brain wiring");
+      });
+    return () => {
+      cancelled = true;
     };
   }, []);
 
@@ -159,30 +182,62 @@ export function Face() {
         body: JSON.stringify({ messages: [{ role: "user", content: trimmed }] }),
       });
       const payload: unknown = await response.json();
-      if (!response.ok || !isChatResponse(payload) || !isHandsTurn(payload)) {
+      if (!response.ok || !isChatResponse(payload)) {
+        const error =
+          payload && typeof payload === "object" && typeof (payload as { error?: unknown }).error === "string"
+            ? (payload as { error: string }).error
+            : "Brain wiring: the brain did not answer. Nothing was invented.";
         setItems((current) =>
-          [...current, { kind: "stub" as const, id: makeId("stub"), heard: trimmed, at, view: null }].slice(-40),
+          [
+            ...current,
+            { kind: "answer" as const, id: makeId("ans"), text: error, at, failed: true },
+          ].slice(-40),
         );
+        return;
+      }
+      if (isHandsTurn(payload)) {
+        setItems((current) =>
+          [
+            ...current,
+            {
+              kind: "hand" as const,
+              id: makeId("hand"),
+              at,
+              reply: payload.reply,
+              plan: payload.plan,
+              receipts: payload.receipts,
+            },
+          ].slice(-40),
+        );
+        if (touchesCalendar(payload.plan?.tool, payload.receipts)) void loadCalendar(setEvents);
+        await voice.speak(payload.reply);
         return;
       }
       setItems((current) =>
         [
           ...current,
           {
-            kind: "hand" as const,
-            id: makeId("hand"),
+            kind: "answer" as const,
+            id: makeId("ans"),
+            text: payload.reply,
+            notice: payload.notice,
             at,
-            reply: payload.reply,
-            plan: payload.plan,
-            receipts: payload.receipts,
           },
         ].slice(-40),
       );
-      if (touchesCalendar(payload.plan?.tool, payload.receipts)) void loadCalendar(setEvents);
       await voice.speak(payload.reply);
     } catch {
       setItems((current) =>
-        [...current, { kind: "stub" as const, id: makeId("stub"), heard: trimmed, at, view: null }].slice(-40),
+        [
+          ...current,
+          {
+            kind: "answer" as const,
+            id: makeId("ans"),
+            text: "Brain wiring: I couldn't reach the brain. Check that the server is running, then try again.",
+            at,
+            failed: true,
+          },
+        ].slice(-40),
       );
     } finally {
       pendingRef.current = false;
@@ -261,8 +316,8 @@ export function Face() {
             <div>
               <dt>Brain</dt>
               <dd>
-                <span className="lamp" />
-                Not wired
+                <span className={brainLabel === "Brain wiring" ? "lamp" : "lamp lamp-on"} />
+                {brainLabel}
               </dd>
             </div>
             <div>
@@ -273,13 +328,15 @@ export function Face() {
               </dd>
             </div>
           </dl>
-          <p className="status-note">Brain and voice are off. Hands can save a demo calendar event, open a link stub, or ask before send, spend, and delete.</p>
+          <p className="status-note">
+            Voice is not live. Questions are answered from the vault notes. Hands can still save a demo calendar event, or ask before send, spend, and delete.
+          </p>
         </section>
         <section className="comms" aria-label="Talk">
           <div className="comms-head">
             <div className="comms-title">
               <h2>Talk</h2>
-              <p>Stub</p>
+              <p>{pending ? "Reading" : "Vault"}</p>
             </div>
             {items.length > 0 ? (
               <Button
@@ -310,7 +367,7 @@ export function Face() {
             ) : null}
             {items.length === 0 ? (
               <p className="empty-talk">
-                Nothing said yet. Use Orb or Graph above. Type a calendar line or a link below to see a plan and a receipt. Other words stay on this screen.
+                Ask about the notes. Jarvis answers only from the vault and names the notes it used. A calendar line still shows a plan and a receipt. Orb and Graph switch the view.
               </p>
             ) : (
               <div className="talk-list" aria-live="polite">
@@ -350,6 +407,7 @@ export function Face() {
               className="h-12 min-w-0 flex-1 rounded-none border-border bg-card px-3 text-base md:text-base"
               onChange={(event) => setDraft(event.target.value)}
               onFocus={() => inputRef.current?.scrollIntoView({ block: "nearest" })}
+              disabled={pending}
             />
             <VoiceButtons
               listening={voice.listening}
@@ -364,8 +422,7 @@ export function Face() {
                 });
               }}
               onSpeak={() => {
-                const last = [...items].reverse().find((item) => item.kind === "hand" && item.reply.trim());
-                void voice.speak(last && last.kind === "hand" ? last.reply : "");
+                void voice.speak(lastSpoken(items));
               }}
             />
             <Button
@@ -381,6 +438,14 @@ export function Face() {
       </div>
     </div>
   );
+}
+
+function lastSpoken(items: LogItem[]): string {
+  for (const item of [...items].reverse()) {
+    if (item.kind === "hand" && item.reply.trim()) return item.reply;
+    if (item.kind === "answer" && !item.failed && item.text.trim()) return item.text;
+  }
+  return "";
 }
 
 function voiceLamp(mouth: string): string {
@@ -453,26 +518,31 @@ function LogItemView({
       return (
         <article className="stub-receipt">
           <div className="stub-head">
-            <p>Stub receipt</p>
-            <p>Not live</p>
+            <p>View</p>
+            <p>This screen</p>
           </div>
-          <h3>{item.view ? "face.view" : "face.hear"}</h3>
-          <p className="stub-lead">{item.view ? "View changed on this screen only." : "Heard on this screen only."}</p>
+          <h3>face.view</h3>
+          <p className="stub-lead">View changed on this screen only.</p>
           <dl>
             <div>
               <dt>You said</dt>
               <dd>{item.heard}</dd>
             </div>
-            {item.view ? (
-              <div>
-                <dt>View</dt>
-                <dd>{viewLabel(item.view)}</dd>
-              </div>
-            ) : null}
+            <div>
+              <dt>View</dt>
+              <dd>{viewLabel(item.view)}</dd>
+            </div>
           </dl>
           <p className="stub-outcome">{stubOutcome(item.view)}</p>
           <time dateTime={item.at}>{formatStamp(item.at)}</time>
         </article>
+      );
+    case "answer":
+      return (
+        <div className="talk-list">
+          <p className="line-text">{item.text}</p>
+          {item.notice ? <p className="stub-lead">{item.notice}</p> : null}
+        </div>
       );
     case "hand":
       return (

@@ -65,6 +65,7 @@ export type ChatResponse = {
   receipts: Receipt[];
   plan?: HandPlan;
   notice?: string;
+  sources?: string[];
 };
 
 export type CalendarEvent = {
