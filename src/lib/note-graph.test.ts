@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, it } from "node:test";
 
-import { buildNoteGraph, loadVaultGraph, MAX_GRAPH_NODES } from "./note-graph";
+import { buildNoteGraph, loadVaultGraph, MAX_GRAPH_NODES, resolveVaultPath } from "./note-graph";
 
 describe("buildNoteGraph", () => {
   it("connects wikilinks, shared tags, and a folder parent", () => {
@@ -49,6 +49,14 @@ describe("buildNoteGraph", () => {
   });
 });
 
+describe("resolveVaultPath", () => {
+  it("uses the project vault folder unless another path is set", () => {
+    assert.equal(resolveVaultPath("  ", "/somewhere", "/proj"), "");
+    assert.equal(resolveVaultPath(undefined, "  /custom/vault  ", "/proj"), "/custom/vault");
+    assert.equal(resolveVaultPath(undefined, "", "/proj"), path.join("/proj", "vault"));
+  });
+});
+
 describe("loadVaultGraph", () => {
   it("stays empty when no vault folder is configured", async () => {
     const graph = await loadVaultGraph("  ");
@@ -62,6 +70,21 @@ describe("loadVaultGraph", () => {
     const graph = await loadVaultGraph(path.join(tmpdir(), "jarvis-missing-vault"));
     assert.equal(graph.status, "missing");
     assert.equal(graph.nodes.length, 0);
+  });
+
+  it("reads the project vault notes without inventing any", async () => {
+    const previous = process.env.OBSIDIAN_VAULT_PATH;
+    delete process.env.OBSIDIAN_VAULT_PATH;
+    try {
+      const graph = await loadVaultGraph();
+      assert.equal(graph.status, "ready");
+      assert.equal(graph.nodes.some((note) => note.title === "About"), true);
+      assert.equal(graph.nodes.some((note) => note.title === "School"), true);
+      assert.equal(graph.noteCount <= MAX_GRAPH_NODES, true);
+    } finally {
+      if (previous === undefined) delete process.env.OBSIDIAN_VAULT_PATH;
+      else process.env.OBSIDIAN_VAULT_PATH = previous;
+    }
   });
 
   it("reads markdown from a real folder", async () => {

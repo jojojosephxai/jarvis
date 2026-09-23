@@ -276,9 +276,19 @@ async function walkMarkdown(dir: string, rootReal: string, depth: number, acc: s
   }
 }
 
+export function resolveVaultPath(
+  explicit: string | null | undefined,
+  envValue: string | undefined,
+  cwd: string,
+): string {
+  if (explicit !== undefined && explicit !== null) return explicit.trim();
+  const fromEnv = envValue?.trim();
+  if (fromEnv) return fromEnv;
+  return path.join(cwd, "vault");
+}
+
 export async function loadVaultGraph(vaultPath?: string | null): Promise<NoteGraphPayload> {
-  const configured = (vaultPath === undefined ? process.env.OBSIDIAN_VAULT_PATH : vaultPath) ?? "";
-  const trimmed = configured.trim();
+  const trimmed = resolveVaultPath(vaultPath, process.env.OBSIDIAN_VAULT_PATH, process.cwd());
   if (!trimmed) return blank("not-wired", NOT_WIRED);
 
   let rootStat;

@@ -17,7 +17,7 @@ Open [http://localhost:4721](http://localhost:4721).
 
 1. A short boot plays. Press **Skip** if you want the main screen now.
 2. You should see a dark screen, a blue wireframe orb that grows and shrinks, and three status lines: Face online, Brain not wired, Voice not live.
-3. Press **Graph**. The orb is replaced by an empty note map. It says the vault is not wired yet, with **0 notes · 0 connections**. No sample notes are drawn.
+3. Press **Graph**. You should see the notes from the `vault` folder, a note count, and a connection count. Click a note to read a short preview. The brain still does not answer from it.
 4. Press **Orb** to bring the orb back. **Ring** and **Cube** say they are not built yet.
 5. You can also type `graph` or `orb` and press **Send**. The view changes, and the receipt says the brain is still not wired.
 6. Type anything else and press **Send**. Your line shows up, then a stub receipt. There is no chat answer.
@@ -33,7 +33,7 @@ On a phone using the same Wi-Fi as the computer, the server is open on port **47
 - Talk box
 - Honest stub receipt when you send
 
-Graph stays empty until vault notes exist. It does not invent a map. When a vault folder is set with `OBSIDIAN_VAULT_PATH`, Graph reads those markdown notes, draws links from wikilinks, tags, and folder parents, and lets you open a preview. It will not draw more than 40 notes.
+Graph reads the `vault` folder. It does not create notes and it does not change them. How to open that folder in Obsidian is in [VAULT.md](VAULT.md). A line is drawn when one note links to another with `[[wikilinks]]`, when notes share a tag, or when a note has a parent note. It will not draw more than 40 notes. If that folder is missing, the graph says so and draws nothing.
 
 ## What it does not do yet
 
@@ -42,7 +42,7 @@ Graph stays empty until vault notes exist. It does not invent a map. When a vaul
 - It does not send email
 - It does not write a calendar
 - Ring and Cube views are not built
-- It does not create the vault. That stays a separate notes task.
+- It does not edit the vault notes
 
 Answering is later brain work. Demo brain and calendar code is still in the repo. The Face does not call it. A Grok key in `.env.local` does nothing on this screen yet.
 
