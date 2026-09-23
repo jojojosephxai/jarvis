@@ -2,9 +2,9 @@ import { assertNever } from "./assert";
 import { CALL_REFUSAL } from "./demo-brain";
 import { answerFromVault, type AnswerOptions, type GroundedAnswer } from "./grounded-answer";
 import { brainMode } from "./grok";
+import { resolveHand } from "./hands";
 import { mentionsCalendar, parseIntent } from "./intent";
-import { executeTool } from "./tools";
-import type { ChatMessageInput, ChatResponse, Receipt } from "./types";
+import type { ChatMessageInput, ChatResponse } from "./types";
 
 const MAX_MESSAGES = 16;
 const MAX_CONTENT = 2000;
@@ -29,22 +29,6 @@ export function readMessages(body: unknown): ChatMessageInput[] | null {
 
   if (parsed.at(-1)?.role !== "user") return null;
   return parsed;
-}
-
-function confirmTool(receipt: Receipt): string {
-  if (receipt.status === "failed") return receipt.outcome;
-  switch (receipt.tool) {
-    case "calendar.write":
-      return `Saved “${receipt.input.title}” for ${receipt.input.when}. The receipt is below. This stays on the demo calendar on this computer.`;
-    case "calendar.list":
-      return receipt.outcome;
-    case "notes.recall":
-      return receipt.outcome;
-    case "notes.keep":
-      return "I saved that note. The receipt is below.";
-    default:
-      return assertNever(receipt.tool);
-  }
 }
 
 export async function think(
@@ -72,8 +56,8 @@ export async function think(
         }
         return fromGrounded(await answerFromVault(query, options));
       }
-      const receipt = await executeTool(parsed.request, options.root ?? process.cwd());
-      return { reply: confirmTool(receipt), mode: brainMode(), receipts: [receipt] };
+      const hand = await resolveHand(parsed.request, undefined, options.root ?? process.cwd());
+      return { reply: hand.reply, mode: brainMode(), receipts: hand.receipts, plan: hand.plan };
     }
     case "chat":
       return talk(latest.content, options);

@@ -59,6 +59,58 @@ describe("parseIntent", () => {
     assert.equal(parseIntent("Who are you?").kind, "chat");
     assert.equal(parseIntent("what do you call this light?").kind, "chat");
   });
+
+  it("opens a link with the browser hand", () => {
+    const parsed = parseIntent("Open https://example.com");
+    assert.equal(parsed.kind, "tool");
+    if (parsed.kind !== "tool") return;
+    assert.equal(parsed.request.tool, "browser.open");
+    assert.equal(parsed.request.input.url, "https://example.com/");
+  });
+
+  it("keeps a longer web request as a browser task", () => {
+    const parsed = parseIntent("Open https://example.com and tell me the title");
+    assert.equal(parsed.kind, "tool");
+    if (parsed.kind !== "tool") return;
+    assert.equal(parsed.request.tool, "browser.task");
+    assert.equal(parsed.request.input.url, "https://example.com/");
+    assert.match(parsed.request.input.task, /title/i);
+  });
+
+  it("asks before sending mail", () => {
+    const parsed = parseIntent("Send an email to my coach that practice moved to 5");
+    assert.equal(parsed.kind, "tool");
+    if (parsed.kind !== "tool") return;
+    assert.equal(parsed.request.tool, "message.send");
+    assert.equal(parsed.request.input.to, "my coach");
+    assert.match(parsed.request.input.body, /practice moved to 5/);
+  });
+
+  it("treats an overnight email as a send, not a finished delivery", () => {
+    const parsed = parseIntent("email me the homework overnight");
+    assert.equal(parsed.kind, "tool");
+    if (parsed.kind !== "tool") return;
+    assert.equal(parsed.request.tool, "message.send");
+    assert.equal(parsed.request.input.to, "me");
+    assert.match(parsed.request.input.body, /overnight/);
+  });
+
+  it("asks before spending", () => {
+    const parsed = parseIntent("Spend $12 on pizza");
+    assert.equal(parsed.kind, "tool");
+    if (parsed.kind !== "tool") return;
+    assert.equal(parsed.request.tool, "money.spend");
+    assert.equal(parsed.request.input.amount, "$12");
+    assert.equal(parsed.request.input.item, "pizza");
+  });
+
+  it("asks before deleting a calendar event", () => {
+    const parsed = parseIntent("Delete soccer practice from my calendar");
+    assert.equal(parsed.kind, "tool");
+    if (parsed.kind !== "tool") return;
+    assert.equal(parsed.request.tool, "calendar.delete");
+    assert.equal(parsed.request.input.title, "soccer practice");
+  });
 });
 
 describe("parseToolJson", () => {

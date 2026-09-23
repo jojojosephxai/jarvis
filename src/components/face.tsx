@@ -4,10 +4,20 @@ import { useEffect, useRef, useState } from "react";
 
 import { BootScreen } from "@/components/boot-screen";
 import { NoteGraph } from "@/components/note-graph";
+import { PlanCard } from "@/components/plan-card";
+import { ReceiptCard } from "@/components/receipt-card";
 import { orbLabel, Reactor, type OrbMode } from "@/components/reactor";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { makeId } from "@/lib/ids";
+import {
+  isHandPlan,
+  isReceipt,
+  type CalendarEvent,
+  type ChatResponse,
+  type HandPlan,
+  type Receipt,
+} from "@/lib/types";
 import { FACE_VIEWS, parseViewIntent, viewLabel, type FaceView } from "@/lib/view-intent";
 
 const BOOT_KEY = "jarvis-boot";
@@ -26,16 +36,11 @@ function markBootDone() {
 type LogItem =
   | { kind: "you"; id: string; text: string; at: string }
   | { kind: "stub"; id: string; heard: string; at: string; view: FaceView }
-  | { kind: "answer"; id: string; text: string; notice?: string; at: string; failed?: boolean };
+  | { kind: "answer"; id: string; text: string; notice?: string; at: string; failed?: boolean }
+  | { kind: "hand"; id: string; at: string; reply: string; plan?: HandPlan; receipts: Receipt[] };
 
-function isAnswerPayload(value: unknown): value is { reply: string; notice?: string } {
-  if (!value || typeof value !== "object") return false;
-  const record = value as { reply?: unknown; notice?: unknown; mode?: unknown };
-  return (
-    typeof record.reply === "string" &&
-    (record.mode === "grok" || record.mode === "demo") &&
-    (record.notice === undefined || typeof record.notice === "string")
-  );
+function stubOutcome(view: FaceView): string {
+  return `View is now ${viewLabel(view)}. That change stays on this screen.`;
 }
 
 function stageLabel(view: FaceView, orb: OrbMode): string {
@@ -72,6 +77,7 @@ export function Face() {
   const [booting, setBooting] = useState(true);
   const [pending, setPending] = useState(false);
   const [brainLabel, setBrainLabel] = useState<BrainLabel>("Vault");
+  const [events, setEvents] = useState<CalendarEvent[]>([]);
   const endRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const bootTimer = useRef<number | null>(null);
@@ -85,6 +91,7 @@ export function Face() {
       markBootDone();
       setBooting(false);
     }, delay);
+    void loadCalendar(setEvents);
     return () => {
       if (bootTimer.current !== null) window.clearTimeout(bootTimer.current);
       if (ackTimer.current !== null) window.clearTimeout(ackTimer.current);
@@ -127,8 +134,11 @@ export function Face() {
     endRef.current?.scrollIntoView({ block: "end" });
   }, [items]);
 
-  function pushItems(next: LogItem[]) {
-    setItems((current) => [...current, ...next].slice(-40));
+  function pulseOrb() {
+    setOrb("ack");
+    if (ackTimer.current !== null) window.clearTimeout(ackTimer.current);
+    ackTimer.current = window.setTimeout(() => setOrb("standby"), 900);
+    if (window.matchMedia("(pointer: fine)").matches) inputRef.current?.focus();
   }
 
   async function send(text: string) {
@@ -136,23 +146,24 @@ export function Face() {
     if (!trimmed || pending) return;
     const view = parseViewIntent(trimmed);
     const at = new Date().toISOString();
-    setDraft("");
-    setOrb("ack");
-    if (ackTimer.current !== null) window.clearTimeout(ackTimer.current);
-
     if (view) {
       setViewMode(view);
-      pushItems([
-        { kind: "you", id: makeId("you"), text: trimmed, at },
-        { kind: "stub", id: makeId("stub"), heard: trimmed, at, view },
-      ]);
-      ackTimer.current = window.setTimeout(() => setOrb("standby"), 900);
-      if (window.matchMedia("(pointer: fine)").matches) inputRef.current?.focus();
+      setItems((current) =>
+        [
+          ...current,
+          { kind: "you" as const, id: makeId("you"), text: trimmed, at },
+          { kind: "stub" as const, id: makeId("stub"), heard: trimmed, at, view },
+        ].slice(-40),
+      );
+      setDraft("");
+      pulseOrb();
       return;
     }
 
-    pushItems([{ kind: "you", id: makeId("you"), text: trimmed, at }]);
+    setItems((current) => [...current, { kind: "you" as const, id: makeId("you"), text: trimmed, at }].slice(-40));
+    setDraft("");
     setPending(true);
+    setOrb("ack");
     try {
       const response = await fetch("/api/chat", {
         method: "POST",
@@ -160,45 +171,92 @@ export function Face() {
         body: JSON.stringify({ messages: [{ role: "user", content: trimmed }] }),
       });
       const payload: unknown = await response.json();
-      if (!response.ok || !isAnswerPayload(payload)) {
+      if (!response.ok || !isChatResponse(payload)) {
         const error =
           payload && typeof payload === "object" && typeof (payload as { error?: unknown }).error === "string"
             ? (payload as { error: string }).error
             : "Brain wiring: the brain did not answer. Nothing was invented.";
-        pushItems([
-          {
-            kind: "answer",
-            id: makeId("ans"),
-            text: error,
-            at: new Date().toISOString(),
-            failed: true,
-          },
-        ]);
+        setItems((current) =>
+          [
+            ...current,
+            { kind: "answer" as const, id: makeId("ans"), text: error, at, failed: true },
+          ].slice(-40),
+        );
         return;
       }
-      pushItems([
-        {
-          kind: "answer",
-          id: makeId("ans"),
-          text: payload.reply,
-          notice: payload.notice,
-          at: new Date().toISOString(),
-        },
-      ]);
+      if (isHandsTurn(payload)) {
+        setItems((current) =>
+          [
+            ...current,
+            {
+              kind: "hand" as const,
+              id: makeId("hand"),
+              at,
+              reply: payload.reply,
+              plan: payload.plan,
+              receipts: payload.receipts,
+            },
+          ].slice(-40),
+        );
+        if (touchesCalendar(payload.plan?.tool, payload.receipts)) void loadCalendar(setEvents);
+        return;
+      }
+      setItems((current) =>
+        [
+          ...current,
+          {
+            kind: "answer" as const,
+            id: makeId("ans"),
+            text: payload.reply,
+            notice: payload.notice,
+            at,
+          },
+        ].slice(-40),
+      );
     } catch {
-      pushItems([
-        {
-          kind: "answer",
-          id: makeId("ans"),
-          text: "Brain wiring: I couldn't reach the brain. Check that the server is running, then try again.",
-          at: new Date().toISOString(),
-          failed: true,
-        },
-      ]);
+      setItems((current) =>
+        [
+          ...current,
+          {
+            kind: "answer" as const,
+            id: makeId("ans"),
+            text: "Brain wiring: I couldn't reach the brain. Check that the server is running, then try again.",
+            at,
+            failed: true,
+          },
+        ].slice(-40),
+      );
     } finally {
       setPending(false);
-      setOrb("standby");
-      if (window.matchMedia("(pointer: fine)").matches) inputRef.current?.focus();
+      pulseOrb();
+    }
+  }
+
+  async function decide(itemId: string, plan: HandPlan, decision: "yes" | "no") {
+    if (plan.state !== "waiting" || plan.gate !== "confirm" || pending) return;
+    setPending(true);
+    setOrb("ack");
+    try {
+      const response = await fetch("/api/hands", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tool: plan.tool, input: plan.input, decision }),
+      });
+      const payload: unknown = await response.json();
+      if (!response.ok || !isHandResponse(payload)) return;
+      setItems((current) =>
+        current.map((item) =>
+          item.kind === "hand" && item.id === itemId
+            ? { ...item, reply: payload.reply, plan: payload.plan, receipts: payload.receipts }
+            : item,
+        ),
+      );
+      if (touchesCalendar(payload.plan.tool, payload.receipts)) void loadCalendar(setEvents);
+    } catch {
+      // The plan stays waiting so it can be tried again.
+    } finally {
+      setPending(false);
+      pulseOrb();
     }
   }
 
@@ -254,7 +312,7 @@ export function Face() {
             </div>
           </dl>
           <p className="status-note">
-            Voice is not live. Questions are answered from the vault notes. Jarvis names those notes and says when a fact is missing.
+            Voice is not live. Questions are answered from the vault notes. Hands can still save a demo calendar event, or ask before send, spend, and delete.
           </p>
         </section>
         <section className="comms" aria-label="Talk">
@@ -270,16 +328,34 @@ export function Face() {
             ) : null}
           </div>
           <div className="talk-log">
+            {events.length > 0 ? (
+              <div className="stub-receipt" style={{ marginBottom: "0.85rem" }}>
+                <p>Demo calendar ({events.length})</p>
+                <ul>
+                  {events.map((event) => (
+                    <li key={event.id}>
+                      {event.title} — {event.when}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
             {items.length === 0 ? (
               <p className="empty-talk">
-                Ask about the notes. Jarvis answers only from the vault and names the notes it used. Orb and Graph still switch the view.
+                Ask about the notes. Jarvis answers only from the vault and names the notes it used. A calendar line still shows a plan and a receipt. Orb and Graph switch the view.
               </p>
             ) : (
               <div className="talk-list" aria-live="polite">
                 {items.map((item) => (
-                  <LogItemView key={item.id} item={item} />
+                  <LogItemView
+                    key={item.id}
+                    item={item}
+                    pending={pending}
+                    onDecide={(choice) => {
+                      if (item.kind === "hand" && item.plan) void decide(item.id, item.plan, choice);
+                    }}
+                  />
                 ))}
-                {pending ? <p className="empty-talk">Reading the vault notes.</p> : null}
               </div>
             )}
             <div ref={endRef} />
@@ -354,7 +430,15 @@ function ViewStub({ view }: { view: "ring" | "cube" }) {
   );
 }
 
-function LogItemView({ item }: { item: LogItem }) {
+function LogItemView({
+  item,
+  pending,
+  onDecide,
+}: {
+  item: LogItem;
+  pending: boolean;
+  onDecide: (decision: "yes" | "no") => void;
+}) {
   switch (item.kind) {
     case "you":
       return (
@@ -383,25 +467,86 @@ function LogItemView({ item }: { item: LogItem }) {
               <dd>{viewLabel(item.view)}</dd>
             </div>
           </dl>
-          <p className="stub-outcome">View is now {viewLabel(item.view)}. That change stays on this screen.</p>
+          <p className="stub-outcome">{stubOutcome(item.view)}</p>
           <time dateTime={item.at}>{formatStamp(item.at)}</time>
         </article>
       );
     case "answer":
       return (
-        <article className="stub-receipt">
-          <div className="stub-head">
-            <p>Jarvis</p>
-            <p>{item.failed ? "Brain wiring" : "Vault"}</p>
-          </div>
-          <p className="stub-outcome">{item.text}</p>
+        <div className="talk-list">
+          <p className="line-text">{item.text}</p>
           {item.notice ? <p className="stub-lead">{item.notice}</p> : null}
-          <time dateTime={item.at}>{formatStamp(item.at)}</time>
-        </article>
+        </div>
+      );
+    case "hand":
+      return (
+        <div className="talk-list">
+          <p className="line-text">{item.reply}</p>
+          {item.plan ? (
+            <PlanCard
+              plan={item.plan}
+              pending={pending}
+              onDecide={item.plan.state === "waiting" && item.plan.gate === "confirm" ? onDecide : undefined}
+            />
+          ) : null}
+          {item.receipts.map((receipt) => (
+            <ReceiptCard key={receipt.id} receipt={receipt} />
+          ))}
+        </div>
       );
     default: {
       const neverItem: never = item;
       return neverItem;
     }
+  }
+}
+
+function isChatResponse(value: unknown): value is ChatResponse {
+  if (!value || typeof value !== "object") return false;
+  const record = value as Partial<ChatResponse> & { receipts?: unknown };
+  return (
+    typeof record.reply === "string" &&
+    (record.mode === "grok" || record.mode === "demo") &&
+    Array.isArray(record.receipts) &&
+    record.receipts.every(isReceipt) &&
+    (record.plan === undefined || isHandPlan(record.plan))
+  );
+}
+
+function isHandResponse(value: unknown): value is { reply: string; receipts: Receipt[]; plan: HandPlan } {
+  if (!value || typeof value !== "object") return false;
+  const record = value as { reply?: unknown; receipts?: unknown; plan?: unknown };
+  return (
+    typeof record.reply === "string" &&
+    Array.isArray(record.receipts) &&
+    record.receipts.every(isReceipt) &&
+    isHandPlan(record.plan)
+  );
+}
+
+function isHandsTurn(payload: ChatResponse): boolean {
+  return Boolean(payload.plan) || payload.receipts.length > 0 || /phone call/i.test(payload.reply);
+}
+
+function touchesCalendar(tool: string | undefined, receipts: Receipt[]): boolean {
+  return tool?.startsWith("calendar.") === true || receipts.some((receipt) => receipt.tool.startsWith("calendar."));
+}
+
+function isCalendarEvent(value: unknown): value is CalendarEvent {
+  if (!value || typeof value !== "object") return false;
+  const event = value as Partial<CalendarEvent>;
+  return typeof event.id === "string" && typeof event.title === "string" && typeof event.when === "string";
+}
+
+async function loadCalendar(setEvents: (events: CalendarEvent[]) => void) {
+  try {
+    const response = await fetch("/api/calendar");
+    const payload: unknown = await response.json();
+    if (!payload || typeof payload !== "object") return;
+    const list = (payload as { events?: unknown }).events;
+    if (!Array.isArray(list)) return;
+    setEvents(list.filter(isCalendarEvent));
+  } catch {
+    // The talk log still shows the receipt if a later hand runs.
   }
 }
