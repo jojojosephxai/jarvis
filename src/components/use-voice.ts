@@ -98,6 +98,17 @@ export function useVoice(onSpeakingChange: (active: boolean) => void) {
         onEnd: () => onSpeakingChangeRef.current(false),
       });
       if (result.notice) setNotice(result.notice);
+      if (!result.played && result.notice && /did not speak|can't speak|Speaker is not live/.test(result.notice)) {
+        setSnapshot(
+          voiceSnapshot({
+            earsSupported: browserEarsSupported(),
+            azureLive: false,
+            azureVoice: null,
+            browserCanSpeak: false,
+            browserVoice: null,
+          }),
+        );
+      }
       return result.played;
     } catch {
       setNotice("Speaking hit a problem. Nothing was played.");

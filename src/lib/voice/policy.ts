@@ -218,7 +218,7 @@ function speakerClause(input: {
     return `Speaker: ${input.browserVoice.name} on this computer. It may not sound British. An Azure speech key turns on Sonia (British).`;
   }
   if (input.browserCanSpeak) {
-    return "Speaker: this browser's default voice. British is not guaranteed. An Azure speech key turns on Sonia.";
+    return "Speaker: this browser may use its default voice. It might not work, and British is not guaranteed. An Azure speech key turns on Sonia.";
   }
   return "Speaker is not live. This browser can't speak, and no Azure speech key is set.";
 }
