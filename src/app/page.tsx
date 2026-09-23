@@ -1,5 +1,5 @@
-import { Room } from "@/components/room";
+import { Face } from "@/components/face";
 
 export default function Page() {
-  return <Room />;
+  return <Face />;
 }

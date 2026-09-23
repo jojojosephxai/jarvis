@@ -39,15 +39,17 @@ export function brainMode(): BrainMode {
   return grokConfigured() ? "grok" : "demo";
 }
 
+/** Talk model lock. The API id is grok-4.7. Other ids, including grok-4.3, are not used. */
+export const LOCKED_XAI_MODEL = "grok-4.7";
+
 export function grokModel(): string {
-  return process.env.XAI_MODEL?.trim() || "grok-4.3";
+  return LOCKED_XAI_MODEL;
 }
 
 function reasoningEffort(model: string): string | null {
   const chosen = process.env.XAI_REASONING?.trim();
   if (chosen) return chosen;
-  if (model.startsWith("grok-4.3")) return "none";
-  if (/grok-4\.(5|6|7)/.test(model)) return "low";
+  if (model === LOCKED_XAI_MODEL) return "low";
   return null;
 }
 
@@ -73,7 +75,7 @@ function messageText(content: unknown): string {
     .trim();
 }
 
-async function postChat(body: Record<string, unknown>): Promise<GrokResult> {
+async function postChat(body: Record<string, unknown>, timeoutMs = 20_000): Promise<GrokResult> {
   const key = process.env.XAI_API_KEY?.trim();
   if (!key) return { ok: false, reason: "no key is set" };
 
@@ -86,7 +88,7 @@ async function postChat(body: Record<string, unknown>): Promise<GrokResult> {
       },
       body: JSON.stringify(body),
       cache: "no-store",
-      signal: AbortSignal.timeout(20_000),
+      signal: AbortSignal.timeout(timeoutMs),
     });
 
     if (!response.ok) return { ok: false, reason: failureReason(response.status) };
@@ -103,15 +105,20 @@ async function postChat(body: Record<string, unknown>): Promise<GrokResult> {
   }
 }
 
-function chatBody(model: string, temperature: number, maxTokens: number, messages: Array<{ role: string; content: string }>): Record<string, unknown> {
+function chatBody(
+  model: string,
+  temperature: number,
+  maxTokens: number,
+  messages: Array<{ role: string; content: string }>,
+): Record<string, unknown> {
   const body: Record<string, unknown> = {
     model,
-    temperature,
     max_tokens: maxTokens,
     messages,
   };
   const effort = reasoningEffort(model);
   if (effort) body.reasoning_effort = effort;
+  if (!effort || effort === "none") body.temperature = temperature;
   return body;
 }
 
@@ -136,6 +143,7 @@ export async function grokPhraseNotes(question: string, packet: string): Promise
       { role: "system", content: PHRASE_PROMPT },
       { role: "user", content: user },
     ]),
+    45_000,
   );
 }
 
