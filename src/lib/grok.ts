@@ -1,5 +1,12 @@
 import type { BrainMode, ChatMessageInput } from "./types";
 
+const PHRASE_PROMPT = `You are Jarvis. You may only use the note text in the user message.
+Every fact must appear in those notes. Cite the note title in parentheses, like (School).
+If the notes do not say it, reply exactly: I don't have that in the vault notes.
+Do not add facts. Do not mention email, messages, or overnight unless the notes do.
+Do not call tools. Do not output JSON. Short sentences. No emoji.
+Stay on words from the notes. Extra words get the reply thrown away.`;
+
 const SYSTEM_PROMPT = `You are Jarvis, a calm personal assistant speaking in a quiet room.
 Use short, clear sentences. No emoji. No bullet lists unless the user asks for a list.
 
@@ -66,25 +73,9 @@ function messageText(content: unknown): string {
     .trim();
 }
 
-export async function grokChat(messages: ChatMessageInput[]): Promise<GrokResult> {
+async function postChat(body: Record<string, unknown>): Promise<GrokResult> {
   const key = process.env.XAI_API_KEY?.trim();
   if (!key) return { ok: false, reason: "no key is set" };
-
-  const model = grokModel();
-  const effort = reasoningEffort(model);
-  const body: Record<string, unknown> = {
-    model,
-    temperature: 0.4,
-    max_tokens: 400,
-    messages: [
-      { role: "system", content: SYSTEM_PROMPT },
-      ...messages.slice(-8).map((message) => ({
-        role: message.role,
-        content: message.content.slice(0, 1500),
-      })),
-    ],
-  };
-  if (effort) body.reasoning_effort = effort;
 
   try {
     const response = await fetch("https://api.x.ai/v1/chat/completions", {
@@ -110,6 +101,42 @@ export async function grokChat(messages: ChatMessageInput[]): Promise<GrokResult
     }
     return { ok: false, reason: "the request could not be sent" };
   }
+}
+
+function chatBody(model: string, temperature: number, maxTokens: number, messages: Array<{ role: string; content: string }>): Record<string, unknown> {
+  const body: Record<string, unknown> = {
+    model,
+    temperature,
+    max_tokens: maxTokens,
+    messages,
+  };
+  const effort = reasoningEffort(model);
+  if (effort) body.reasoning_effort = effort;
+  return body;
+}
+
+export async function grokChat(messages: ChatMessageInput[]): Promise<GrokResult> {
+  const model = grokModel();
+  return postChat(
+    chatBody(model, 0.4, 400, [
+      { role: "system", content: SYSTEM_PROMPT },
+      ...messages.slice(-8).map((message) => ({
+        role: message.role,
+        content: message.content.slice(0, 1500),
+      })),
+    ]),
+  );
+}
+
+export async function grokPhraseNotes(question: string, packet: string): Promise<GrokResult> {
+  const model = grokModel();
+  const user = (packet.startsWith("Question:") ? packet : `Question:\n${question}\n\n${packet}`).slice(0, 12000);
+  return postChat(
+    chatBody(model, 0, 350, [
+      { role: "system", content: PHRASE_PROMPT },
+      { role: "user", content: user },
+    ]),
+  );
 }
 
 function readChoice(payload: unknown): string {

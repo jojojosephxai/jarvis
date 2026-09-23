@@ -1,7 +1,8 @@
 import { assertNever } from "./assert";
-import { CALL_REFUSAL, demoChatReply } from "./demo-brain";
-import { brainMode, grokChat } from "./grok";
-import { parseIntent, parseToolJson } from "./intent";
+import { CALL_REFUSAL } from "./demo-brain";
+import { answerFromVault, type AnswerOptions, type GroundedAnswer } from "./grounded-answer";
+import { brainMode } from "./grok";
+import { mentionsCalendar, parseIntent } from "./intent";
 import { executeTool } from "./tools";
 import type { ChatMessageInput, ChatResponse, Receipt } from "./types";
 
@@ -46,7 +47,10 @@ function confirmTool(receipt: Receipt): string {
   }
 }
 
-export async function think(messages: ChatMessageInput[]): Promise<ChatResponse> {
+export async function think(
+  messages: ChatMessageInput[],
+  options: AnswerOptions = {},
+): Promise<ChatResponse> {
   const latest = messages.at(-1);
   if (!latest || latest.role !== "user") {
     return { reply: "Say that once more?", mode: brainMode(), receipts: [] };
@@ -57,46 +61,46 @@ export async function think(messages: ChatMessageInput[]): Promise<ChatResponse>
     case "refuse-call":
       return { reply: CALL_REFUSAL, mode: brainMode(), receipts: [] };
     case "tool": {
-      const receipt = await executeTool(parsed.request);
+      if (parsed.request.tool === "notes.recall") {
+        const query = parsed.request.input.query?.trim() ?? "";
+        if (!query) {
+          return {
+            reply: "Tell me what to look for in the vault notes.",
+            mode: brainMode(),
+            receipts: [],
+          };
+        }
+        return fromGrounded(await answerFromVault(query, options));
+      }
+      const receipt = await executeTool(parsed.request, options.root ?? process.cwd());
       return { reply: confirmTool(receipt), mode: brainMode(), receipts: [receipt] };
     }
     case "chat":
-      return talk(messages, latest.content);
+      return talk(latest.content, options);
     default:
       return assertNever(parsed);
   }
 }
 
-async function talk(messages: ChatMessageInput[], latest: string): Promise<ChatResponse> {
-  if (brainMode() === "demo") {
-    return { reply: demoChatReply(latest), mode: "demo", receipts: [] };
-  }
-
-  const result = await grokChat(messages);
-  if (!result.ok) {
+async function talk(latest: string, options: AnswerOptions): Promise<ChatResponse> {
+  if (mentionsCalendar(latest)) {
     return {
-      reply: demoChatReply(latest),
-      mode: "demo",
+      reply:
+        "I need an event and a time before I can put that on the demo calendar. Try: Put soccer practice on my calendar tomorrow at 4pm.",
+      mode: brainMode(),
       receipts: [],
-      notice: `Grok didn't answer because ${result.reason}. This reply is from the demo brain.`,
     };
   }
 
-  const call = parseToolJson(result.text);
-  switch (call.kind) {
-    case "none":
-      return { reply: result.text, mode: "grok", receipts: [] };
-    case "unknown":
-      return {
-        reply: `I don't have a tool named ${call.name}, so I didn't run anything.`,
-        mode: "grok",
-        receipts: [],
-      };
-    case "call": {
-      const receipt = await executeTool(call.request);
-      return { reply: confirmTool(receipt), mode: "grok", receipts: [receipt] };
-    }
-    default:
-      return assertNever(call);
-  }
+  return fromGrounded(await answerFromVault(latest, options));
+}
+
+function fromGrounded(answer: GroundedAnswer): ChatResponse {
+  return {
+    reply: answer.reply,
+    mode: answer.mode,
+    receipts: [],
+    notice: answer.notice,
+    sources: answer.sources,
+  };
 }

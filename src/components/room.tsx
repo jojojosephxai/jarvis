@@ -69,9 +69,9 @@ function isCalendarEvent(value: unknown): value is CalendarEvent {
 function brainLabel(mode: ShownMode): string {
   switch (mode) {
     case "grok":
-      return "Brain: Grok";
+      return "Brain: Grok + vault";
     case "demo":
-      return "Brain: demo";
+      return "Brain: vault";
     case "unknown":
       return "Brain: …";
     default: {

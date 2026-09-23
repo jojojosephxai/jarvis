@@ -38,6 +38,7 @@ export type ChatResponse = {
   mode: BrainMode;
   receipts: Receipt[];
   notice?: string;
+  sources?: string[];
 };
 
 export type CalendarEvent = {
