@@ -4,6 +4,7 @@ import { answerFromVault, type AnswerOptions, type GroundedAnswer } from "./grou
 import { brainMode } from "./grok";
 import { resolveHand } from "./hands";
 import { mentionsCalendar, parseIntent } from "./intent";
+import { isMorningBriefRequest, morningBriefResponse } from "./morning-brief";
 import type { ChatMessageInput, ChatResponse } from "./types";
 import { resolveVaultPath } from "./vault-read";
 import { attachWriteNudge, describeChanges, enrichKeepInput, observeVault, takeNudge } from "./vault-write";
@@ -45,6 +46,10 @@ export async function think(
   const root = options.root ?? process.cwd();
   const vaultDir = resolveVaultPath(root, options.vaultPath);
   await observeVault(root, vaultDir);
+
+  if (isMorningBriefRequest(latest.content)) {
+    return finish(await morningBriefResponse(options), root);
+  }
 
   const parsed = parseIntent(latest.content);
   switch (parsed.kind) {
