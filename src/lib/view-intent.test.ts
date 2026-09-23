@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { parseViewIntent } from "./view-intent";
+import { decideFaceMode, parseViewIntent } from "./view-intent";
 
 describe("parseViewIntent", () => {
   it("reads a bare view name", () => {
@@ -22,5 +22,52 @@ describe("parseViewIntent", () => {
     assert.equal(parseViewIntent("ring mom"), null);
     assert.equal(parseViewIntent("please switch to ring mode"), null);
     assert.equal(parseViewIntent("switch view to cube"), null);
+  });
+
+  it("treats dynamic orb as the orb view", () => {
+    assert.equal(parseViewIntent("dynamic orb"), "orb");
+    assert.equal(parseViewIntent("show the dynamic orb"), "orb");
+    assert.equal(parseViewIntent("switch to dynamic orb"), "orb");
+  });
+});
+
+describe("decideFaceMode", () => {
+  it("lets switch to dynamic orb win over a graph ask in the same line", () => {
+    const decision = decideFaceMode("switch to dynamic orb and open the graph");
+    assert.equal(decision.view, "orb");
+    assert.equal(decision.exclusive, true);
+    assert.equal(decision.kind, "phrase");
+  });
+
+  it("opens the graph for a path or a vault ask", () => {
+    const path = decideFaceMode("path from About to School");
+    assert.equal(path.view, "graph");
+    assert.equal(path.exclusive, true);
+    assert.equal(path.kind, "vault");
+    assert.equal(path.pathFrom, "About");
+    assert.equal(path.pathTo, "School");
+
+    const vault = decideFaceMode("open the vault");
+    assert.equal(vault.view, "graph");
+    assert.equal(vault.exclusive, true);
+
+    const focus = decideFaceMode("focus note Swim");
+    assert.equal(focus.focusQuery, "Swim");
+    assert.equal(focus.view, "graph");
+  });
+
+  it("returns to the orb for work that is not the vault map", () => {
+    const grade = decideFaceMode("What grade is Joseph in?");
+    assert.equal(grade.view, "orb");
+    assert.equal(grade.exclusive, false);
+    assert.equal(grade.kind, "auto");
+
+    const calendar = decideFaceMode("Put soccer practice on my calendar tomorrow at 4pm");
+    assert.equal(calendar.view, "orb");
+    assert.equal(calendar.exclusive, false);
+
+    const plants = decideFaceMode("show me the graph of plants");
+    assert.equal(plants.view, "orb");
+    assert.equal(plants.exclusive, false);
   });
 });

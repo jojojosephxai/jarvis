@@ -10,4 +10,5 @@ This folder holds the exact prompts Jarvis Ship sent to Cursor cloud agents, so 
 - [2026-09-23 JOS-11 morning brief](2026-09-23_jos-11-daily_bc-f924e937.md)
 - [2026-09-23 JOS-12 write-back](2026-09-23_jos-12-writeback_bc-22b49510.md)
 - [2026-09-23 JOS-23 Face try-gate](2026-09-23_jos-23-face-try-gate_bc-d288f47d.md)
-Latest: [2026-09-23_jos-23-face-try-gate_bc-d288f47d.md](2026-09-23_jos-23-face-try-gate_bc-d288f47d.md) — talk strip, center orb, wired graph, no Ring/Cube.
+- [2026-09-23 JOS-32 graph galaxy](2026-09-23_jos-32-wave1-graph-galaxy_bc-cb7865d7.md)
+Latest: [2026-09-23_jos-32-wave1-graph-galaxy_bc-cb7865d7.md](2026-09-23_jos-32-wave1-graph-galaxy_bc-cb7865d7.md) — vault galaxy, Dynamic Orb switch, thin Talk.

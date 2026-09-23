@@ -232,7 +232,7 @@ html[data-boot="done"] .boot-screen {
 
 .view-button {
   min-width: 4.6rem;
-  letter-spacing: 0.12em;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
 }
 
@@ -240,7 +240,7 @@ html[data-boot="done"] .boot-screen {
   display: grid;
   width: 100%;
   height: 100%;
-  grid-template-columns: minmax(0, 1fr) minmax(15rem, 22rem);
+  grid-template-columns: minmax(13.5rem, 17.5rem) minmax(0, 1fr) minmax(14rem, 20rem);
   grid-template-rows: minmax(0, 1fr);
 }
 
@@ -257,7 +257,9 @@ html[data-boot="done"] .boot-screen {
   position: relative;
   min-width: 0;
   min-height: 0;
-  background: radial-gradient(ellipse 46% 40% at 50% 48%, rgba(14, 78, 112, 0.34), transparent 70%);
+  background:
+    radial-gradient(ellipse 58% 50% at 50% 48%, rgba(12, 86, 122, 0.34), transparent 68%),
+    radial-gradient(circle at 50% 50%, rgba(73, 212, 255, 0.08), transparent 32%);
 }
 
 .graph-svg text {
@@ -268,7 +270,9 @@ html[data-boot="done"] .boot-screen {
   position: absolute;
   z-index: 1;
   top: 0.75rem;
-  left: 0.9rem;
+  right: 0.9rem;
+  left: auto;
+  text-align: right;
   color: #d7f6ff;
   font-family: var(--font-mono);
   font-size: 0.72rem;
@@ -278,6 +282,7 @@ html[data-boot="done"] .boot-screen {
 
 .graph-stage-empty .graph-stats {
   position: static;
+  text-align: center;
 }
 
 .graph-svg {
@@ -326,6 +331,104 @@ html[data-boot="done"] .boot-screen {
 .graph-inspector h3 {
   margin-top: 0.25rem;
   font-size: 1rem;
+}
+
+.galaxy-bay {
+  min-height: 0;
+  overflow: auto;
+  border-right: 1px solid rgba(73, 212, 255, 0.28);
+  background: rgba(3, 8, 12, 0.88);
+  padding: 0.7rem 0.7rem 0.9rem;
+}
+
+.galaxy-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.28rem;
+  margin-top: 0.7rem;
+}
+
+.galaxy-field .line-label {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.galaxy-filters,
+.galaxy-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-top: 0.65rem;
+}
+
+.galaxy-select {
+  width: 100%;
+  height: 2.25rem;
+  border: 1px solid rgba(73, 212, 255, 0.35);
+  background: #071018;
+  color: #e5f3fb;
+  font-size: 0.85rem;
+  padding: 0 0.4rem;
+}
+
+.galaxy-range {
+  width: 100%;
+  accent-color: #49d4ff;
+}
+
+.galaxy-hint,
+.galaxy-note {
+  margin: 0;
+  color: var(--muted-foreground);
+  font-size: 0.75rem;
+  line-height: 1.35;
+}
+
+.galaxy-hubs {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.galaxy-hubs button {
+  display: flex;
+  width: 100%;
+  justify-content: space-between;
+  gap: 0.5rem;
+  border: 1px solid transparent;
+  background: transparent;
+  color: #e7f8ff;
+  cursor: pointer;
+  font-size: 0.85rem;
+  padding: 0.28rem 0.25rem;
+  text-align: left;
+}
+
+.galaxy-hubs button[aria-current="true"] {
+  border-color: rgba(73, 212, 255, 0.5);
+  color: #f4fdff;
+}
+
+.galaxy-empty-filter {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  margin: 0;
+  transform: translate(-50%, -50%);
+  color: #d7f6ff;
+  font-size: 0.9rem;
+}
+
+.graph-empty-rings {
+  position: absolute;
+  width: min(70vmin, 420px);
+  height: min(70vmin, 420px);
+  opacity: 0.85;
+  pointer-events: none;
 }
 
 .optic-frame {
@@ -894,11 +997,17 @@ html[data-boot="done"] .boot-screen {
 
   .graph-stage {
     grid-template-columns: 1fr;
-    grid-template-rows: minmax(0, 1fr) auto;
+    grid-template-rows: auto minmax(0, 1fr) auto;
+  }
+
+  .galaxy-bay {
+    max-height: 11.5rem;
+    border-right: none;
+    border-bottom: 1px solid rgba(73, 212, 255, 0.28);
   }
 
   .graph-inspector {
-    max-height: 8.5rem;
+    max-height: 9rem;
     border-top: 1px solid rgba(73, 212, 255, 0.28);
     border-left: none;
   }

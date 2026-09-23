@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 
 import { BootScreen } from "@/components/boot-screen";
-import { NoteGraph } from "@/components/note-graph";
+import { NoteGraph, type GraphCue } from "@/components/note-graph";
 import { PlanCard } from "@/components/plan-card";
 import { ReceiptCard } from "@/components/receipt-card";
 import { orbLabel, Reactor, type OrbMode } from "@/components/reactor";
@@ -22,7 +22,7 @@ import {
   type MorningBrief,
   type Receipt,
 } from "@/lib/types";
-import { FACE_VIEWS, parseViewIntent, viewLabel, type FaceView } from "@/lib/view-intent";
+import { FACE_VIEWS, decideFaceMode, viewLabel, type FaceView } from "@/lib/view-intent";
 
 const BOOT_KEY = "jarvis-boot";
 
@@ -62,6 +62,8 @@ export function Face() {
   const [draft, setDraft] = useState("");
   const [orb, setOrb] = useState<OrbMode>("standby");
   const [viewMode, setViewMode] = useState<FaceView>("orb");
+  const [cue, setCue] = useState<GraphCue | null>(null);
+  const cueToken = useRef(0);
   const [talkOpen, setTalkOpen] = useState(false);
   const [booting, setBooting] = useState(true);
   const [pending, setPending] = useState(false);
@@ -141,16 +143,25 @@ export function Face() {
     const trimmed = text.trim();
     if (!trimmed || pendingRef.current) return;
     voice.stop();
-    const view = parseViewIntent(trimmed);
+    const decision = decideFaceMode(trimmed);
     const at = new Date().toISOString();
     setTalkOpen(true);
-    if (view) {
-      setViewMode(view);
+    setViewMode(decision.view);
+    if (decision.exclusive) {
+      if (decision.view === "graph") {
+        cueToken.current += 1;
+        setCue({
+          token: cueToken.current,
+          focusQuery: decision.focusQuery,
+          pathFrom: decision.pathFrom,
+          pathTo: decision.pathTo,
+        });
+      }
       setItems((current) =>
         [
           ...current,
           { kind: "you" as const, id: makeId("you"), text: trimmed, at },
-          { kind: "stub" as const, id: makeId("stub"), heard: trimmed, at, view },
+          { kind: "stub" as const, id: makeId("stub"), heard: trimmed, at, view: decision.view },
         ].slice(-40),
       );
       setDraft("");
@@ -244,6 +255,7 @@ export function Face() {
   async function runBrief() {
     if (pendingRef.current) return;
     pendingRef.current = true;
+    setViewMode("orb");
     setTalkOpen(true);
     const at = new Date().toISOString();
     setItems((current) =>
@@ -343,7 +355,7 @@ export function Face() {
         <p className="hud-link">This computer</p>
       </header>
       <div className="hud-stage">
-        <OpticStage view={viewMode} orb={orb} />
+        <OpticStage view={viewMode} orb={orb} cue={cue} />
       </div>
       <div className="status-bar" aria-label="Status">
         <dl className="status-grid">
@@ -527,7 +539,7 @@ function voiceLamp(mouth: string): string {
   }
 }
 
-function OpticStage({ view, orb }: { view: FaceView; orb: OrbMode }) {
+function OpticStage({ view, orb, cue }: { view: FaceView; orb: OrbMode; cue: GraphCue | null }) {
   switch (view) {
     case "orb":
       return (
@@ -543,7 +555,7 @@ function OpticStage({ view, orb }: { view: FaceView; orb: OrbMode }) {
         </div>
       );
     case "graph":
-      return <NoteGraph />;
+      return <NoteGraph cue={cue} />;
     default: {
       const neverView: never = view;
       return neverView;
