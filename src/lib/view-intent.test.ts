@@ -10,9 +10,8 @@ describe("parseViewIntent", () => {
   });
 
   it("reads a polite switch", () => {
-    assert.equal(parseViewIntent("please switch to ring mode"), "ring");
     assert.equal(parseViewIntent("show me the orb"), "orb");
-    assert.equal(parseViewIntent("switch view to cube"), "cube");
+    assert.equal(parseViewIntent("please switch to graph mode"), "graph");
     assert.equal(parseViewIntent("Jarvis, go to the graph"), "graph");
   });
 
@@ -21,5 +20,7 @@ describe("parseViewIntent", () => {
     assert.equal(parseViewIntent("show me the graph of plants"), null);
     assert.equal(parseViewIntent("Put soccer practice on my calendar tomorrow at 4pm"), null);
     assert.equal(parseViewIntent("ring mom"), null);
+    assert.equal(parseViewIntent("please switch to ring mode"), null);
+    assert.equal(parseViewIntent("switch view to cube"), null);
   });
 });

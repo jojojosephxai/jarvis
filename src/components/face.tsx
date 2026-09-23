@@ -44,23 +44,6 @@ function stubOutcome(view: FaceView | null): string {
   return `${lead}${STUB_OUTCOME}`;
 }
 
-function stageLabel(view: FaceView, orb: OrbMode): string {
-  switch (view) {
-    case "orb":
-      return orbLabel(orb);
-    case "graph":
-      return "Graph";
-    case "ring":
-      return "Ring later";
-    case "cube":
-      return "Cube later";
-    default: {
-      const neverView: never = view;
-      return neverView;
-    }
-  }
-}
-
 function formatStamp(iso: string): string {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return iso;
@@ -75,6 +58,7 @@ export function Face() {
   const [draft, setDraft] = useState("");
   const [orb, setOrb] = useState<OrbMode>("standby");
   const [viewMode, setViewMode] = useState<FaceView>("orb");
+  const [talkOpen, setTalkOpen] = useState(false);
   const [booting, setBooting] = useState(true);
   const [pending, setPending] = useState(false);
   const [events, setEvents] = useState<CalendarEvent[]>([]);
@@ -123,6 +107,7 @@ export function Face() {
     if (!trimmed || pending) return;
     const view = parseViewIntent(trimmed);
     const at = new Date().toISOString();
+    setTalkOpen(true);
     if (view) {
       setViewMode(view);
       setItems((current) =>
@@ -214,64 +199,65 @@ export function Face() {
           <p className="hud-mark">Jarvis</p>
           <p className="hud-kicker">Face</p>
         </div>
+        <div className="view-switch" role="group" aria-label="View">
+          {FACE_VIEWS.map((view) => (
+            <Button
+              key={view}
+              type="button"
+              variant={viewMode === view ? "default" : "outline"}
+              aria-pressed={viewMode === view}
+              className="view-button h-11 rounded-none px-3"
+              onClick={() => setViewMode(view)}
+            >
+              {viewLabel(view)}
+            </Button>
+          ))}
+        </div>
         <p className="hud-link">This computer</p>
       </header>
       <div className="hud-stage">
-        <section className="optic" aria-label="Status">
-          <div className="view-switch" role="group" aria-label="View">
-            {FACE_VIEWS.map((view) => (
-              <Button
-                key={view}
-                type="button"
-                variant={viewMode === view ? "default" : "outline"}
-                aria-pressed={viewMode === view}
-                className="view-button h-11 rounded-none px-3"
-                onClick={() => setViewMode(view)}
-              >
-                {viewLabel(view)}
-              </Button>
-            ))}
+        <OpticStage view={viewMode} orb={orb} />
+      </div>
+      <div className="status-bar" aria-label="Status">
+        <dl className="status-grid">
+          <div>
+            <dt>Face</dt>
+            <dd>
+              <span className="lamp lamp-on" />
+              Online
+            </dd>
           </div>
-          <OpticStage view={viewMode} orb={orb} />
-          <p className="orb-state">{stageLabel(viewMode, orb)}</p>
-          <dl className="status-grid">
-            <div>
-              <dt>Face</dt>
-              <dd>
-                <span className="lamp lamp-on" />
-                Online
-              </dd>
-            </div>
-            <div>
-              <dt>Brain</dt>
-              <dd>
-                <span className="lamp" />
-                Not wired
-              </dd>
-            </div>
-            <div>
-              <dt>Voice</dt>
-              <dd>
-                <span className="lamp" />
-                Not live
-              </dd>
-            </div>
-          </dl>
-          <p className="status-note">Brain and voice are off. Hands can save a demo calendar event, open a link stub, or ask before send, spend, and delete.</p>
-        </section>
-        <section className="comms" aria-label="Talk">
-          <div className="comms-head">
-            <div className="comms-title">
-              <h2>Talk</h2>
-              <p>Stub</p>
-            </div>
-            {items.length > 0 ? (
-              <Button type="button" variant="ghost" className="h-11 px-3" onClick={() => setItems([])}>
-                Clear
-              </Button>
-            ) : null}
+          <div>
+            <dt>Brain</dt>
+            <dd>
+              <span className="lamp" />
+              Not wired
+            </dd>
           </div>
+          <div>
+            <dt>Voice</dt>
+            <dd>
+              <span className="lamp" />
+              Not live
+            </dd>
+          </div>
+        </dl>
+        <p className="status-note">Brain and voice are off. Hands can still show a plan.</p>
+      </div>
+      <section className="talk-drawer" data-open={talkOpen ? "true" : "false"} aria-label="Talk">
+        {talkOpen ? (
           <div className="talk-log">
+            <div className="comms-head">
+              <div className="comms-title">
+                <h2>Talk</h2>
+                <p>Stub</p>
+              </div>
+              {items.length > 0 ? (
+                <Button type="button" variant="ghost" className="h-11 px-3" onClick={() => setItems([])}>
+                  Clear
+                </Button>
+              ) : null}
+            </div>
             {events.length > 0 ? (
               <div className="stub-receipt" style={{ marginBottom: "0.85rem" }}>
                 <p>Demo calendar ({events.length})</p>
@@ -286,7 +272,7 @@ export function Face() {
             ) : null}
             {items.length === 0 ? (
               <p className="empty-talk">
-                Nothing said yet. Use Orb or Graph above. Type a calendar line or a link below to see a plan and a receipt. Other words stay on this screen.
+                Nothing said yet. The orb stays in the middle. Type a calendar line or a link to see a plan and a receipt. Other words stay on this screen. Nothing is answered.
               </p>
             ) : (
               <div className="talk-list" aria-live="polite">
@@ -304,6 +290,19 @@ export function Face() {
             )}
             <div ref={endRef} />
           </div>
+        ) : null}
+        <div className="talk-bar">
+          <Button
+            type="button"
+            variant="ghost"
+            className="talk-toggle h-11 rounded-none px-3"
+            aria-expanded={talkOpen}
+            onClick={() => setTalkOpen((open) => !open)}
+          >
+            Talk
+            <span className="talk-stub">Stub</span>
+            {items.length > 0 ? <span className="talk-count">{items.length}</span> : null}
+          </Button>
           <form
             className="composer"
             onSubmit={(event) => {
@@ -334,8 +333,8 @@ export function Face() {
               Send
             </Button>
           </form>
-        </section>
-      </div>
+        </div>
+      </section>
     </div>
   );
 }
@@ -344,33 +343,24 @@ function OpticStage({ view, orb }: { view: FaceView; orb: OrbMode }) {
   switch (view) {
     case "orb":
       return (
-        <div className="optic-frame">
-          <span className="tick tick-tl" />
-          <span className="tick tick-tr" />
-          <span className="tick tick-bl" />
-          <span className="tick tick-br" />
-          <Reactor mode={orb} />
+        <div className="stage-orb">
+          <div className="optic-frame">
+            <span className="tick tick-tl" />
+            <span className="tick tick-tr" />
+            <span className="tick tick-bl" />
+            <span className="tick tick-br" />
+            <Reactor mode={orb} />
+          </div>
+          <p className="orb-state">{orbLabel(orb)}</p>
         </div>
       );
     case "graph":
       return <NoteGraph />;
-    case "ring":
-    case "cube":
-      return <ViewStub view={view} />;
     default: {
       const neverView: never = view;
       return neverView;
     }
   }
-}
-
-function ViewStub({ view }: { view: "ring" | "cube" }) {
-  return (
-    <div className="view-stub">
-      <p>{viewLabel(view)} is not built yet.</p>
-      <p>Orb and Graph are the views that work.</p>
-    </div>
-  );
 }
 
 function LogItemView({

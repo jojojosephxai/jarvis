@@ -13,7 +13,7 @@ const geistSans = Geist({
 
 export const metadata: Metadata = {
   title: "Jarvis",
-  description: "Jarvis Face. A dark screen with a status orb and a talk box. The brain and voice are not live yet.",
+  description: "Jarvis Face. A near-black screen with a cyan orb in the middle. The brain and voice are not live yet.",
   appleWebApp: {
     capable: true,
     title: "Jarvis",

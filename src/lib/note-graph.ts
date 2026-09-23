@@ -12,12 +12,15 @@ export type GraphReason = "wikilink" | "tag" | "folder";
 
 export type GraphStatus = "ready" | "not-wired" | "missing" | "empty";
 
+export type GraphNodeKind = "note" | "folder";
+
 export type GraphNode = {
   id: string;
   title: string;
   folder: string;
   tags: string[];
   excerpt: string;
+  kind: GraphNodeKind;
 };
 
 export type GraphEdge = {
@@ -155,6 +158,7 @@ export function buildNoteGraph(files: NoteSourceFile[]): NoteGraphPayload {
       folder: folder === "." ? "" : folder,
       tags: unique([...tagsFromFrontmatter(front), ...tagsFromBody(body)]),
       excerpt: excerptFrom(body),
+      kind: "note",
     };
   });
 
@@ -233,6 +237,10 @@ export function buildNoteGraph(files: NoteSourceFile[]): NoteGraphPayload {
     }
   }
 
+  const folderHubs = linkLooseFolderNotes(nodes, edges, addEdge);
+  const noteCount = nodes.length;
+  for (const hub of folderHubs.values()) nodes.push(hub);
+
   const detail = capped
     ? "Some notes were left out so this stays light on an older computer."
     : "These notes were read from the vault folder.";
@@ -242,10 +250,70 @@ export function buildNoteGraph(files: NoteSourceFile[]): NoteGraphPayload {
     detail,
     nodes,
     edges,
-    noteCount: nodes.length,
+    noteCount,
     connectionCount: edges.length,
     hiddenCount,
     capped,
+  };
+}
+
+function linkLooseFolderNotes(
+  nodes: GraphNode[],
+  edges: GraphEdge[],
+  addEdge: (a: string, b: string, reason: GraphReason) => void,
+): Map<string, GraphNode> {
+  const folderTouch = new Set<string>();
+  for (const edge of edges) {
+    if (edge.reason !== "folder") continue;
+    folderTouch.add(edge.from);
+    folderTouch.add(edge.to);
+  }
+
+  const folderHubs = new Map<string, GraphNode>();
+  const pendingByFolder = new Map<string, GraphNode[]>();
+  for (const note of nodes) {
+    if (note.kind !== "note" || folderTouch.has(note.id)) continue;
+    const group = pendingByFolder.get(note.folder) ?? [];
+    group.push(note);
+    pendingByFolder.set(note.folder, group);
+  }
+
+  for (const [folder, group] of pendingByFolder) {
+    const anchor = nodes.find((note) => note.folder === folder && folderTouch.has(note.id));
+    if (anchor) {
+      for (const note of group) addEdge(note.id, anchor.id, "folder");
+      continue;
+    }
+    const hub = folderHub(folder);
+    folderHubs.set(folder, hub);
+    for (const note of group) addEdge(note.id, hub.id, "folder");
+  }
+
+  for (const [folder, hub] of folderHubs) {
+    if (!folder) continue;
+    const parentHub = folderHubs.get(hub.folder);
+    if (parentHub) {
+      addEdge(hub.id, parentHub.id, "folder");
+      continue;
+    }
+    const parentNote = nodes.find((note) => note.folder === hub.folder && folderTouch.has(note.id));
+    if (parentNote) addEdge(hub.id, parentNote.id, "folder");
+  }
+
+  return folderHubs;
+}
+
+function folderHub(folder: string): GraphNode {
+  const parent = folder.includes("/") ? path.posix.dirname(folder) : "";
+  return {
+    id: folder ? `folder:${folder}` : "folder:",
+    title: folder ? path.posix.basename(folder) : "Vault",
+    folder: folder ? parent : "",
+    tags: [],
+    excerpt: folder
+      ? `Folder ${folder}. Notes inside it use this as their parent. It is not a note.`
+      : "Top of the vault. Notes in this folder connect here. It is not a note.",
+    kind: "folder",
   };
 }
 

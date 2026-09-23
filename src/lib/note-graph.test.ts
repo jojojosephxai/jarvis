@@ -41,6 +41,32 @@ describe("buildNoteGraph", () => {
     assert.equal(graph.capped, true);
   });
 
+  it("connects notes in one folder even when nothing links them", () => {
+    const graph = buildNoteGraph([
+      { path: "About.md", text: "# About\n\nJoseph.\n" },
+      { path: "School.md", text: "# School\n\nClass.\n" },
+    ]);
+    assert.equal(graph.noteCount, 2);
+    assert.equal(graph.nodes.filter((node) => node.kind === "folder").length, 1);
+    assert.equal(graph.connectionCount, 2);
+    assert.equal(
+      graph.edges.every((edge) => edge.reason === "folder"),
+      true,
+    );
+  });
+
+  it("keeps a real parent note instead of adding a folder hub", () => {
+    const graph = buildNoteGraph([
+      { path: "school/index.md", text: "# School\n\nHome.\n" },
+      { path: "school/fair.md", text: "# Fair\n\nPlants.\n" },
+    ]);
+    assert.equal(
+      graph.nodes.some((node) => node.kind === "folder"),
+      false,
+    );
+    assert.equal(graph.edges.filter((edge) => edge.reason === "folder").length, 1);
+  });
+
   it("returns no nodes for an empty list", () => {
     const graph = buildNoteGraph([]);
     assert.equal(graph.status, "empty");
@@ -81,6 +107,11 @@ describe("loadVaultGraph", () => {
       assert.equal(graph.nodes.some((note) => note.title === "About"), true);
       assert.equal(graph.nodes.some((note) => note.title === "School"), true);
       assert.equal(graph.noteCount <= MAX_GRAPH_NODES, true);
+      assert.equal(graph.connectionCount > 0, true);
+      assert.equal(
+        graph.edges.some((edge) => edge.reason === "folder"),
+        true,
+      );
     } finally {
       if (previous === undefined) delete process.env.OBSIDIAN_VAULT_PATH;
       else process.env.OBSIDIAN_VAULT_PATH = previous;
