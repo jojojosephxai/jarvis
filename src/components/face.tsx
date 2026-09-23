@@ -14,10 +14,12 @@ import { VoiceButtons, VoiceStatus } from "@/components/voice-controls";
 import { makeId } from "@/lib/ids";
 import {
   isHandPlan,
+  isMorningBrief,
   isReceipt,
   type CalendarEvent,
   type ChatResponse,
   type HandPlan,
+  type MorningBrief,
   type Receipt,
 } from "@/lib/types";
 import { FACE_VIEWS, parseViewIntent, viewLabel, type FaceView } from "@/lib/view-intent";
@@ -39,7 +41,8 @@ type LogItem =
   | { kind: "you"; id: string; text: string; at: string }
   | { kind: "stub"; id: string; heard: string; at: string; view: FaceView }
   | { kind: "answer"; id: string; text: string; notice?: string; at: string; failed?: boolean }
-  | { kind: "hand"; id: string; at: string; reply: string; plan?: HandPlan; receipts: Receipt[] };
+  | { kind: "hand"; id: string; at: string; reply: string; plan?: HandPlan; receipts: Receipt[] }
+  | { kind: "brief"; id: string; at: string; brief: MorningBrief };
 
 function stubOutcome(view: FaceView): string {
   return `View is now ${viewLabel(view)}. That change stays on this screen.`;
@@ -213,6 +216,13 @@ export function Face() {
         await voice.speak(payload.reply);
         return;
       }
+      const brief = payload.brief;
+      if (brief && isMorningBrief(brief)) {
+        setItems((current) =>
+          [...current, { kind: "brief" as const, id: makeId("brief"), at, brief }].slice(-40),
+        );
+        return;
+      }
       setItems((current) =>
         [
           ...current,
@@ -241,6 +251,49 @@ export function Face() {
       );
     } finally {
       pendingRef.current = false;
+      setPending(false);
+      pulseOrb();
+    }
+  }
+
+  async function runBrief() {
+    if (pending) return;
+    const at = new Date().toISOString();
+    setItems((current) =>
+      [...current, { kind: "you" as const, id: makeId("you"), text: "Morning brief", at }].slice(-40),
+    );
+    setPending(true);
+    setOrb("ack");
+    try {
+      const response = await fetch("/api/brief");
+      const payload: unknown = await response.json();
+      if (!response.ok || !isMorningBrief(payload)) {
+        const error =
+          payload && typeof payload === "object" && typeof (payload as { error?: unknown }).error === "string"
+            ? (payload as { error: string }).error
+            : "The morning brief did not load. Nothing was invented from the calendar or the vault.";
+        setItems((current) =>
+          [...current, { kind: "answer" as const, id: makeId("ans"), text: error, at, failed: true }].slice(-40),
+        );
+        return;
+      }
+      setItems((current) =>
+        [...current, { kind: "brief" as const, id: makeId("brief"), at, brief: payload }].slice(-40),
+      );
+    } catch {
+      setItems((current) =>
+        [
+          ...current,
+          {
+            kind: "answer" as const,
+            id: makeId("ans"),
+            text: "The morning brief did not load. Check that the server is running, then try again. Nothing was invented.",
+            at,
+            failed: true,
+          },
+        ].slice(-40),
+      );
+    } finally {
       setPending(false);
       pulseOrb();
     }
@@ -329,7 +382,7 @@ export function Face() {
             </div>
           </dl>
           <p className="status-note">
-            Voice is not live. Questions are answered from the vault notes. Hands can still save a demo calendar event, or ask before send, spend, and delete.
+            Voice is not live. Questions are answered from the vault notes. Morning brief reads the demo calendar and the vault priorities. Hands can still save a demo calendar event, or ask before send, spend, and delete.
           </p>
         </section>
         <section className="comms" aria-label="Talk">
@@ -338,19 +391,30 @@ export function Face() {
               <h2>Talk</h2>
               <p>{pending ? "Reading" : "Vault"}</p>
             </div>
-            {items.length > 0 ? (
+            <div className="comms-actions">
               <Button
                 type="button"
-                variant="ghost"
-                className="h-11 px-3"
-                onClick={() => {
-                  voice.stop();
-                  setItems([]);
-                }}
+                variant="outline"
+                className="h-11 rounded-none px-3"
+                disabled={pending}
+                onClick={() => void runBrief()}
               >
-                Clear
+                Morning brief
               </Button>
-            ) : null}
+              {items.length > 0 ? (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  className="h-11 px-3"
+                  onClick={() => {
+                    voice.stop();
+                    setItems([]);
+                  }}
+                >
+                  Clear
+                </Button>
+              ) : null}
+            </div>
           </div>
           <div className="talk-log">
             {events.length > 0 ? (
@@ -367,7 +431,7 @@ export function Face() {
             ) : null}
             {items.length === 0 ? (
               <p className="empty-talk">
-                Ask about the notes. Jarvis answers only from the vault and names the notes it used. A calendar line still shows a plan and a receipt. Orb and Graph switch the view.
+                Ask about the notes, or press Morning brief. The brief lists the demo calendar and the priority lines written in the vault. It does not invent events or email. Orb and Graph switch the view.
               </p>
             ) : (
               <div className="talk-list" aria-live="polite">
@@ -442,6 +506,7 @@ export function Face() {
 
 function lastSpoken(items: LogItem[]): string {
   for (const item of [...items].reverse()) {
+    if (item.kind === "brief" && item.brief.reply.trim()) return item.brief.reply;
     if (item.kind === "hand" && item.reply.trim()) return item.reply;
     if (item.kind === "answer" && !item.failed && item.text.trim()) return item.text;
   }
@@ -544,6 +609,8 @@ function LogItemView({
           {item.notice ? <p className="stub-lead">{item.notice}</p> : null}
         </div>
       );
+    case "brief":
+      return <BriefCard at={item.at} brief={item.brief} />;
     case "hand":
       return (
         <div className="talk-list">
@@ -565,6 +632,60 @@ function LogItemView({
       return neverItem;
     }
   }
+}
+
+function BriefCard({ brief, at }: { brief: MorningBrief; at: string }) {
+  return (
+    <article className="stub-receipt brief-card">
+      <div className="stub-head">
+        <p>Morning brief</p>
+        <p>{brief.heading}</p>
+      </div>
+      <h3>daily.brief</h3>
+      <p className="stub-lead">Demo calendar</p>
+      <p className="stub-outcome">{brief.calendarNote}</p>
+      {brief.events.length > 0 ? (
+        <ul>
+          {brief.events.map((event, index) => (
+            <li key={`${event.title}-${event.when}-${index}`}>
+              {event.title} — {event.when}
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="stub-lead">No events are listed.</p>
+      )}
+      <p className="stub-lead">Vault priorities</p>
+      <p className="stub-outcome">{brief.vaultNote}</p>
+      {brief.priorities.length > 0 ? (
+        <ul>
+          {brief.priorities.map((item, index) => (
+            <li key={`${item.note}-${index}`}>
+              {item.note}: {item.line}
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="stub-lead">No priority lines are listed.</p>
+      )}
+      {brief.gaps.length > 0 ? (
+        <>
+          <p className="stub-lead">Not written down</p>
+          <ul>
+            {brief.gaps.map((gap, index) => (
+              <li key={`${gap.note}-${gap.field}-${index}`}>
+                {gap.note}: {gap.field}
+              </li>
+            ))}
+          </ul>
+        </>
+      ) : null}
+      <p className="stub-outcome">{brief.mail}</p>
+      {brief.checked.length > 0 ? <p className="stub-lead">Notes checked: {brief.checked.join(", ")}.</p> : null}
+      {brief.escalate ? <p className="stub-lead">{brief.escalate}</p> : null}
+      <time dateTime={at}>{formatStamp(at)}</time>
+    </article>
+  );
 }
 
 function isChatResponse(value: unknown): value is ChatResponse {

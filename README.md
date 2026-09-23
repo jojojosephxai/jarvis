@@ -4,6 +4,8 @@ Jarvis is a personal assistant you open in a browser. The screen is the **Face**
 
 The **brain** answers from the Obsidian vault only. Each answer names the notes it used. If the notes do not say it, Jarvis says so. It does not invent facts and it does not send email.
 
+**Morning brief** reads the demo calendar and the priority lines written in the vault. If the calendar is empty, or a note is blank, the brief says that. It does not invent events or an overnight email, and it does not call Grok.
+
 **Hands** can save a demo calendar event, show a link stub, or ask before send, spend, and delete. Those show a **plan** and then a **receipt**. Calendar writes are auto-approved. Send, spend, and delete wait for a yes.
 
 **Voice** reads the reply already on screen. It uses this computer's voice, or Sonia (British) when an Azure speech key is set. If neither can speak, it says so. Ring and Cube views are not built. No account is required. Phone calls are refused.
@@ -48,6 +50,17 @@ These still work. They are not vault answers.
 3. Type `Send an email to my coach that practice moved to 5` and press **Send**. Nothing is sent. Press **No, don't** for a declined receipt. Press **Yes, do it** only if you want to try. After a yes, the receipt still says no mail was sent, because no mail hand is connected. Typing yes in the box does not send it.
 4. `Spend $12 on pizza` waits the same way. After a yes, no money is spent.
 5. `Delete soccer practice from my calendar` waits for a yes. **Yes, do it** removes that demo event. **No, don't** leaves it.
+
+## Morning brief
+
+1. Press **Morning brief** above the talk box. Or type `morning brief` and press **Send**.
+2. You should see today's date, then two parts: the demo calendar, and priority lines copied from the vault.
+3. With no saved events, the brief says the demo calendar is empty. It does not add a fake practice or a meeting.
+4. The starter vault is thin. You should see the science fair, soccer after school, and the library book due Friday, copied from Goals and School. Swim practice time stays under **Not written down**.
+5. The brief says no mail was read. It will not claim an overnight email.
+6. Grok is not called for the brief. If you want Brain to read a note, ask in the talk box. Example: `What time is swim practice?`
+
+Using the brief on three school days is a habit for later. The button and the command are the part that works now.
 
 ## Model
 

@@ -550,6 +550,13 @@ html[data-boot="done"] .boot-screen {
   text-transform: uppercase;
 }
 
+.comms-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.35rem;
+}
+
 .talk-log {
   min-height: 0;
   flex: 1;
@@ -637,6 +644,15 @@ html[data-boot="done"] .boot-screen {
 
 .stub-outcome {
   margin-top: 0.7rem;
+}
+
+.brief-card ul {
+  margin: 0.35rem 0 0;
+  padding-left: 1.15rem;
+}
+
+.brief-card li + li {
+  margin-top: 0.28rem;
 }
 
 .composer {

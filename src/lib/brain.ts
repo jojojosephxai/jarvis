@@ -4,6 +4,7 @@ import { answerFromVault, type AnswerOptions, type GroundedAnswer } from "./grou
 import { brainMode } from "./grok";
 import { resolveHand } from "./hands";
 import { mentionsCalendar, parseIntent } from "./intent";
+import { isMorningBriefRequest, morningBriefResponse } from "./morning-brief";
 import type { ChatMessageInput, ChatResponse } from "./types";
 
 const MAX_MESSAGES = 16;
@@ -38,6 +39,10 @@ export async function think(
   const latest = messages.at(-1);
   if (!latest || latest.role !== "user") {
     return { reply: "Say that once more?", mode: brainMode(), receipts: [] };
+  }
+
+  if (isMorningBriefRequest(latest.content)) {
+    return morningBriefResponse(options);
   }
 
   const parsed = parseIntent(latest.content);
