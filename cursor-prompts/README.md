@@ -1,3 +1,1 @@
-# Cursor prompts
-
-`launch-prompt.md` is the launch prompt from the start of the agent thread that created this repo. It is stored verbatim so a desktop Cursor session can use the same request.
+This folder holds the exact prompts Jarvis Ship sent to Cursor cloud agents, so Joseph can browse them in the IDE.

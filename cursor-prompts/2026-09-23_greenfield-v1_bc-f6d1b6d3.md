@@ -1,3 +1,7 @@
+Agent id: bc-f6d1b6d3-4fcd-5f15-882a-d0ebca9ceb3b
+Title: Jarvis greenfield v1
+
+--- VERBATIM LAUNCH PROMPT ---
 Build Joseph's new Jarvis product from a clean slate in this brand-new private Origin repo.
 
 CRITICAL: Do NOT use, clone, copy, reference, or mirror any existing Jarvis/HUD/Atelier code, docs, aesthetics, or architecture. Treat this as a net-new product with no prior repo history. Invent a clean modern stack yourself.
@@ -24,3 +28,4 @@ Success criteria:
 - No references to any legacy Jarvis/Atelier HUD project.
 
 Investigate and choose a sensible stack yourself (Next.js/Vite/etc.). Prefer simple and shippable over clever. Commit on main of this new Origin repo and leave clear try instructions in the README.
+--- END ---
