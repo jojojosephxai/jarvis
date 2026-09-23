@@ -13,14 +13,21 @@ const geistSans = Geist({
 
 export const metadata: Metadata = {
   title: "Jarvis",
-  description: "A personal assistant with a face, a brain, and hands that leave a receipt.",
+  description: "Jarvis Face. A dark screen with a status orb and a talk box. The brain and voice are not live yet.",
+  appleWebApp: {
+    capable: true,
+    title: "Jarvis",
+    statusBarStyle: "black-translucent",
+  },
 };
 
 export const viewport: Viewport = {
-  themeColor: "#141210",
+  themeColor: "#030508",
+  colorScheme: "dark",
   width: "device-width",
   initialScale: 1,
   viewportFit: "cover",
+  interactiveWidget: "resizes-content",
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {
