@@ -203,11 +203,17 @@ export function listenFailureMessage(code: string): string | null {
 export const EARS_UNAVAILABLE = "This browser can't use the mic. Type instead. Chrome or Edge can listen.";
 
 function speakerClause(input: {
+  grokLive: boolean;
+  grokVoice: string | null;
   azureLive: boolean;
   azureVoice: string | null;
   browserCanSpeak: boolean;
   browserVoice: { name: string; british: boolean } | null;
 }): string {
+  if (input.grokLive && input.grokVoice) {
+    const name = input.grokVoice.toLowerCase() === "altair" ? "Altair" : input.grokVoice;
+    return `Speaker: ${name}, a Grok voice. The key stays on the server.`;
+  }
   if (input.azureLive && input.azureVoice) {
     return `Speaker: ${friendlyVoiceName(input.azureVoice)}, a British neural voice (Azure free tier).`;
   }
@@ -225,14 +231,30 @@ function speakerClause(input: {
 
 export function voiceSnapshot(input: {
   earsSupported: boolean;
+  grokLive?: boolean;
+  grokVoice?: string | null;
   azureLive: boolean;
   azureVoice: string | null;
   browserCanSpeak: boolean;
   browserVoice: { name: string; british: boolean } | null;
 }): VoiceSnapshot {
-  const mouth: MouthKind = input.azureLive ? "azure" : input.browserCanSpeak ? "browser" : "not-live";
+  const grokLive = input.grokLive === true;
+  const mouth: MouthKind = grokLive
+    ? "grok"
+    : input.azureLive
+      ? "azure"
+      : input.browserCanSpeak
+        ? "browser"
+        : "not-live";
   const ears: EarsKind = input.earsSupported ? "browser" : "unsupported";
-  const speaker = speakerClause(input);
+  const speaker = speakerClause({
+    grokLive,
+    grokVoice: input.grokVoice ?? null,
+    azureLive: input.azureLive,
+    azureVoice: input.azureVoice,
+    browserCanSpeak: input.browserCanSpeak,
+    browserVoice: input.browserVoice,
+  });
   const mic =
     ears === "browser"
       ? "Mic listens for British English."
@@ -249,7 +271,7 @@ export function planAfterServer(input: {
       if (!input.browserReady) {
         return {
           action: "not-live",
-          notice: "Nothing was spoken. This browser can't speak, and no Azure speech key is set.",
+          notice: "Nothing was spoken. This browser can't speak, and no Grok voice is set.",
         };
       }
       return { action: "browser", notice: null };

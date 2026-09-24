@@ -1,4 +1,4 @@
-import { synthesizeAzure } from "@/lib/voice/azure";
+import { synthesizeGrok } from "@/lib/voice/grok-tts";
 
 export const dynamic = "force-dynamic";
 
@@ -27,7 +27,7 @@ export async function POST(request: Request) {
     );
   }
 
-  const result = await synthesizeAzure(text);
+  const result = await synthesizeGrok(text);
   if (!result.ok) {
     return Response.json(
       { live: false, reason: result.reason, detail: result.detail },
@@ -42,8 +42,7 @@ export async function POST(request: Request) {
     headers: {
       "Content-Type": result.contentType,
       "Cache-Control": "no-store",
-      "X-Voice-Mouth": "azure",
-      "X-Voice-British": "true",
+      "X-Voice-Mouth": "grok",
       "X-Voice-Name": result.voice,
       "X-Voice-Clipped": result.clipped ? "true" : "false",
     },

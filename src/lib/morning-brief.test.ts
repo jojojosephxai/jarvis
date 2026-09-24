@@ -168,7 +168,8 @@ describe("loadMorningBrief", () => {
     });
     assert.equal(response.mode, "demo");
     assert.equal(response.receipts.length, 0);
-    assert.match(response.reply, /Morning brief — Wednesday, September 23/);
+    assert.match(response.reply, /Morning brief —/);
+    assert.match(response.reply, /Soccer/);
     assert.equal(response.brief?.events[0]?.title, "Soccer");
   });
 

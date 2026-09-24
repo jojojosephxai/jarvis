@@ -1,11 +1,17 @@
 import type { BrainMode, ChatMessageInput } from "./types";
 
-const PHRASE_PROMPT = `You are Jarvis. You may only use the note text in the user message.
-Every fact must appear in those notes. Cite the note title in parentheses, like (School).
-If the notes do not say it, reply exactly: I don't have that in the vault notes.
-Do not add facts. Do not mention email, messages, or overnight unless the notes do.
-Do not call tools. Do not output JSON. Short sentences. No emoji.
-Stay on words from the notes. Extra words get the reply thrown away.`;
+/** Butler prompt. Vault notes are context, not a reason to skip the model. */
+export const BUTLER_PROMPT = `You are Jarvis, a calm butler speaking in a quiet room.
+Use short, clear sentences. No emoji. No bullet lists unless the user asks for a list.
+
+Vault notes may be included with the question. They are context when they are relevant, not a gate.
+When a note helps, use it and cite the note title in parentheses, like (School).
+When no note matches, or the notes do not cover the question, still answer.
+A greeting, a general question, or anything else still gets a real answer.
+Do not refuse only because the vault had no hit. Do not say the vault blocked you.
+Do not invent private facts about the person that are not in the notes. If a personal fact is missing, say it is not written down, then still be helpful.
+Do not claim you sent email, placed a phone call, or spent money.
+Do not call tools. Do not output JSON.`;
 
 const SYSTEM_PROMPT = `You are Jarvis, a calm personal assistant speaking in a quiet room.
 Use short, clear sentences. No emoji. No bullet lists unless the user asks for a list.
@@ -39,10 +45,12 @@ export function brainMode(): BrainMode {
   return grokConfigured() ? "grok" : "demo";
 }
 
-/** Talk model lock. The API id is grok-4.7. Other ids, including grok-4.3, are not used. */
+/** Talk model lock. The API id is grok-4.7. Claude, grok-4.3, and any other id are not used. */
 export const LOCKED_XAI_MODEL = "grok-4.7";
 
 export function grokModel(): string {
+  const requested = process.env.GROK_MODEL?.trim();
+  if (requested === LOCKED_XAI_MODEL) return requested;
   return LOCKED_XAI_MODEL;
 }
 
@@ -139,8 +147,8 @@ export async function grokPhraseNotes(question: string, packet: string): Promise
   const model = grokModel();
   const user = (packet.startsWith("Question:") ? packet : `Question:\n${question}\n\n${packet}`).slice(0, 12000);
   return postChat(
-    chatBody(model, 0, 350, [
-      { role: "system", content: PHRASE_PROMPT },
+    chatBody(model, 0.4, 400, [
+      { role: "system", content: BUTLER_PROMPT },
       { role: "user", content: user },
     ]),
     45_000,

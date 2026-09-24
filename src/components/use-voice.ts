@@ -5,7 +5,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { browserEarsSupported, browserMouthSupported, startBrowserListen } from "@/lib/voice/browser";
 import { EARS_UNAVAILABLE, voiceSnapshot, type VoiceSnapshot } from "@/lib/voice/policy";
 import { browserVoiceSummary, speakAloud, stopSpeaking } from "@/lib/voice/session";
-import type { VoicePublicStatus } from "@/lib/voice/types";
+import type { EarsKind, MouthKind, VoicePublicStatus } from "@/lib/voice/types";
 
 const CHECKING_LINE = "Checking the microphone and speaker.";
 
@@ -13,7 +13,7 @@ function isVoiceStatus(value: unknown): value is VoicePublicStatus {
   if (!value || typeof value !== "object") return false;
   const record = value as Partial<VoicePublicStatus>;
   return (
-    (record.provider === "azure" || record.provider === "none") &&
+    (record.provider === "grok" || record.provider === "azure" || record.provider === "none") &&
     typeof record.live === "boolean" &&
     (record.voice === null || typeof record.voice === "string") &&
     typeof record.detail === "string"
@@ -32,11 +32,20 @@ async function fetchVoiceStatus(): Promise<VoicePublicStatus> {
     provider: "none",
     live: false,
     voice: null,
-    detail: "No Azure speech key is set. The browser voice is the free fallback.",
+    detail: "No Grok voice is set. This computer's voice is the fallback.",
   };
 }
 
-export function useVoice(onSpeakingChange: (active: boolean) => void) {
+export function useVoice(onSpeakingChange: (active: boolean) => void): {
+  listening: boolean;
+  line: string;
+  mouth: MouthKind | "unknown";
+  ears: EarsKind | "unknown";
+  notice: string | null;
+  speak: (text: string) => Promise<boolean>;
+  pressMic: (onText: (text: string, isFinal: boolean) => void) => void;
+  stop: () => void;
+} {
   const onSpeakingChangeRef = useRef(onSpeakingChange);
   const listenStop = useRef<(() => void) | null>(null);
   const [listening, setListening] = useState(false);
@@ -60,8 +69,10 @@ export function useVoice(onSpeakingChange: (active: boolean) => void) {
       setSnapshot(
         voiceSnapshot({
           earsSupported: browserEarsSupported(),
+          grokLive: status.live && status.provider === "grok",
+          grokVoice: status.provider === "grok" ? status.voice : null,
           azureLive: status.live && status.provider === "azure",
-          azureVoice: status.voice,
+          azureVoice: status.provider === "azure" ? status.voice : null,
           browserCanSpeak: browserMouthSupported(),
           browserVoice,
         }),
@@ -102,6 +113,8 @@ export function useVoice(onSpeakingChange: (active: boolean) => void) {
         setSnapshot(
           voiceSnapshot({
             earsSupported: browserEarsSupported(),
+            grokLive: false,
+            grokVoice: null,
             azureLive: false,
             azureVoice: null,
             browserCanSpeak: false,

@@ -153,6 +153,21 @@ describe("voiceSnapshot", () => {
     assert.match(snapshot.line, /Speaker is not live/);
   });
 
+  it("names Altair when Grok speech is configured", () => {
+    const snapshot = voiceSnapshot({
+      earsSupported: true,
+      grokLive: true,
+      grokVoice: "altair",
+      azureLive: false,
+      azureVoice: null,
+      browserCanSpeak: true,
+      browserVoice: { name: "Google UK English Female", british: true },
+    });
+    assert.equal(snapshot.mouth, "grok");
+    assert.match(snapshot.line, /Altair/);
+    assert.doesNotMatch(snapshot.line, /Google UK/);
+  });
+
   it("names Sonia when Azure is configured", () => {
     const snapshot = voiceSnapshot({
       earsSupported: true,

@@ -22,6 +22,7 @@ import {
   type MorningBrief,
   type Receipt,
 } from "@/lib/types";
+import type { MouthKind } from "@/lib/voice/types";
 import { FACE_VIEWS, decideFaceMode, viewLabel, type FaceView } from "@/lib/view-intent";
 
 const BOOT_KEY = "jarvis-boot";
@@ -376,7 +377,13 @@ export function Face() {
           <div>
             <dt>Voice</dt>
             <dd>
-              <span className={voice.mouth === "azure" || voice.mouth === "browser" ? "lamp lamp-on" : "lamp"} />
+              <span
+                className={
+                  voice.mouth === "grok" || voice.mouth === "azure" || voice.mouth === "browser"
+                    ? "lamp lamp-on"
+                    : "lamp"
+                }
+              />
               {voiceLamp(voice.mouth)}
             </dd>
           </div>
@@ -524,18 +531,22 @@ function lastSpoken(items: LogItem[]): string {
   return "";
 }
 
-function voiceLamp(mouth: string): string {
+function voiceLamp(mouth: MouthKind | "unknown"): string {
   switch (mouth) {
     case "unknown":
       return "Checking";
+    case "grok":
+      return "Altair";
     case "azure":
       return "British";
     case "browser":
       return "This computer";
     case "not-live":
       return "Not live";
-    default:
-      return "Not live";
+    default: {
+      const neverMouth: never = mouth;
+      return neverMouth;
+    }
   }
 }
 

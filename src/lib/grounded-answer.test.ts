@@ -123,38 +123,44 @@ describe("answerFromVault", () => {
     assert.equal(answer.sources.length, 0);
   });
 
-  it("drops model wording that leaves the notes", async () => {
+  it("keeps a model answer and still cites the notes that matched", async () => {
     const root = await makeVault();
     const answer = await answerFromVault("What grade is Joseph in?", {
       root,
       vaultPath: path.join(root, "vault"),
       useModel: true,
-      complete: async () => ({
-        ok: true,
-        text: "Joseph attends Lincoln High and I emailed you overnight.",
-      }),
-    });
-    assert.equal(answer.mode, "demo");
-    assert.match(answer.reply, /9th/);
-    assert.match(answer.notice ?? "", /dropped/);
-    assert.doesNotMatch(answer.reply, /Lincoln|emailed/i);
-  });
-
-  it("keeps model wording that stays on the notes", async () => {
-    const root = await makeVault();
-    const answer = await answerFromVault("What grade is Joseph in?", {
-      root,
-      vaultPath: path.join(root, "vault"),
-      useModel: true,
-      complete: async () => ({
-        ok: true,
-        text: "Joseph is in 9th grade (School).",
-      }),
+      complete: async (_question, packet) => {
+        assert.match(packet, /School/);
+        return { ok: true, text: "Joseph is in 9th grade (School)." };
+      },
     });
     assert.equal(answer.mode, "grok");
     assert.match(answer.reply, /9th grade/);
+    assert.match(answer.reply, /\(School\)/);
     assert.match(answer.reply, /Notes used:/);
-    assert.match(answer.notice ?? "", /vault notes only/);
+    assert.match(answer.notice ?? "", /vault notes were included/);
+  });
+
+  it("calls the model for a greeting when no vault note matches", async () => {
+    const root = await makeVault();
+    let calls = 0;
+    const answer = await answerFromVault("hello", {
+      root,
+      vaultPath: path.join(root, "vault"),
+      useModel: true,
+      complete: async (question, packet) => {
+        calls += 1;
+        assert.equal(question, "hello");
+        assert.match(packet, /No vault note matched/);
+        return { ok: true, text: "Hello. How can I help?" };
+      },
+    });
+    assert.equal(calls, 1);
+    assert.equal(answer.mode, "grok");
+    assert.equal(answer.sources.length, 0);
+    assert.match(answer.reply, /Hello\. How can I help\?/);
+    assert.doesNotMatch(answer.reply, /don't have that in the vault notes|nothing was sent to a model/i);
+    assert.match(answer.notice ?? "", /No vault note matched/);
   });
 });
 
@@ -183,6 +189,24 @@ describe("think vault answers", () => {
     assert.match(result.reply, /light/);
     assert.match(result.reply, /Notes used:/);
     assert.doesNotMatch(result.reply, /orange/);
+  });
+
+  it("sends a greeting to the model instead of stopping at the vault", async () => {
+    const root = await makeVault();
+    let calls = 0;
+    const result = await think([{ role: "user", content: "hello" }], {
+      root,
+      vaultPath: path.join(root, "vault"),
+      useModel: true,
+      complete: async () => {
+        calls += 1;
+        return { ok: true, text: "Hello. I am here." };
+      },
+    });
+    assert.equal(calls, 1);
+    assert.equal(result.mode, "grok");
+    assert.match(result.reply, /Hello\. I am here\./);
+    assert.doesNotMatch(result.reply ?? "", /nothing was sent to a model/i);
   });
 
   it("still saves a calendar event", async () => {

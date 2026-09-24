@@ -5,10 +5,9 @@ import type { BrainMode } from "./types";
 import { loadVaultNotes, resolveVaultPath, type VaultNote } from "./vault-read";
 
 /**
- * Answers a question from Obsidian vault note text only.
- * With no model key, a local reader quotes the notes. That is the default.
- * With XAI_API_KEY, Grok may word the same notes. Wording that leaves the
- * notes is dropped. Nothing is invented, including email claims.
+ * Answers with grok-4.7 when a key is set. Matching vault notes are context.
+ * A miss in the vault does not skip the model. With no key, a local reader
+ * quotes the notes and says when nothing matched.
  */
 
 const STOP = new Set([
@@ -314,10 +313,6 @@ export function wordingStaysOnNotes(reply: string, notes: VaultNote[]): boolean 
   return true;
 }
 
-function gaveUp(reply: string): boolean {
-  return /don'?t have that|do not have that|not in the vault/i.test(reply);
-}
-
 function withSourcesFooter(reply: string, sources: string[]): string {
   if (sources.length === 0) return reply.trim();
   if (/notes used:/i.test(reply)) return reply.trim();
@@ -356,32 +351,34 @@ export async function answerFromVault(question: string, options: AnswerOptions =
   const local = localReading(question, picked, allTitles);
   const modelOn = options.useModel ?? grokConfigured();
 
-  if (!modelOn || picked.length === 0) {
+  if (!modelOn) {
     return {
       reply: local.reply,
       mode: "demo",
       sources: local.sources,
-      notice:
-        modelOn && picked.length === 0
-          ? "No vault note matched, so nothing was sent to a model."
-          : undefined,
     };
   }
 
   const complete = options.complete ?? grokPhraseNotes;
-  const result = await complete(question, packetFor(question, picked));
-  const notes = picked.map((scored) => scored.note);
-  if (result.ok && !gaveUp(result.text) && wordingStaysOnNotes(result.text, notes)) {
+  const packet =
+    picked.length > 0
+      ? packetFor(question, picked)
+      : `Question:\n${question}\n\nNotes:\nNo vault note matched. Answer anyway.`;
+  const result = await complete(question, packet);
+  if (result.ok && result.text.trim()) {
     return {
       reply: withSourcesFooter(result.text, local.sources),
       mode: "grok",
       sources: local.sources,
-      notice: "Grok worded this from the vault notes only.",
+      notice:
+        local.sources.length > 0
+          ? "Grok answered. Matching vault notes were included as context."
+          : "Grok answered. No vault note matched, so none were cited.",
     };
   }
 
   const notice = result.ok
-    ? "Grok's wording did not stay on the notes, so it was dropped. This is the local reading."
+    ? "Grok's reply was empty, so this is the local reading of the vault notes."
     : `Grok did not answer (${result.reason}), so this is the local reading of the vault notes.`;
   return {
     reply: local.reply,

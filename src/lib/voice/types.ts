@@ -8,7 +8,7 @@ export type ServerSpeakFailure = {
   detail: string;
 };
 
-export type VoiceProvider = "azure" | "none";
+export type VoiceProvider = "grok" | "azure" | "none";
 
 export type VoicePublicStatus = {
   provider: VoiceProvider;
@@ -17,7 +17,7 @@ export type VoicePublicStatus = {
   detail: string;
 };
 
-export type MouthKind = "azure" | "browser" | "not-live";
+export type MouthKind = "grok" | "azure" | "browser" | "not-live";
 
 export type EarsKind = "browser" | "unsupported";
 

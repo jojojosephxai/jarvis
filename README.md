@@ -2,13 +2,13 @@
 
 Jarvis is a personal assistant you open in a browser. This version is the **Face**: a near-black screen with a cyan energy orb in the middle, and a thin strip at the bottom where you can talk.
 
-The **brain** answers from the Obsidian vault only. Each answer names the notes it used. If the notes do not say it, Jarvis says so. It does not invent facts and it does not send email.
+The **brain** calls **grok-4.7** for normal chat when `XAI_API_KEY` is set. Matching vault notes are context, and Jarvis cites them. If no note matches, Jarvis still answers. It does not skip the model just because the vault was quiet. With no key, a local reader quotes the notes instead. It does not send email.
 
 **Morning brief** reads the demo calendar and the priority lines written in the vault. If the calendar is empty, or a note is blank, the brief says that. It does not invent events or an overnight email, and it does not call Grok.
 
 **Hands** can save a demo calendar event, show a link stub, or ask before send, spend, and delete. Those show a **plan** and then a **receipt**. Calendar writes are auto-approved. Send, spend, and delete wait for a yes.
 
-**Voice** reads the reply already on screen. It uses this computer's voice, or Sonia (British) when an Azure speech key is set. If neither can speak, it says so. There is no Ring view and no Cube view. No account is required. Phone calls are refused.
+**Voice** reads the reply already on screen. **Speak** uses the Grok voice **Altair** on the server when `XAI_API_KEY` and `XAI_TTS_VOICE_ID` are set. The key stays on the server. If either is missing, Speak uses this computer's voice. If that cannot speak, it says so. There is no Ring view and no Cube view. No account is required. Phone calls are refused.
 
 ## Try it
 
@@ -22,20 +22,22 @@ npm run dev
 Open [http://localhost:4721](http://localhost:4721).
 
 1. A short boot plays. Press **Skip** if you want the main screen now.
-2. You should see a dark screen and a blue wireframe orb in the middle. It spins, and it grows while it is working. Talk is a thin strip at the bottom, not the middle of the screen. Face is online. Brain says **Vault** when no key is set, or **grok-4.7** when a key is set. Voice says **Not live** until a speaker is available, or **This computer** if this browser can speak. **Mic** and **Speak** sit on that strip next to **Send**.
+2. You should see a dark screen and a blue wireframe orb in the middle. It spins, and it grows while it is working. Talk is a thin strip at the bottom, not the middle of the screen. Face is online. Brain says **Vault** when no key is set, or **grok-4.7** when a key is set. Voice says **Altair** when Grok speech is set, **This computer** if only the browser can speak, or **Not live** if nothing can speak. **Mic** and **Speak** sit on that strip next to **Send**.
 3. Press **Graph**. You should see the notes from the `vault` folder as a cyan galaxy: real dots, real lines, rings behind them. The count matches the vault. Click a dot and the inspector shows the title, the path, and a short preview. Search finds a note. **Most connected** lists the hubs. **All / Notes / Folders** and the folder menu filter the map. **Repel** and **Link length** move the dots. **Fit** frames them. Pick two notes under **Path** to light the steps between them. Press **Dynamic Orb** to put the orb back in the middle. There is no Ring button and no Cube button.
 4. Type `switch to dynamic orb` and press **Send**. The orb comes back, even if the same line also says graph. Type `open the vault` or `path from About to School` to open the graph. A normal question, like a grade or the calendar, leaves the graph and returns to the orb. Press **Talk** if you want to hide that line again.
 5. Type this and press **Send**:
 
    `What grade is Joseph in?`
 
-   The reply quotes the vault and ends with the note names, such as About and School. It says 9th grade. It does not invent a school name.
+   With a key, grok-4.7 answers and cites the notes, such as About and School. It says 9th grade. With no key, the local reader quotes those same notes.
+
+   Type `hello` and press **Send**. With a key, that is a normal grok-4.7 reply. It is not a vault refusal.
 
 More questions:
 
 - `What is the science fair project about?` — Goals says the project is how light changes how fast plants grow.
 - `What time is swim practice?` — Swim leaves the time blank, and the reply says that.
-- `Did you email me overnight?` — the notes do not say that. Jarvis says it does not have it. It will not claim an email was sent.
+- `Did you email me overnight?` — the notes do not say that. With no key, Jarvis says the vault does not have it. With a key, grok-4.7 still answers, and it does not claim an email was sent.
 
 A refresh clears the talk lines. They stay on this screen only.
 
@@ -75,13 +77,13 @@ The talk model is locked to xAI **grok-4.7**. Claude is not used. grok-4.3 is no
 
 1. Copy `.env.example` to `.env.local`.
 2. Put your key from [console.x.ai](https://console.x.ai) in `XAI_API_KEY`.
-3. Leave `XAI_MODEL` as `grok-4.7`. The server sends that model id even if the line is changed.
+3. Leave `GROK_MODEL` as `grok-4.7`. The server sends that model id even if the line is changed.
 4. Stop the server (Ctrl+C) and run `npm run dev` again.
 5. The Brain line should say **grok-4.7**.
 
-Grok only sees the notes that matched the question. If its wording adds a fact that is not in those notes, Jarvis drops that wording and shows the local reading instead.
+Greetings and other questions call grok-4.7. Matching vault notes are sent along as context, and the reply cites them. If nothing in the vault matches, grok-4.7 still answers.
 
-With no key, Jarvis still answers by quoting the notes. A missing key does not block you. Hands still run without a key.
+With no key, Jarvis still answers by quoting the notes. A missing key does not block you. Hands still run without a key. The morning brief still does not call Grok.
 
 The key stays on the server. It is not sent to the browser. Do not commit `.env.local`.
 
@@ -115,7 +117,8 @@ The demo calendar is saved in `data/calendar.json` on this computer only. It is 
 - It does not send a real email, even after you press yes
 - It does not spend real money
 - It does not open a live browser
-- It does not invent facts that are not in the vault
+- It does not skip grok-4.7 just because a vault note missed, when a key is set
+- It does not invent a note citation. Personal facts it cites come from the vault
 - There is no Ring view and no Cube view
 - It does not read a vault write back unless you ask `what changed`
 
@@ -125,20 +128,20 @@ The demo calendar is saved in `data/calendar.json` on this computer only. It is 
 
 Fallback, in order:
 
-1. **Azure Speech**, if `AZURE_SPEECH_KEY` and `AZURE_SPEECH_REGION` are set. The default voice is **Sonia** (`en-GB-SoniaNeural`), a British neural voice. Ryan and Libby are the other choices (`AZURE_SPEECH_VOICE`). Azure's free F0 tier includes 0.5 million neural characters a month. The key stays on the server. The reply text is sent to Microsoft to make the audio.
-2. **This computer's voice**, through the browser. A British voice is used when the computer has one. If it only has another English voice, the line says so. Nothing is sent off the computer.
-3. **Not live.** If Azure is not set and this browser cannot speak, the line under the box says the speaker is not live. The orb does not pretend to talk.
+1. **Grok speech (Altair)**, if `XAI_API_KEY` and `XAI_TTS_VOICE_ID` are set. The server calls `https://api.x.ai/v1/tts`. `XAI_TTS_SPEED` is clamped between 0.7 and 1.5. The key stays on the server. The reply text is sent to xAI to make the audio. The browser only receives the sound.
+2. **This computer's voice**, through the browser, when the key or the voice id is missing, or when Grok speech fails. A British voice is used when the computer has one. Nothing is sent off the computer for that fallback.
+3. **Not live.** If Grok speech is not set and this browser cannot speak, the line under the box says the speaker is not live. The orb does not pretend to talk.
 
 Listening uses the browser's own speech recognition, set to British English (`en-GB`). Chrome and Edge can do this. The mic audio is not uploaded. If this browser cannot listen, **Mic** says so.
 
-**Speak** reads the last vault answer or Hands reply. If there is nothing to read, it says there is nothing to say. With no Azure key, it tries this computer's voice. If that fails, it says nothing was played.
+**Speak** reads the last reply. If there is nothing to read, it says there is nothing to say. With no Grok voice, it tries this computer's voice. If that fails, it says nothing was played.
 
 To try it:
 
-1. Look at the line under the talk box, and at the Voice status lamp.
+1. Look at the line under the talk box, and at the Voice status lamp. With Altair configured it says **Altair**.
 2. Press **Mic** in Chrome or Edge, allow the microphone, and ask a question. The words land in the box and send.
-3. Press **Speak** to hear that reply again.
-4. To use Sonia, copy the Azure lines from `.env.example` into `.env.local`, then restart `npm run dev`. If the key is missing or rejected, Jarvis says so.
+3. Press **Speak** to hear that reply again in Altair.
+4. Copy `XAI_TTS_VOICE_ID` and `XAI_TTS_SPEED` from `.env.example` into `.env.local` next to `XAI_API_KEY`, then restart `npm run dev`. If the key or voice id is missing, Speak uses this computer's voice.
 
 ## Tests
 

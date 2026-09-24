@@ -139,6 +139,7 @@ export async function speakAloud(text: string, hooks: SpeakHooks): Promise<Speak
 
   let failure: ServerSpeakFailure | null = null;
   let audioBlob: Blob | null = null;
+  let serverMouth: "grok" | "azure" = "grok";
   let azureClipped = clipped.clipped;
 
   try {
@@ -152,6 +153,7 @@ export async function speakAloud(text: string, hooks: SpeakHooks): Promise<Speak
     const type = response.headers.get("content-type") ?? "";
     if (response.ok && type.includes("audio")) {
       audioBlob = await response.blob();
+      if (response.headers.get("x-voice-mouth") === "azure") serverMouth = "azure";
       if (response.headers.get("x-voice-clipped") === "true") azureClipped = true;
     } else {
       const payload: unknown = await response.json().catch(() => null);
@@ -179,7 +181,7 @@ export async function speakAloud(text: string, hooks: SpeakHooks): Promise<Speak
     if (played === "played") {
       return {
         played: true,
-        mouth: "azure",
+        mouth: serverMouth,
         notice: azureClipped ? "Only the first part was spoken." : null,
       };
     }
