@@ -1156,19 +1156,28 @@ html[data-boot="done"] .boot-screen {
 
   .graph-stage {
     grid-template-columns: 1fr;
-    grid-template-rows: auto minmax(0, 1fr) auto;
+    grid-template-rows: auto minmax(12rem, 1fr) auto;
+    overflow: hidden;
   }
 
   .galaxy-bay {
-    max-height: 11.5rem;
+    max-height: 7.5rem;
     border-right: none;
     border-bottom: 1px solid rgba(73, 212, 255, 0.28);
   }
 
+  .graph-canvas {
+    min-height: 12rem;
+  }
+
   .graph-inspector {
-    max-height: 9rem;
+    max-height: 4.75rem;
     border-top: 1px solid rgba(73, 212, 255, 0.28);
     border-left: none;
+  }
+
+  .graph-key {
+    bottom: 1.35rem;
   }
 
   .talk-bar,
