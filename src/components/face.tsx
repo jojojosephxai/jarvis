@@ -6,7 +6,8 @@ import { BootScreen } from "@/components/boot-screen";
 import { NoteGraph, type GraphCue } from "@/components/note-graph";
 import { PlanCard } from "@/components/plan-card";
 import { ReceiptCard } from "@/components/receipt-card";
-import { orbLabel, Reactor, type OrbMode } from "@/components/reactor";
+import { OrbStage } from "@/components/orb-stage";
+import { type OrbMode } from "@/components/reactor";
 import { useVoice } from "@/components/use-voice";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -553,18 +554,7 @@ function voiceLamp(mouth: MouthKind | "unknown"): string {
 function OpticStage({ view, orb, cue }: { view: FaceView; orb: OrbMode; cue: GraphCue | null }) {
   switch (view) {
     case "orb":
-      return (
-        <div className="stage-orb">
-          <div className="optic-frame">
-            <span className="tick tick-tl" />
-            <span className="tick tick-tr" />
-            <span className="tick tick-bl" />
-            <span className="tick tick-br" />
-            <Reactor mode={orb} />
-          </div>
-          <p className="orb-state">{orbLabel(orb)}</p>
-        </div>
-      );
+      return <OrbStage mode={orb} />;
     case "graph":
       return <NoteGraph cue={cue} />;
     default: {

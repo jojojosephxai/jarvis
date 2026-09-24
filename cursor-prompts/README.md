@@ -14,4 +14,5 @@ This folder holds the exact prompts Jarvis Ship sent to Cursor cloud agents, so 
 - [2026-09-23 Brain vault gate and Altair TTS](2026-09-23_brain-vault-gate-altair-tts_bc-66c3edef.md)
 - [2026-09-23 Face orb spin and 3D graph](2026-09-23_face-orb-spin-3d-graph_bc-d5444c92.md)
 - [2026-09-23 JOS-40 graph pan](2026-09-23_jos-40-graph-pan_bc-e5fe319a.md)
-Latest: [2026-09-23_jos-40-graph-pan_bc-e5fe319a.md](2026-09-23_jos-40-graph-pan_bc-e5fe319a.md) — drag the graph space to move it.
+- [2026-09-23 JOS-41 orb zoom and inspector](2026-09-23_jos-41-orb-zoom-inspector_bc-16efc062.md)
+Latest: [2026-09-23_jos-41-orb-zoom-inspector_bc-16efc062.md](2026-09-23_jos-41-orb-zoom-inspector_bc-16efc062.md) — drag turns the orb, zoom is on the wheel, pinch, and buttons, and the inspector reads as a cyan HUD.

@@ -1213,6 +1213,19 @@ function GalaxyBay({
   );
 }
 
+function kindLabel(kind: GraphNode["kind"]): string {
+  switch (kind) {
+    case "folder":
+      return "Folder";
+    case "note":
+      return "Note";
+    default: {
+      const neverKind: never = kind;
+      return neverKind;
+    }
+  }
+}
+
 function Inspector({
   node,
   detail,
@@ -1226,48 +1239,130 @@ function Inspector({
   onPath: boolean;
   links: LinkRow[];
 }) {
-  if (!node) {
-    return (
-      <aside className="graph-inspector" aria-label="Inspector">
-        <p className="line-label">Inspector</p>
-        <h3>Click a note</h3>
-        <p className="stub-lead">Notes are the dots. A solid line is a wikilink. A dashed line is a shared tag. A dotted line is the folder.</p>
-        <p className="status-note inspector-note">{detail}</p>
-      </aside>
-    );
-  }
-
-  const place = node.kind === "folder" ? "Folder" : node.folder || "Vault root";
-  const path = node.kind === "folder" ? node.folder || "vault" : node.id;
   return (
     <aside className="graph-inspector" aria-label="Inspector">
-      <p className="line-label">Inspector</p>
-      <h3>{node.title}</h3>
-      <p className="stub-lead">{place}</p>
-      <p className="line-label">Path</p>
-      <p className="line-text">{path}</p>
-      {node.tags.length > 0 ? <p className="stub-lead">{node.tags.map((tag) => `#${tag}`).join(" ")}</p> : null}
-      <p className="line-text">{node.excerpt || "This note has no body text."}</p>
-      <p className="stub-outcome">
-        {degree} connection{degree === 1 ? "" : "s"}
-        {onPath ? " · on the highlighted path" : ""}
-      </p>
-      {links.length > 0 ? (
-        <ul className="galaxy-hubs">
-          {links.slice(0, 8).map((link) => (
-            <li key={`${link.reason}:${link.title}`}>
-              {link.title} · {reasonLabel(link.reason)}
-            </li>
-          ))}
+      <header className="inspector-head">
+        <p className="inspector-kicker">Inspector</p>
+        <span className="inspector-badge">{node ? degree : "—"}</span>
+      </header>
+      {node ? <InspectorBody node={node} degree={degree} onPath={onPath} links={links} /> : <InspectorEmpty detail={detail} />}
+    </aside>
+  );
+}
+
+function InspectorEmpty({ detail }: { detail: string }) {
+  return (
+    <div className="inspector-stack">
+      <h3 className="inspector-title">Click a note</h3>
+      <section className="inspector-block">
+        <h4>Type</h4>
+        <p>A bright dot is a note. A pale dot is a folder.</p>
+      </section>
+      <section className="inspector-block">
+        <h4>Path</h4>
+        <p>The file path shows here after you pick a dot.</p>
+      </section>
+      <section className="inspector-block">
+        <h4>Body</h4>
+        <p>A short preview of the note shows here. It is not the whole file.</p>
+      </section>
+      <section className="inspector-block">
+        <h4>Connections</h4>
+        <ul className="inspector-links">
+          <li>
+            <span>Solid line</span>
+            <span className="inspector-reason" data-reason="wikilink">
+              Wikilink
+            </span>
+          </li>
+          <li>
+            <span>Dashed line</span>
+            <span className="inspector-reason" data-reason="tag">
+              Tag
+            </span>
+          </li>
+          <li>
+            <span>Dotted line</span>
+            <span className="inspector-reason" data-reason="folder">
+              Folder
+            </span>
+          </li>
         </ul>
-      ) : (
-        <p className="stub-lead">No lines touch this dot.</p>
-      )}
-      <p className="stub-lead">
+      </section>
+      <p className="inspector-foot">{detail}</p>
+    </div>
+  );
+}
+
+function InspectorBody({
+  node,
+  degree,
+  onPath,
+  links,
+}: {
+  node: GraphNode;
+  degree: number;
+  onPath: boolean;
+  links: LinkRow[];
+}) {
+  const path = node.kind === "folder" ? node.folder || "vault" : node.id;
+  const typeLine =
+    node.kind === "folder"
+      ? "This dot is the folder, not a note."
+      : node.folder
+        ? `Note in ${node.folder}`
+        : "Note in the vault root";
+  return (
+    <div className="inspector-stack">
+      <h3 className="inspector-title">{node.title}</h3>
+      <div className="inspector-chips">
+        <span className="inspector-chip">{kindLabel(node.kind)}</span>
+        {onPath ? <span className="inspector-chip inspector-chip-live">On path</span> : null}
+        {node.tags.map((tag) => (
+          <span key={tag} className="inspector-chip">
+            #{tag}
+          </span>
+        ))}
+      </div>
+      <section className="inspector-block">
+        <h4>Type</h4>
+        <p>{typeLine}</p>
+      </section>
+      <section className="inspector-block">
+        <h4>Path</h4>
+        <p className="inspector-path">{path}</p>
+      </section>
+      <section className="inspector-block">
+        <h4>Body</h4>
+        <p className="inspector-body">{node.excerpt || "This note has no body text."}</p>
+      </section>
+      <section className="inspector-block">
+        <h4>
+          Connections
+          <span>
+            {degree} line{degree === 1 ? "" : "s"}
+          </span>
+        </h4>
+        {links.length > 0 ? (
+          <ul className="inspector-links">
+            {links.slice(0, 8).map((link) => (
+              <li key={`${link.reason}:${link.title}`}>
+                <span>{link.title}</span>
+                <span className="inspector-reason" data-reason={link.reason}>
+                  {reasonLabel(link.reason)}
+                </span>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p>No lines touch this dot.</p>
+        )}
+      </section>
+      <p className="inspector-foot">
         {node.kind === "folder"
-          ? "This dot is the folder, not a note."
+          ? "Folder hub. The notes inside it hang off this dot."
           : "Preview only. Ask in Talk if you want the brain to read this note."}
       </p>
-    </aside>
+    </div>
   );
 }
