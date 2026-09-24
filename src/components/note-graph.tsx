@@ -2,11 +2,9 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
   cageRadius,
-  cageRings,
   frameAroundPoint,
   frameAroundPoints,
   grabDelta,
@@ -22,7 +20,7 @@ import {
   type LayoutPoint,
   type Pan,
 } from "@/lib/graph-layout";
-import { degreeOf, matchGraphNode, matchingNodes, shortestPath, topHubs } from "@/lib/graph-nav";
+import { degreeOf, matchGraphNode, matchingNodes, shortestPath } from "@/lib/graph-nav";
 import type { GraphEdge, GraphNode, GraphStatus, NoteGraphPayload } from "@/lib/note-graph";
 
 const EMPTY: NoteGraphPayload = {
@@ -38,17 +36,44 @@ const EMPTY: NoteGraphPayload = {
 
 const WIDTH = 1000;
 const HEIGHT = 640;
-const COOL = ["#7ee7ff", "#49d4ff", "#6d8cff", "#5eead4", "#9bb6ff", "#8fd3ff", "#3ec6e0", "#b7d4ff"];
-const CAGE = cageRings();
+const LAYOUT_REPEL = 260;
+const LAYOUT_LINK = 230;
 const STARS = starField();
+const NEON = [
+  "#5dff9a",
+  "#49d4ff",
+  "#ff8a3d",
+  "#c084fc",
+  "#f472b6",
+  "#22d3ee",
+  "#a3e635",
+  "#fb7185",
+  "#818cf8",
+  "#fbbf24",
+  "#2dd4bf",
+  "#e879f9",
+];
 const TAG_COLOR: Record<string, string> = {
-  classes: "#3dd6ff",
-  person: "#8aa4ff",
+  classes: "#49d4ff",
+  person: "#c084fc",
+  people: "#c084fc",
   rules: "#5eead4",
+  vault: "#5dff9a",
+  identity: "#22d3ee",
+  decisions: "#ff8a3d",
+  fun: "#f472b6",
+  goals: "#a3e635",
+  health: "#fb7185",
+  jarvis: "#49d4ff",
+  preferences: "#818cf8",
+  projects: "#e879f9",
+  routines: "#2dd4bf",
+  school: "#fbbf24",
+  swim: "#22d3ee",
+  tech: "#818cf8",
+  voice: "#c084fc",
 };
-const TYPE_FILTERS = ["all", "note", "folder"] as const;
 
-type TypeFilter = (typeof TYPE_FILTERS)[number];
 type FrameMode = "fit" | "node" | "path" | "matches";
 
 export type GraphCue = {
@@ -113,42 +138,12 @@ function dashFor(reason: GraphEdge["reason"]): string | undefined {
     case "wikilink":
       return undefined;
     case "tag":
-      return "7 5";
+      return "6 6";
     case "folder":
-      return "2 5";
+      return undefined;
     default: {
       const neverReason: never = reason;
       return neverReason;
-    }
-  }
-}
-
-function reasonLabel(reason: GraphEdge["reason"]): string {
-  switch (reason) {
-    case "wikilink":
-      return "Wikilink";
-    case "tag":
-      return "Tag";
-    case "folder":
-      return "Folder";
-    default: {
-      const neverReason: never = reason;
-      return neverReason;
-    }
-  }
-}
-
-function typeLabel(filter: TypeFilter): string {
-  switch (filter) {
-    case "all":
-      return "All";
-    case "note":
-      return "Notes";
-    case "folder":
-      return "Folders";
-    default: {
-      const neverFilter: never = filter;
-      return neverFilter;
     }
   }
 }
@@ -168,9 +163,19 @@ function colorFor(node: GraphNode): string {
     for (let index = 0; index < tag.length; index += 1) {
       hash = (hash * 33 + tag.charCodeAt(index)) >>> 0;
     }
-    return COOL[hash % COOL.length] ?? "#7ee7ff";
+    return NEON[hash % NEON.length] ?? "#7ee7ff";
   }
-  return "#8fd3ff";
+  let hash = 0;
+  for (let index = 0; index < node.id.length; index += 1) {
+    hash = (hash * 33 + node.id.charCodeAt(index)) >>> 0;
+  }
+  return NEON[hash % NEON.length] ?? "#8fd3ff";
+}
+
+function swatchFor(key: string): string {
+  if (key === "folder") return "#f4fdff";
+  if (key === "note") return "#8fd3ff";
+  return TAG_COLOR[key] ?? colorFor({ id: key, title: key, folder: "", tags: [key], excerpt: "", kind: "note" });
 }
 
 function clusterLabel(key: string): string {
@@ -179,12 +184,6 @@ function clusterLabel(key: string): string {
       return "Folder";
     case "note":
       return "Note";
-    case "classes":
-      return "Classes";
-    case "person":
-      return "Person";
-    case "rules":
-      return "Rules";
     default:
       return key.slice(0, 1).toUpperCase() + key.slice(1);
   }
@@ -192,7 +191,7 @@ function clusterLabel(key: string): string {
 
 function shortTitle(title: string): string {
   if (title.length <= 22) return title;
-  return `${title.slice(0, 21)}…`;
+  return `${title.slice(0, 21)}...`;
 }
 
 function displayTitle(node: GraphNode): string {
@@ -202,50 +201,7 @@ function displayTitle(node: GraphNode): string {
   return shortTitle(node.title);
 }
 
-function folderToken(folder: string): string {
-  return folder === "" ? "root" : folder;
-}
-
-function folderFromToken(token: string): string {
-  return token === "root" ? "" : token;
-}
-
-function folderChoiceLabel(token: string): string {
-  if (token === "root") return "Vault root";
-  return token;
-}
-
-type LinkRow = {
-  title: string;
-  reason: GraphEdge["reason"];
-};
-
-function linkRows(node: GraphNode | null, nodes: GraphNode[], edges: GraphEdge[]): LinkRow[] {
-  if (!node) return [];
-  const titles = new Map(nodes.map((item) => [item.id, item.title]));
-  return edges
-    .filter((edge) => edge.from === node.id || edge.to === node.id)
-    .map((edge) => {
-      const other = edge.from === node.id ? edge.to : edge.from;
-      return { title: titles.get(other) ?? other, reason: edge.reason };
-    })
-    .sort((a, b) => a.title.localeCompare(b.title) || a.reason.localeCompare(b.reason));
-}
-
-function nodeVisible(node: GraphNode, typeFilter: TypeFilter, folderFilter: string): boolean {
-  if (typeFilter === "note" && node.kind !== "note") return false;
-  if (typeFilter === "folder" && node.kind !== "folder") return false;
-  if (folderFilter === "all") return true;
-  const folder = folderFromToken(folderFilter);
-  if (node.kind === "note") return node.folder === folder;
-  return node.id === (folder ? `folder:${folder}` : "folder:");
-}
-
-function optionLabel(node: GraphNode): string {
-  return node.kind === "folder" ? `${node.title} folder` : node.title;
-}
-
-export function NoteGraph({ cue = null }: { cue?: GraphCue | null }) {
+export function NoteGraph({ cue = null, brainTag = "ONLINE" }: { cue?: GraphCue | null; brainTag?: string }) {
   const [payload, setPayload] = useState<NoteGraphPayload | null>(null);
   const [failed, setFailed] = useState(false);
 
@@ -281,22 +237,30 @@ export function NoteGraph({ cue = null }: { cue?: GraphCue | null }) {
   if (!payload) {
     return (
       <div className="graph-stage graph-stage-empty">
-        <p className="status-note">Reading notes…</p>
+        <p className="status-note">Reading notes...</p>
       </div>
     );
   }
 
-  return <GraphBody payload={payload} cue={cue} />;
+  return <GraphBody payload={payload} cue={cue} brainTag={brainTag} />;
 }
 
-function GraphBody({ payload, cue }: { payload: NoteGraphPayload; cue: GraphCue | null }) {
+function GraphBody({
+  payload,
+  cue,
+  brainTag,
+}: {
+  payload: NoteGraphPayload;
+  cue: GraphCue | null;
+  brainTag: string;
+}) {
   switch (payload.status) {
     case "not-wired":
     case "missing":
     case "empty":
-      return <GraphEmpty payload={payload} />;
+      return <GraphEmpty payload={payload} brainTag={brainTag} />;
     case "ready":
-      return <GraphReady payload={payload} cue={cue} />;
+      return <GraphReady payload={payload} cue={cue} brainTag={brainTag} />;
     default: {
       const neverStatus: never = payload.status;
       return neverStatus;
@@ -304,14 +268,10 @@ function GraphBody({ payload, cue }: { payload: NoteGraphPayload; cue: GraphCue 
   }
 }
 
-function GraphEmpty({ payload }: { payload: NoteGraphPayload }) {
-  const reduced = useReducedMotion();
-  const camera = useOrbit(false, reduced);
+function GraphEmpty({ payload, brainTag }: { payload: NoteGraphPayload; brainTag: string }) {
   return (
     <div className="graph-stage graph-stage-empty">
-      <svg className="graph-empty-rings" viewBox={viewBox(stableFrame([]))} aria-hidden="true">
-        <SpaceBackdrop camera={camera} />
-      </svg>
+      <JarvisBadge brainTag={brainTag} />
       <p className="graph-stats">
         {payload.noteCount} notes · {payload.connectionCount} connections
       </p>
@@ -320,35 +280,34 @@ function GraphEmpty({ payload }: { payload: NoteGraphPayload }) {
   );
 }
 
-function GraphReady({ payload, cue }: { payload: NoteGraphPayload; cue: GraphCue | null }) {
+function GraphReady({
+  payload,
+  cue,
+  brainTag,
+}: {
+  payload: NoteGraphPayload;
+  cue: GraphCue | null;
+  brainTag: string;
+}) {
   const [query, setQuery] = useState("");
-  const [typeFilter, setTypeFilter] = useState<TypeFilter>("all");
-  const [folderFilter, setFolderFilter] = useState("all");
-  const [repel, setRepel] = useState(130);
-  const [link, setLink] = useState(150);
   const [pathFromId, setPathFromId] = useState("");
   const [pathToId, setPathToId] = useState("");
   const [frameMode, setFrameMode] = useState<FrameMode>("fit");
-  const [cueNote, setCueNote] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [seenCue, setSeenCue] = useState(0);
   const [homeToken, setHomeToken] = useState(0);
-  const frameToken = `${frameMode}|${selectedId ?? ""}|${pathFromId}|${pathToId}|${query}|${typeFilter}|${folderFilter}|${homeToken}`;
+  const frameToken = `${frameMode}|${selectedId ?? ""}|${pathFromId}|${pathToId}|${query}|${homeToken}`;
 
   if (cue && cue.token !== seenCue) {
     setSeenCue(cue.token);
-    setTypeFilter("all");
-    setFolderFilter("all");
     if (cue.pathFrom && cue.pathTo) {
       const from = matchGraphNode(payload.nodes, cue.pathFrom);
       const to = matchGraphNode(payload.nodes, cue.pathTo);
       if (!from || !to) {
-        setCueNote("Those names are not both in the vault. Nothing was invented.");
         setPathFromId("");
         setPathToId("");
         setFrameMode("fit");
       } else {
-        setCueNote("");
         setQuery("");
         setPathFromId(from.id);
         setPathToId(to.id);
@@ -362,30 +321,30 @@ function GraphReady({ payload, cue }: { payload: NoteGraphPayload; cue: GraphCue
       setPathToId("");
       const first = found[0];
       if (!first) {
-        setCueNote("No note matches that search. Nothing was invented.");
         setFrameMode("fit");
       } else {
-        setCueNote("");
         setSelectedId(first.id);
         setFrameMode(found.length === 1 ? "node" : "matches");
       }
     } else {
-      setCueNote("");
       setFrameMode("fit");
     }
   }
 
+  const layoutEdges = useMemo(
+    () => payload.edges.filter((edge) => edge.reason === "folder"),
+    [payload.edges],
+  );
   const points = useMemo(
     () =>
-      layoutGalaxy(payload.nodes, payload.edges, {
-        repel,
-        link,
+      layoutGalaxy(payload.nodes, layoutEdges, {
+        repel: LAYOUT_REPEL,
+        link: LAYOUT_LINK,
         width: WIDTH,
         height: HEIGHT,
       }),
-    [payload.nodes, payload.edges, repel, link],
+    [payload.nodes, layoutEdges],
   );
-  const hubs = useMemo(() => topHubs(payload.nodes, payload.edges, 5), [payload.nodes, payload.edges]);
   const matches = useMemo(() => matchingNodes(payload.nodes, query), [payload.nodes, query]);
   const matchIds = useMemo(() => new Set(matches.map((node) => node.id)), [matches]);
   const route = useMemo(() => {
@@ -393,41 +352,17 @@ function GraphReady({ payload, cue }: { payload: NoteGraphPayload; cue: GraphCue
     return shortestPath(payload.edges, pathFromId, pathToId);
   }, [payload.edges, pathFromId, pathToId]);
   const routeIds = useMemo(() => (route ? new Set(route) : null), [route]);
-  const visibleNodes = useMemo(
-    () => payload.nodes.filter((node) => nodeVisible(node, typeFilter, folderFilter)),
-    [payload.nodes, typeFilter, folderFilter],
-  );
-  const visibleIds = useMemo(() => new Set(visibleNodes.map((node) => node.id)), [visibleNodes]);
-  const folderChoices = useMemo(() => {
-    const folders = new Set<string>();
-    for (const node of payload.nodes) {
-      if (node.kind === "note") folders.add(folderToken(node.folder));
-    }
-    return [...folders].sort((a, b) => a.localeCompare(b));
-  }, [payload.nodes]);
-  const pathChoices = useMemo(
-    () => [...payload.nodes].sort((a, b) => a.title.localeCompare(b.title) || a.id.localeCompare(b.id)),
-    [payload.nodes],
-  );
-  const selected = payload.nodes.find((node) => node.id === selectedId) ?? null;
-  const reasons = [...new Set(payload.edges.map((edge) => edge.reason))];
+  const visibleIds = useMemo(() => new Set(payload.nodes.map((node) => node.id)), [payload.nodes]);
   const searching = query.trim().length > 0;
   const routeOn = Boolean(route && route.length > 1);
-  const clusters = [...new Set(visibleNodes.map(clusterKey))];
-
-  function showNode(id: string, mode: FrameMode) {
-    setTypeFilter("all");
-    setFolderFilter("all");
-    setSelectedId(id);
-    setFrameMode(mode);
-  }
+  const clusters = [...new Set(payload.nodes.map(clusterKey))].sort((a, b) => a.localeCompare(b));
 
   function onSearch(value: string) {
     setQuery(value);
-    setCueNote("");
     const found = matchingNodes(payload.nodes, value);
     if (!value.trim()) {
       setFrameMode("fit");
+      setHomeToken((token) => token + 1);
       return;
     }
     const first = found[0];
@@ -435,76 +370,24 @@ function GraphReady({ payload, cue }: { payload: NoteGraphPayload; cue: GraphCue
       setFrameMode("fit");
       return;
     }
-    setTypeFilter("all");
-    setFolderFilter("all");
     setSelectedId(first.id);
     setFrameMode(found.length === 1 ? "node" : "matches");
-  }
-
-  function choosePath(which: "from" | "to", id: string) {
-    const nextFrom = which === "from" ? id : pathFromId;
-    const nextTo = which === "to" ? id : pathToId;
-    if (which === "from") setPathFromId(id);
-    else setPathToId(id);
-    setCueNote("");
-    if (nextFrom && nextTo) {
-      setTypeFilter("all");
-      setFolderFilter("all");
-      setFrameMode("path");
-      setSelectedId(nextTo);
-    }
+    setHomeToken((token) => token + 1);
   }
 
   return (
     <div className="graph-stage">
       <GalaxyBay
+        noteCount={payload.noteCount}
+        connectionCount={payload.connectionCount}
         query={query}
         matchCount={searching ? matches.length : null}
-        typeFilter={typeFilter}
-        folderFilter={folderFilter}
-        folderChoices={folderChoices}
-        repel={repel}
-        link={link}
-        pathFromId={pathFromId}
-        pathToId={pathToId}
-        pathChoices={pathChoices}
-        route={route}
-        sameEnds={Boolean(pathFromId && pathToId && pathFromId === pathToId)}
-        cueNote={cueNote}
-        hubs={hubs}
-        selectedId={selectedId}
-        focusDisabled={selectedId === null}
         onSearch={onSearch}
-        onType={setTypeFilter}
-        onFolder={setFolderFilter}
-        onRepel={setRepel}
-        onLink={setLink}
-        onFit={() => {
-          setFrameMode("fit");
-          setHomeToken((token) => token + 1);
-        }}
-        onFocus={() => {
-          if (!selectedId) return;
-          setFrameMode("node");
-          setHomeToken((token) => token + 1);
-        }}
-        onPath={choosePath}
-        onClearPath={() => {
-          setPathFromId("");
-          setPathToId("");
-          setCueNote("");
-          setFrameMode("fit");
-        }}
-        onHub={(id) => showNode(id, "node")}
       />
       <div className="graph-canvas">
-        <p className="graph-stats">
-          {payload.noteCount} notes · {payload.connectionCount} connections
-          {payload.hiddenCount > 0 ? ` · ${payload.hiddenCount} not drawn` : ""}
-          {visibleNodes.length !== payload.nodes.length ? ` · showing ${visibleNodes.length}` : ""}
-        </p>
+        <JarvisBadge brainTag={brainTag} />
         <GalaxyScene
-          nodes={visibleNodes}
+          nodes={payload.nodes}
           edges={payload.edges}
           points={points}
           visibleIds={visibleIds}
@@ -521,36 +404,15 @@ function GraphReady({ payload, cue }: { payload: NoteGraphPayload; cue: GraphCue
             setFrameMode("node");
           }}
         />
-        <p className="graph-pan-hint">Drag to move</p>
-        {visibleNodes.length === 0 ? <p className="galaxy-empty-filter">No notes match this filter.</p> : null}
-        {clusters.length > 0 ? (
-          <ul className="graph-key" aria-label="Note colors">
-            {clusters.map((key) => (
-              <li key={key}>
-                <span
-                  className="graph-swatch"
-                  style={{ background: key === "folder" ? "#f4fdff" : key === "note" ? "#8fd3ff" : (TAG_COLOR[key] ?? "#7ee7ff") }}
-                />
-                {clusterLabel(key)}
-              </li>
-            ))}
-          </ul>
-        ) : null}
-        {reasons.length > 0 ? (
-          <ul className="graph-legend">
-            {reasons.map((reason) => (
-              <li key={reason}>{reasonLabel(reason)}</li>
-            ))}
-          </ul>
-        ) : null}
+        <ul className="graph-legend" aria-label="Note colors">
+          {clusters.slice(0, 8).map((key) => (
+            <li key={key}>
+              <span className="graph-swatch" style={{ background: swatchFor(key) }} />
+              {clusterLabel(key)}
+            </li>
+          ))}
+        </ul>
       </div>
-      <Inspector
-        node={selected}
-        detail={payload.detail}
-        degree={selected ? degreeOf(selected.id, payload.edges) : 0}
-        onPath={selected ? Boolean(routeIds?.has(selected.id)) : false}
-        links={linkRows(selected, payload.nodes, payload.edges)}
-      />
     </div>
   );
 }
@@ -620,11 +482,11 @@ function useOrbit(calm: boolean, reduced: boolean, held = false): Camera {
 
 function stableFrame(points: LayoutPoint[]): Frame {
   const origin = layoutOrigin(WIDTH, HEIGHT);
-  let reach = cageRadius(WIDTH, HEIGHT);
+  let reach = cageRadius(WIDTH, HEIGHT) * 0.72;
   for (const point of points) {
     reach = Math.max(reach, Math.hypot(point.x - origin.x, point.y - origin.y, point.z - origin.z));
   }
-  reach *= 1.45;
+  reach *= 1.22;
   return {
     x: origin.x - reach,
     y: origin.y - reach * 0.86,
@@ -633,30 +495,12 @@ function stableFrame(points: LayoutPoint[]): Frame {
   };
 }
 
-function wirePath(from: LayoutPoint, to: LayoutPoint, reason: GraphEdge["reason"], camera: Camera): string {
+function wirePath(from: LayoutPoint, to: LayoutPoint, _reason: GraphEdge["reason"], camera: Camera): string {
   const origin = layoutOrigin(WIDTH, HEIGHT);
   const unit = cageRadius(WIDTH, HEIGHT);
-  const steps = reason === "folder" ? 1 : 6;
-  const parts: string[] = [];
-  for (let step = 0; step <= steps; step += 1) {
-    const t = step / steps;
-    let x = from.x + (to.x - from.x) * t;
-    let y = from.y + (to.y - from.y) * t;
-    let z = from.z + (to.z - from.z) * t;
-    if (reason !== "folder") {
-      const lift = Math.sin(Math.PI * t) * unit * 0.14;
-      const dx = x - origin.x;
-      const dy = y - origin.y;
-      const dz = z - origin.z;
-      const len = Math.hypot(dx, dy, dz) || 1;
-      x += (dx / len) * lift;
-      y += (dy / len) * lift;
-      z += (dz / len) * lift;
-    }
-    const projected = projectSpace({ x, y, z }, camera, origin, unit);
-    parts.push(`${step === 0 ? "M" : "L"} ${projected.x.toFixed(1)} ${projected.y.toFixed(1)}`);
-  }
-  return parts.join(" ");
+  const start = projectSpace(from, camera, origin, unit);
+  const end = projectSpace(to, camera, origin, unit);
+  return `M ${start.x.toFixed(1)} ${start.y.toFixed(1)} L ${end.x.toFixed(1)} ${end.y.toFixed(1)}`;
 }
 
 function SpaceBackdrop({ camera }: { camera: Camera }) {
@@ -671,32 +515,32 @@ function SpaceBackdrop({ camera }: { camera: Camera }) {
             cx={projected.x}
             cy={projected.y}
             r={0.7 + projected.depth * 1.1}
-            fill={`rgba(186, 236, 255, ${0.15 + projected.depth * 0.35})`}
+            fill={`rgba(186, 236, 255, ${0.14 + projected.depth * 0.32})`}
           />
         );
       })}
-      {CAGE.map((ring, index) => {
-        const points = ring
-          .map((point) => {
-            const projected = projectUnit(point, camera, WIDTH, HEIGHT);
-            return `${projected.x.toFixed(1)},${projected.y.toFixed(1)}`;
-          })
-          .join(" ");
-        return (
-          <polyline
-            key={`cage-${index}`}
-            points={points}
-            fill="none"
-            stroke="rgba(90, 214, 255, 0.42)"
-            strokeWidth="1"
-          />
-        );
-      })}
-      <line x1={origin.x - 16} y1={origin.y} x2={origin.x - 6} y2={origin.y} stroke="rgba(215, 246, 255, 0.45)" />
-      <line x1={origin.x + 6} y1={origin.y} x2={origin.x + 16} y2={origin.y} stroke="rgba(215, 246, 255, 0.45)" />
-      <line x1={origin.x} y1={origin.y - 16} x2={origin.x} y2={origin.y - 6} stroke="rgba(215, 246, 255, 0.45)" />
-      <line x1={origin.x} y1={origin.y + 6} x2={origin.x} y2={origin.y + 16} stroke="rgba(215, 246, 255, 0.45)" />
+      <line x1={origin.x - 14} y1={origin.y} x2={origin.x - 5} y2={origin.y} stroke="rgba(215, 246, 255, 0.22)" />
+      <line x1={origin.x + 5} y1={origin.y} x2={origin.x + 14} y2={origin.y} stroke="rgba(215, 246, 255, 0.22)" />
+      <line x1={origin.x} y1={origin.y - 14} x2={origin.x} y2={origin.y - 5} stroke="rgba(215, 246, 255, 0.22)" />
+      <line x1={origin.x} y1={origin.y + 5} x2={origin.x} y2={origin.y + 14} stroke="rgba(215, 246, 255, 0.22)" />
     </g>
+  );
+}
+
+function JarvisBadge({ brainTag }: { brainTag: string }) {
+  return (
+    <div className="jarvis-badge" aria-label="Jarvis online">
+      <div className="jarvis-badge-core">
+        <span className="jarvis-badge-ring jarvis-badge-ring-outer" />
+        <span className="jarvis-badge-ring jarvis-badge-ring-mid" />
+        <span className="jarvis-badge-ring jarvis-badge-ring-inner" />
+        <p className="jarvis-badge-title">J.A.R.V.I.S.</p>
+      </div>
+      <p className="jarvis-badge-online">
+        <span className="jarvis-badge-dot" /> Online
+      </p>
+      <p className="jarvis-badge-model">{brainTag}</p>
+    </div>
   );
 }
 
@@ -800,6 +644,14 @@ function GalaxyScene({
   const hoverPoint = hover ? projected.get(hover.id) : undefined;
   const drawnEdges = edges
     .filter((edge) => visibleIds.has(edge.from) && visibleIds.has(edge.to))
+    .filter((edge) => {
+      if (edge.reason === "folder") return true;
+      return (
+        (routeOn && onRoute(edge, route)) ||
+        (selectedId !== null && (edge.from === selectedId || edge.to === selectedId)) ||
+        (searching && (matchIds.has(edge.from) || matchIds.has(edge.to)))
+      );
+    })
     .map((edge) => {
       const from = projected.get(edge.from);
       const to = projected.get(edge.to);
@@ -870,19 +722,28 @@ function GalaxyScene({
         const from = pointById.get(edge.from);
         const to = pointById.get(edge.to);
         if (!from || !to) return null;
-        const hot = routeOn ? onRoute(edge, route) : selectedId !== null && (edge.from === selectedId || edge.to === selectedId);
+        const hot =
+          routeOn ? onRoute(edge, route) : selectedId !== null && (edge.from === selectedId || edge.to === selectedId);
         const dim = (searching && !matchIds.has(edge.from) && !matchIds.has(edge.to)) || (routeOn && !hot);
         const linked = edge.reason === "wikilink";
-        const width = (linked ? 1.7 : 1.15) * (0.65 + depth * 0.7);
+        const folder = edge.reason === "folder";
+        const width = (folder ? 1.4 : linked ? 1.05 : 0.7) * (0.75 + depth * 0.45);
+        const tone = hot
+          ? "#f4fdff"
+          : folder
+            ? "rgba(126, 231, 255, 0.55)"
+            : linked
+              ? "rgba(186, 236, 255, 0.7)"
+              : "rgba(100, 190, 230, 0.35)";
         return (
           <path
             key={edge.id}
             d={wirePath(from, to, edge.reason, camera)}
             fill="none"
-            stroke={hot ? "#f4fdff" : linked ? "rgba(210, 246, 255, 0.9)" : "rgba(126, 231, 255, 0.55)"}
-            strokeWidth={hot ? width + 0.8 : width}
+            stroke={tone}
+            strokeWidth={hot ? width + 0.9 : width}
             strokeDasharray={dashFor(edge.reason)}
-            opacity={dim ? 0.12 : 0.35 + depth * 0.65}
+            opacity={dim ? 0.06 : hot ? 0.98 : folder ? 0.7 + depth * 0.25 : 0.45 + depth * 0.35}
           />
         );
       })}
@@ -901,14 +762,14 @@ function GalaxyScene({
           });
         const onPath = routeIds?.has(node.id) ?? false;
         const labelOn = showAllLabels || active || neighbor || onPath || node.kind === "folder" || matchIds.has(node.id);
-        const radius = ((node.kind === "folder" ? 7 : 4.2) + Math.min(degree, 8) * 0.85) * (0.42 + point.depth * 1.25);
+        const radius = ((node.kind === "folder" ? 11 : 7.2) + Math.min(degree, 8) * 0.55) * (0.62 + point.depth * 0.85);
         const dim = (searching && !matchIds.has(node.id)) || (routeOn && !onPath && !active);
         const labelLeft = point.x > shifted.x + shifted.w * 0.68;
         return (
           <g
             key={node.id}
             className="graph-node"
-            opacity={dim ? 0.1 : 0.2 + point.depth * 0.8}
+            opacity={dim ? 0.14 : 0.55 + point.depth * 0.45}
             tabIndex={0}
             role="button"
             aria-pressed={active}
@@ -923,25 +784,29 @@ function GalaxyScene({
               }
             }}
           >
-            <circle cx={point.x} cy={point.y} r={radius + 12} fill="transparent" />
-            <circle cx={point.x} cy={point.y} r={radius + 6} fill={color} opacity={active || onPath ? 0.28 : 0.12} />
+            <circle cx={point.x} cy={point.y} r={radius + 16} fill="transparent" />
+            <circle cx={point.x} cy={point.y} r={radius + 11} fill={color} opacity={active || onPath ? 0.42 : 0.28} />
+            <circle cx={point.x} cy={point.y} r={radius + 5.5} fill={color} opacity={0.22} />
             <circle
               cx={point.x}
               cy={point.y}
               r={radius}
-              fill={node.kind === "folder" ? "rgba(4, 16, 24, 0.35)" : active ? color : "#07141c"}
+              fill={node.kind === "folder" ? "rgba(12, 36, 48, 0.72)" : color}
+              fillOpacity={node.kind === "folder" ? 1 : active ? 0.95 : 0.72}
               stroke={active ? "#f4fdff" : color}
-              strokeWidth={active ? 2.6 : 1.7}
+              strokeWidth={active ? 3 : 2.3}
             />
+            <circle cx={point.x} cy={point.y} r={Math.max(2.2, radius * 0.28)} fill="#f4fdff" opacity={0.85} />
             {node.kind === "folder" ? (
-              <circle cx={point.x} cy={point.y} r={radius + 3.5} fill="none" stroke={color} strokeWidth="1" />
+              <circle cx={point.x} cy={point.y} r={radius + 4} fill="none" stroke={color} strokeWidth="1.2" />
             ) : null}
             {labelOn ? (
               <text
                 x={labelLeft ? point.x - radius - 8 : point.x + radius + 8}
                 y={point.y + 4}
-                fill="#e7f8ff"
-                fontSize={10 + point.depth * 6}
+                fill="#f0fbff"
+                fontSize={11 + point.depth * 4}
+                fontWeight={active ? 600 : 500}
                 textAnchor={labelLeft ? "end" : "start"}
               >
                 {displayTitle(node)}
@@ -976,8 +841,8 @@ function HoverTip({
   y: number;
   frame: Frame;
 }) {
-  const name = title.length <= 22 ? title : `${title.slice(0, 21)}…`;
-  const meta = `${degree} ${degree === 1 ? "link" : "links"} — click to focus`;
+  const name = title.length <= 22 ? title : `${title.slice(0, 21)}...`;
+  const meta = `${degree} ${degree === 1 ? "link" : "links"} - click to focus`;
   const boxW = Math.max(name.length, meta.length) * 6.6 + 16;
   const left = x + boxW + 18 > frame.x + frame.w ? x - boxW - 14 : x + 14;
   const top = Math.max(frame.y + 8, y - 46);
@@ -995,374 +860,40 @@ function HoverTip({
 }
 
 function GalaxyBay({
+  noteCount,
+  connectionCount,
   query,
   matchCount,
-  typeFilter,
-  folderFilter,
-  folderChoices,
-  repel,
-  link,
-  pathFromId,
-  pathToId,
-  pathChoices,
-  route,
-  sameEnds,
-  cueNote,
-  hubs,
-  selectedId,
-  focusDisabled,
   onSearch,
-  onType,
-  onFolder,
-  onRepel,
-  onLink,
-  onFit,
-  onFocus,
-  onPath,
-  onClearPath,
-  onHub,
 }: {
+  noteCount: number;
+  connectionCount: number;
   query: string;
   matchCount: number | null;
-  typeFilter: TypeFilter;
-  folderFilter: string;
-  folderChoices: string[];
-  repel: number;
-  link: number;
-  pathFromId: string;
-  pathToId: string;
-  pathChoices: GraphNode[];
-  route: string[] | null;
-  sameEnds: boolean;
-  cueNote: string;
-  hubs: { node: GraphNode; degree: number }[];
-  selectedId: string | null;
-  focusDisabled: boolean;
   onSearch: (value: string) => void;
-  onType: (filter: TypeFilter) => void;
-  onFolder: (filter: string) => void;
-  onRepel: (value: number) => void;
-  onLink: (value: number) => void;
-  onFit: () => void;
-  onFocus: () => void;
-  onPath: (which: "from" | "to", id: string) => void;
-  onClearPath: () => void;
-  onHub: (id: string) => void;
 }) {
   return (
-    <aside className="galaxy-bay" aria-label="Graph controls">
+    <aside className="galaxy-bay" aria-label="Search">
+      <header className="galaxy-head">
+        <p className="galaxy-title">Jarvis OS</p>
+        <p className="galaxy-stats-line">
+          {noteCount} notes · {connectionCount} connections
+        </p>
+      </header>
       <label className="galaxy-field" htmlFor="graph-search">
-        <span className="line-label">Search notes</span>
+        <span className="line-label">Search</span>
         <Input
           id="graph-search"
           value={query}
           autoComplete="off"
-          placeholder="Find a note"
-          className="h-10 rounded-none border-border bg-card px-2 text-sm md:text-sm"
+          placeholder="Search the brain..."
+          className="h-9 rounded-none border-border/60 bg-transparent px-2 text-sm md:text-sm"
           onChange={(event) => onSearch(event.target.value)}
         />
       </label>
-      <p className="galaxy-hint">Drag the space to move it. The notes sit in a turning sphere. Solid lines are links between notes.</p>
       {matchCount !== null ? (
-        <p className="galaxy-note">{matchCount === 0 ? "No note matches that search." : `${matchCount} match${matchCount === 1 ? "" : "es"}`}</p>
+        <p className="galaxy-note">{matchCount === 0 ? "No matches." : `${matchCount} match${matchCount === 1 ? "" : "es"}`}</p>
       ) : null}
-      <div className="galaxy-filters" role="group" aria-label="Type">
-        {TYPE_FILTERS.map((filter) => (
-          <Button
-            key={filter}
-            type="button"
-            variant={typeFilter === filter ? "default" : "outline"}
-            aria-pressed={typeFilter === filter}
-            className="h-9 rounded-none px-2 text-xs"
-            onClick={() => onType(filter)}
-          >
-            {typeLabel(filter)}
-          </Button>
-        ))}
-      </div>
-      <label className="galaxy-field" htmlFor="graph-folder">
-        <span className="line-label">Folder</span>
-        <select
-          id="graph-folder"
-          className="galaxy-select"
-          value={folderFilter}
-          onChange={(event) => onFolder(event.target.value)}
-        >
-          <option value="all">All folders</option>
-          {folderChoices.map((token) => (
-            <option key={token} value={token}>
-              {folderChoiceLabel(token)}
-            </option>
-          ))}
-        </select>
-      </label>
-      <div className="galaxy-actions">
-        <Button type="button" variant="outline" className="h-9 rounded-none px-3 text-xs" onClick={onFit}>
-          Fit
-        </Button>
-        <Button
-          type="button"
-          variant="outline"
-          className="h-9 rounded-none px-3 text-xs"
-          disabled={focusDisabled}
-          onClick={onFocus}
-        >
-          Focus
-        </Button>
-      </div>
-      <label className="galaxy-field" htmlFor="graph-repel">
-        <span className="line-label">
-          Repel <span>{repel}</span>
-        </span>
-        <input
-          id="graph-repel"
-          className="galaxy-range"
-          type="range"
-          min={40}
-          max={240}
-          value={repel}
-          onChange={(event) => onRepel(Number(event.target.value))}
-        />
-        <span className="galaxy-hint">How hard notes push apart.</span>
-      </label>
-      <label className="galaxy-field" htmlFor="graph-link">
-        <span className="line-label">
-          Link length <span>{link}</span>
-        </span>
-        <input
-          id="graph-link"
-          className="galaxy-range"
-          type="range"
-          min={48}
-          max={280}
-          value={link}
-          onChange={(event) => onLink(Number(event.target.value))}
-        />
-        <span className="galaxy-hint">How long the lines want to be.</span>
-      </label>
-      <div className="galaxy-field">
-        <span className="line-label">Path</span>
-        <label className="sr-only" htmlFor="path-from">
-          Path from
-        </label>
-        <select
-          id="path-from"
-          className="galaxy-select"
-          value={pathFromId}
-          onChange={(event) => onPath("from", event.target.value)}
-        >
-          <option value="">From</option>
-          {pathChoices.map((node) => (
-            <option key={`from-${node.id}`} value={node.id}>
-              {optionLabel(node)}
-            </option>
-          ))}
-        </select>
-        <label className="sr-only" htmlFor="path-to">
-          Path to
-        </label>
-        <select
-          id="path-to"
-          className="galaxy-select"
-          value={pathToId}
-          onChange={(event) => onPath("to", event.target.value)}
-        >
-          <option value="">To</option>
-          {pathChoices.map((node) => (
-            <option key={`to-${node.id}`} value={node.id}>
-              {optionLabel(node)}
-            </option>
-          ))}
-        </select>
-        {pathFromId || pathToId ? (
-          <Button type="button" variant="ghost" className="h-8 rounded-none px-2 text-xs" onClick={onClearPath}>
-            Clear path
-          </Button>
-        ) : null}
-        {sameEnds ? <p className="galaxy-note">Pick two different notes.</p> : null}
-        {!sameEnds && pathFromId && pathToId && !route ? (
-          <p className="galaxy-note">No path between those notes.</p>
-        ) : null}
-        {route && route.length > 1 ? (
-          <p className="galaxy-note">{route.length - 1} steps highlighted.</p>
-        ) : null}
-        {cueNote ? <p className="galaxy-note">{cueNote}</p> : null}
-      </div>
-      <div className="galaxy-field">
-        <span className="line-label">Most connected</span>
-        {hubs.length === 0 ? (
-          <p className="galaxy-note">No connections yet.</p>
-        ) : (
-          <ol className="galaxy-hubs">
-            {hubs.map((hub) => (
-              <li key={hub.node.id}>
-                <button
-                  type="button"
-                  aria-current={hub.node.id === selectedId ? "true" : undefined}
-                  onClick={() => onHub(hub.node.id)}
-                >
-                  <span>{hub.node.title}</span>
-                  <span>{hub.degree}</span>
-                </button>
-              </li>
-            ))}
-          </ol>
-        )}
-      </div>
     </aside>
-  );
-}
-
-function kindLabel(kind: GraphNode["kind"]): string {
-  switch (kind) {
-    case "folder":
-      return "Folder";
-    case "note":
-      return "Note";
-    default: {
-      const neverKind: never = kind;
-      return neverKind;
-    }
-  }
-}
-
-function Inspector({
-  node,
-  detail,
-  degree,
-  onPath,
-  links,
-}: {
-  node: GraphNode | null;
-  detail: string;
-  degree: number;
-  onPath: boolean;
-  links: LinkRow[];
-}) {
-  return (
-    <aside className="graph-inspector" aria-label="Inspector">
-      <header className="inspector-head">
-        <p className="inspector-kicker">Inspector</p>
-        <span className="inspector-badge">{node ? degree : "—"}</span>
-      </header>
-      {node ? <InspectorBody node={node} degree={degree} onPath={onPath} links={links} /> : <InspectorEmpty detail={detail} />}
-    </aside>
-  );
-}
-
-function InspectorEmpty({ detail }: { detail: string }) {
-  return (
-    <div className="inspector-stack">
-      <h3 className="inspector-title">Click a note</h3>
-      <section className="inspector-block">
-        <h4>Type</h4>
-        <p>A bright dot is a note. A pale dot is a folder.</p>
-      </section>
-      <section className="inspector-block">
-        <h4>Path</h4>
-        <p>The file path shows here after you pick a dot.</p>
-      </section>
-      <section className="inspector-block">
-        <h4>Body</h4>
-        <p>A short preview of the note shows here. It is not the whole file.</p>
-      </section>
-      <section className="inspector-block">
-        <h4>Connections</h4>
-        <ul className="inspector-links">
-          <li>
-            <span>Solid line</span>
-            <span className="inspector-reason" data-reason="wikilink">
-              Wikilink
-            </span>
-          </li>
-          <li>
-            <span>Dashed line</span>
-            <span className="inspector-reason" data-reason="tag">
-              Tag
-            </span>
-          </li>
-          <li>
-            <span>Dotted line</span>
-            <span className="inspector-reason" data-reason="folder">
-              Folder
-            </span>
-          </li>
-        </ul>
-      </section>
-      <p className="inspector-foot">{detail}</p>
-    </div>
-  );
-}
-
-function InspectorBody({
-  node,
-  degree,
-  onPath,
-  links,
-}: {
-  node: GraphNode;
-  degree: number;
-  onPath: boolean;
-  links: LinkRow[];
-}) {
-  const path = node.kind === "folder" ? node.folder || "vault" : node.id;
-  const typeLine =
-    node.kind === "folder"
-      ? "This dot is the folder, not a note."
-      : node.folder
-        ? `Note in ${node.folder}`
-        : "Note in the vault root";
-  return (
-    <div className="inspector-stack">
-      <h3 className="inspector-title">{node.title}</h3>
-      <div className="inspector-chips">
-        <span className="inspector-chip">{kindLabel(node.kind)}</span>
-        {onPath ? <span className="inspector-chip inspector-chip-live">On path</span> : null}
-        {node.tags.map((tag) => (
-          <span key={tag} className="inspector-chip">
-            #{tag}
-          </span>
-        ))}
-      </div>
-      <section className="inspector-block">
-        <h4>Type</h4>
-        <p>{typeLine}</p>
-      </section>
-      <section className="inspector-block">
-        <h4>Path</h4>
-        <p className="inspector-path">{path}</p>
-      </section>
-      <section className="inspector-block">
-        <h4>Body</h4>
-        <p className="inspector-body">{node.excerpt || "This note has no body text."}</p>
-      </section>
-      <section className="inspector-block">
-        <h4>
-          Connections
-          <span>
-            {degree} line{degree === 1 ? "" : "s"}
-          </span>
-        </h4>
-        {links.length > 0 ? (
-          <ul className="inspector-links">
-            {links.slice(0, 8).map((link) => (
-              <li key={`${link.reason}:${link.title}`}>
-                <span>{link.title}</span>
-                <span className="inspector-reason" data-reason={link.reason}>
-                  {reasonLabel(link.reason)}
-                </span>
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p>No lines touch this dot.</p>
-        )}
-      </section>
-      <p className="inspector-foot">
-        {node.kind === "folder"
-          ? "Folder hub. The notes inside it hang off this dot."
-          : "Preview only. Ask in Talk if you want the brain to read this note."}
-      </p>
-    </div>
   );
 }

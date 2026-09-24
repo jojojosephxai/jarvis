@@ -1,9 +1,9 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 
-export const MAX_GRAPH_NODES = 40;
-const MAX_GRAPH_EDGES = 80;
-const MAX_SCAN = 80;
+export const MAX_GRAPH_NODES = 600;
+const MAX_GRAPH_EDGES = 2500;
+const MAX_SCAN = 800;
 const MAX_DEPTH = 5;
 const MAX_BYTES = 300_000;
 const EXCERPT_LIMIT = 320;
@@ -80,7 +80,12 @@ function splitFrontmatter(text: string): { front: string; body: string } {
 }
 
 function cleanTag(value: string): string {
-  return value.trim().replace(/^['"]|['"]$/g, "").replace(/^#/, "").toLowerCase();
+  return value
+    .trim()
+    .replace(/^['"]|['"]$/g, "")
+    .replace(/^#/, "")
+    .replace(/^-\s*/, "")
+    .toLowerCase();
 }
 
 function tagsFromFrontmatter(front: string): string[] {

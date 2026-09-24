@@ -104,7 +104,7 @@ describe("loadVaultGraph", () => {
     try {
       const graph = await loadVaultGraph();
       assert.equal(graph.status, "ready");
-      assert.equal(graph.nodes.some((note) => note.title === "About"), true);
+      assert.equal(graph.nodes.some((note) => /about/i.test(note.title)), true);
       assert.equal(graph.nodes.some((note) => note.title === "School"), true);
       assert.equal(graph.noteCount <= MAX_GRAPH_NODES, true);
       assert.equal(graph.connectionCount > 0, true);

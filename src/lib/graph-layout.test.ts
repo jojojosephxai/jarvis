@@ -52,7 +52,7 @@ describe("layoutGalaxy", () => {
 });
 
 describe("depth", () => {
-  it("does not flatten every note onto one plane", () => {
+  it("spreads notes through space, not one flat plane", () => {
     const placed = layoutGalaxy(
       [
         { id: "folder:", kind: "folder" },

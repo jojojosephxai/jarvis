@@ -1,4 +1,4 @@
-export const FACE_VIEWS = ["orb", "graph"] as const;
+export const FACE_VIEWS = ["graph", "orb"] as const;
 
 export type FaceView = (typeof FACE_VIEWS)[number];
 
@@ -94,7 +94,7 @@ export function decideFaceMode(text: string): FaceModeDecision {
     return graphDecision();
   }
 
-  return { view: "orb", exclusive: false, kind: "auto" };
+  return { view: "graph", exclusive: false, kind: "auto" };
 }
 
 export function viewLabel(view: FaceView): string {

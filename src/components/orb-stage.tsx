@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, type KeyboardEvent } from "react";
 
-import { orbLabel, Reactor, type OrbMode } from "@/components/reactor";
+import { ReactorCage, ReactorHeart, type OrbMode } from "@/components/reactor";
 import {
   dragOrbit,
   pinchZoom,
@@ -10,7 +10,6 @@ import {
   restPose,
   stepZoom,
   wheelZoom,
-  zoomLabel,
   type OrbPose,
 } from "@/lib/orb-rig";
 
@@ -23,7 +22,6 @@ function distance(a: Point, b: Point): number {
 export function OrbStage({ mode }: { mode: OrbMode }) {
   const frameRef = useRef<HTMLDivElement>(null);
   const spinRef = useRef<HTMLDivElement>(null);
-  const zoomRef = useRef<HTMLSpanElement>(null);
   const poseRef = useRef<OrbPose>(restPose());
   const paintRef = useRef<(pose: OrbPose) => void>(() => {});
   const pointers = useRef(new Map<number, Point>());
@@ -37,7 +35,6 @@ export function OrbStage({ mode }: { mode: OrbMode }) {
     const paint = (pose: OrbPose) => {
       poseRef.current = pose;
       if (spinRef.current) spinRef.current.style.transform = poseTransform(pose);
-      if (zoomRef.current) zoomRef.current.textContent = zoomLabel(pose.zoom);
     };
     paintRef.current = paint;
     paint(poseRef.current);
@@ -155,11 +152,6 @@ export function OrbStage({ mode }: { mode: OrbMode }) {
     }
   }
 
-  function zoomBy(direction: "in" | "out") {
-    const pose = poseRef.current;
-    apply({ ...pose, zoom: stepZoom(pose.zoom, direction) });
-  }
-
   return (
     <div className="stage-orb">
       <div className="optic-frame">
@@ -172,32 +164,15 @@ export function OrbStage({ mode }: { mode: OrbMode }) {
           className="orb-rig"
           role="application"
           tabIndex={0}
-          aria-label="Dynamic orb. Drag to turn. Scroll, pinch, or use the zoom buttons."
+          aria-label="Dynamic orb. Drag to turn. Scroll or pinch to zoom."
           onKeyDown={onKeyDown}
         >
           <div ref={spinRef} className="orb-rig-spin">
-            <Reactor mode={mode} />
+            <ReactorCage mode={mode} />
           </div>
+          <ReactorHeart mode={mode} />
         </div>
       </div>
-      <div className="orb-dock">
-        <p className="orb-state">{orbLabel(mode)}</p>
-        <div className="orb-controls">
-          <button type="button" aria-label="Zoom out" onClick={() => zoomBy("out")}>
-            −
-          </button>
-          <span ref={zoomRef} className="orb-zoom-readout">
-            {zoomLabel(restPose().zoom)}
-          </span>
-          <button type="button" aria-label="Zoom in" onClick={() => zoomBy("in")}>
-            +
-          </button>
-          <button type="button" aria-label="Reset orb view" onClick={() => apply(restPose())}>
-            Reset
-          </button>
-        </div>
-      </div>
-      <p className="orb-hint">Drag to turn · scroll or pinch to zoom</p>
     </div>
   );
 }

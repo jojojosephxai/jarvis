@@ -56,18 +56,18 @@ describe("decideFaceMode", () => {
     assert.equal(focus.view, "graph");
   });
 
-  it("returns to the orb for work that is not the vault map", () => {
+  it("keeps the graph open for work that is not a view switch", () => {
     const grade = decideFaceMode("What grade is Joseph in?");
-    assert.equal(grade.view, "orb");
+    assert.equal(grade.view, "graph");
     assert.equal(grade.exclusive, false);
     assert.equal(grade.kind, "auto");
 
     const calendar = decideFaceMode("Put soccer practice on my calendar tomorrow at 4pm");
-    assert.equal(calendar.view, "orb");
+    assert.equal(calendar.view, "graph");
     assert.equal(calendar.exclusive, false);
 
     const plants = decideFaceMode("show me the graph of plants");
-    assert.equal(plants.view, "orb");
+    assert.equal(plants.view, "graph");
     assert.equal(plants.exclusive, false);
   });
 });

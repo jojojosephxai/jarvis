@@ -79,19 +79,23 @@ export function layoutGalaxy(
   const cy = height / 2;
   const repel = clamp(options.repel, 20, 400);
   const link = clamp(options.link, 24, 480);
+  const density = edges.length / Math.max(nodes.length, 1);
+  const crowd = clamp(density / 4, 1, 2.4);
+  const shellScale = 1.15 + Math.min(nodes.length, 28) * 0.012;
   const points: LayoutPoint[] = nodes.map((node, index) => {
     const shell = shellPoint(index, nodes.length);
-    const radius = node.kind === "folder" ? link * 0.18 : link * (0.74 + (index % 3) * 0.08);
+    const radius =
+      (node.kind === "folder" ? link * 0.12 : link * (0.92 + (index % 5) * 0.06)) * shellScale;
     return {
       id: node.id,
       x: cx + shell.x * radius,
-      y: cy + shell.y * radius * 0.9,
+      y: cy + shell.y * radius * 0.88,
       z: shell.z * radius,
     };
   });
   const index = new Map(points.map((point) => [point.id, point]));
   const kinds = new Map(nodes.map((node) => [node.id, node.kind]));
-  const steps = 96;
+  const steps = 110;
 
   for (let step = 0; step < steps; step += 1) {
     const cooling = 1 - step / steps;
@@ -110,8 +114,8 @@ export function layoutGalaxy(
           dz = 0.3;
           dist = Math.hypot(dx, dy, dz);
         }
-        const push = (repel * repel) / dist;
-        const scale = (push / dist) * 0.012 * (0.4 + cooling);
+        const push = (repel * repel * crowd) / dist;
+        const scale = (push / dist) * 0.014 * (0.45 + cooling);
         a.x += dx * scale;
         a.y += dy * scale;
         a.z += dz * scale;
@@ -129,7 +133,8 @@ export function layoutGalaxy(
       const dy = b.y - a.y;
       const dz = b.z - a.z;
       const dist = Math.hypot(dx, dy, dz) || 0.8;
-      const delta = (dist - link) * 0.045 * (0.45 + cooling);
+      const target = link * (0.85 + Math.min(crowd, 1.6) * 0.12);
+      const delta = (dist - target) * 0.032 * (0.4 + cooling);
       const ux = dx / dist;
       const uy = dy / dist;
       const uz = dz / dist;
@@ -142,10 +147,10 @@ export function layoutGalaxy(
     }
 
     for (const point of points) {
-      const hold = kinds.get(point.id) === "folder" ? 0.045 : 0.012;
+      const hold = kinds.get(point.id) === "folder" ? 0.028 : 0.006;
       point.x += (cx - point.x) * hold;
       point.y += (cy - point.y) * hold;
-      point.z += (0 - point.z) * (kinds.get(point.id) === "folder" ? 0.04 : 0.006);
+      point.z += (0 - point.z) * (kinds.get(point.id) === "folder" ? 0.022 : 0.003);
     }
   }
 
@@ -231,7 +236,7 @@ export function meanDistance(points: LayoutPoint[]): number {
 }
 
 export function cageRadius(width: number, height: number): number {
-  return Math.min(width, height) * 0.34;
+  return Math.min(width, height) * 0.4;
 }
 
 export function cageFrame(width: number, height: number): Frame {
@@ -289,21 +294,21 @@ export function layoutOrigin(width: number, height: number): SpacePoint {
 
 export function cageRings(): SpacePoint[][] {
   const rings: SpacePoint[][] = [];
-  const latitudes = [-0.62, -0.28, 0.08, 0.42];
+  const latitudes = [-0.35, 0.28];
   for (const y of latitudes) {
     const ringRadius = Math.sqrt(Math.max(0, 1 - y * y));
     const ring: SpacePoint[] = [];
-    for (let step = 0; step <= 24; step += 1) {
-      const angle = (step / 24) * Math.PI * 2;
+    for (let step = 0; step <= 36; step += 1) {
+      const angle = (step / 36) * Math.PI * 2;
       ring.push({ x: Math.cos(angle) * ringRadius, y, z: Math.sin(angle) * ringRadius });
     }
     rings.push(ring);
   }
-  for (let meridian = 0; meridian < 5; meridian += 1) {
-    const angle = (meridian / 5) * Math.PI;
+  for (let meridian = 0; meridian < 3; meridian += 1) {
+    const angle = (meridian / 3) * Math.PI;
     const ring: SpacePoint[] = [];
-    for (let step = 0; step <= 24; step += 1) {
-      const theta = (step / 24) * Math.PI * 2;
+    for (let step = 0; step <= 36; step += 1) {
+      const theta = (step / 36) * Math.PI * 2;
       ring.push({
         x: Math.cos(angle) * Math.cos(theta),
         y: Math.sin(theta),

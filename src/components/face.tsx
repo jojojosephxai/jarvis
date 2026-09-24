@@ -63,7 +63,7 @@ export function Face() {
   const [items, setItems] = useState<LogItem[]>([]);
   const [draft, setDraft] = useState("");
   const [orb, setOrb] = useState<OrbMode>("standby");
-  const [viewMode, setViewMode] = useState<FaceView>("orb");
+  const [viewMode, setViewMode] = useState<FaceView>("graph");
   const [cue, setCue] = useState<GraphCue | null>(null);
   const cueToken = useRef(0);
   const [talkOpen, setTalkOpen] = useState(false);
@@ -338,26 +338,25 @@ export function Face() {
       <header className="hud-top">
         <div>
           <p className="hud-mark">Jarvis</p>
-          <p className="hud-kicker">Face</p>
         </div>
         <div className="view-switch" role="group" aria-label="View">
           {FACE_VIEWS.map((view) => (
             <Button
               key={view}
               type="button"
-              variant={viewMode === view ? "default" : "outline"}
+              variant={viewMode === view ? "default" : "ghost"}
               aria-pressed={viewMode === view}
-              className="view-button h-11 rounded-none px-3"
+              className="view-button h-9 rounded-none px-3"
               onClick={() => setViewMode(view)}
             >
               {viewLabel(view)}
             </Button>
           ))}
         </div>
-        <p className="hud-link">This computer</p>
+        <p className="hud-link">{brainLabel}</p>
       </header>
       <div className="hud-stage">
-        <OpticStage view={viewMode} orb={orb} cue={cue} />
+        <OpticStage view={viewMode} orb={orb} cue={cue} brainTag={brainLabel} />
       </div>
       <div className="status-bar" aria-label="Status">
         <dl className="status-grid">
@@ -551,12 +550,22 @@ function voiceLamp(mouth: MouthKind | "unknown"): string {
   }
 }
 
-function OpticStage({ view, orb, cue }: { view: FaceView; orb: OrbMode; cue: GraphCue | null }) {
+function OpticStage({
+  view,
+  orb,
+  cue,
+  brainTag,
+}: {
+  view: FaceView;
+  orb: OrbMode;
+  cue: GraphCue | null;
+  brainTag: string;
+}) {
   switch (view) {
     case "orb":
       return <OrbStage mode={orb} />;
     case "graph":
-      return <NoteGraph cue={cue} />;
+      return <NoteGraph cue={cue} brainTag={brainTag} />;
     default: {
       const neverView: never = view;
       return neverView;
