@@ -1,13 +1,45 @@
+---
+title: School
+tags:
+  - school
+  - conestoga
+  - schedule
+updated: 2026-09-23
+---
+
 # School
 
-Joseph is in 9th grade. The school name is not in the old notes.
+Conestoga High School — Tredyffrin/Easttown SD, Wayne / Main Line, Chester County PA. I am in 9th grade ([[About]]).
 
-These facts are copied from the starter notes that already lived in `data/notes`:
+## Day shape
 
-- Soccer practice is usually after school.
-- A library book is due Friday. The book title was not written down.
-- Science fair idea: how light changes how fast plants grow. The board needs a title, three sections, and a few photos.
+- First bell: **7:50am**
+- Out: **2:50pm**
+- Schedule: **Garnet / Gray** alternating
+- Wed + Thu: **Lunch and Learn**
+- Lunch: ~**10:30am**
+- Prefer homework **before** late practice (~3:15–5:20 Mon/Wed/Thu) when possible ([[Routines]], [[Swim]])
+- Homework after **10:15pm** is junk — stop ([[Health-energy]], [[Goals]])
 
-Add the school name, classes, and teachers here when you want them in the vault.
+## Courses (current)
 
-See [[Goals]] and [[About]]. #classes
+- AP Biology
+- AP World History
+- Algebra 2
+- Spanish 3
+- Band / Jazz
+- Culinary
+- **PE Core 9** (Jones, Gym) — Sem1, Gray, period 3 — **NOT training**
+- **Health & Fitness 9** — Sem2 — **NOT training**
+
+Teacher names for other classes: leave blank — do not invent ([[People]]).
+
+## Standing school rules
+
+- Stay current in AP Bio and AP World ([[Goals]])
+- PE / Health & Fitness ≠ swim training — don't cut [[Swim]] for PE ([[Decisions]])
+- When school + swim collide with coding, school + swim win ([[Decisions]], [[Projects]])
+
+## How Jarvis should use this
+
+Plan around bell times, Garnet/Gray, Lunch and Learn, and the 10:15pm cutoff. Quiz/help is fine; **never write work I turn in** ([[Jarvis-wants]]). Cross-link with [[Routines]], [[Swim]], [[Goals]], and [[Health-energy]].
