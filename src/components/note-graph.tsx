@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -9,15 +9,18 @@ import {
   cageRings,
   frameAroundPoint,
   frameAroundPoints,
+  grabDelta,
   layoutGalaxy,
   layoutOrigin,
   orbitCamera,
   projectSpace,
   projectUnit,
+  shiftFrame,
   starField,
   type Camera,
   type Frame,
   type LayoutPoint,
+  type Pan,
 } from "@/lib/graph-layout";
 import { degreeOf, matchGraphNode, matchingNodes, shortestPath, topHubs } from "@/lib/graph-nav";
 import type { GraphEdge, GraphNode, GraphStatus, NoteGraphPayload } from "@/lib/note-graph";
@@ -329,6 +332,8 @@ function GraphReady({ payload, cue }: { payload: NoteGraphPayload; cue: GraphCue
   const [cueNote, setCueNote] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [seenCue, setSeenCue] = useState(0);
+  const [homeToken, setHomeToken] = useState(0);
+  const frameToken = `${frameMode}|${selectedId ?? ""}|${pathFromId}|${pathToId}|${query}|${typeFilter}|${folderFilter}|${homeToken}`;
 
   if (cue && cue.token !== seenCue) {
     setSeenCue(cue.token);
@@ -474,9 +479,14 @@ function GraphReady({ payload, cue }: { payload: NoteGraphPayload; cue: GraphCue
         onFolder={setFolderFilter}
         onRepel={setRepel}
         onLink={setLink}
-        onFit={() => setFrameMode("fit")}
+        onFit={() => {
+          setFrameMode("fit");
+          setHomeToken((token) => token + 1);
+        }}
         onFocus={() => {
-          if (selectedId) setFrameMode("node");
+          if (!selectedId) return;
+          setFrameMode("node");
+          setHomeToken((token) => token + 1);
         }}
         onPath={choosePath}
         onClearPath={() => {
@@ -505,11 +515,13 @@ function GraphReady({ payload, cue }: { payload: NoteGraphPayload; cue: GraphCue
           routeOn={routeOn}
           searching={searching}
           matchIds={matchIds}
+          frameToken={frameToken}
           onSelect={(id) => {
             setSelectedId(id);
             setFrameMode("node");
           }}
         />
+        <p className="graph-pan-hint">Drag to move</p>
         {visibleNodes.length === 0 ? <p className="galaxy-empty-filter">No notes match this filter.</p> : null}
         {clusters.length > 0 ? (
           <ul className="graph-key" aria-label="Note colors">
@@ -572,19 +584,33 @@ function useReducedMotion(): boolean {
 
 const STILL_CAMERA: Camera = { yaw: 0.72, pitch: 0.52 };
 
-function useOrbit(calm: boolean, reduced: boolean): Camera {
+function useOrbit(calm: boolean, reduced: boolean, held = false): Camera {
   const [camera, setCamera] = useState<Camera>(STILL_CAMERA);
+  const heldRef = useRef(held);
+  useEffect(() => {
+    heldRef.current = held;
+  }, [held]);
   useEffect(() => {
     if (reduced) return;
     let frame = 0;
     let last = 0;
+    let pausedAt = 0;
+    let pausedFor = 0;
     const started = performance.now();
     const tick = (now: number) => {
       frame = requestAnimationFrame(tick);
       if (document.hidden) return;
+      if (heldRef.current) {
+        if (pausedAt === 0) pausedAt = now;
+        return;
+      }
+      if (pausedAt !== 0) {
+        pausedFor += now - pausedAt;
+        pausedAt = 0;
+      }
       if (now - last < 80) return;
       last = now;
-      setCamera(orbitCamera((now - started) / 1000, calm));
+      setCamera(orbitCamera((now - started - pausedFor) / 1000, calm));
     };
     frame = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(frame);
@@ -686,6 +712,7 @@ function GalaxyScene({
   routeOn,
   searching,
   matchIds,
+  frameToken,
   onSelect,
 }: {
   nodes: GraphNode[];
@@ -699,11 +726,24 @@ function GalaxyScene({
   routeOn: boolean;
   searching: boolean;
   matchIds: Set<string>;
+  frameToken: string;
   onSelect: (id: string) => void;
 }) {
   const reduced = useReducedMotion();
   const calm = frameMode === "node" || frameMode === "path";
-  const camera = useOrbit(calm, reduced);
+  const [pan, setPan] = useState<Pan>({ x: 0, y: 0 });
+  const [grabbing, setGrabbing] = useState(false);
+  const [seenToken, setSeenToken] = useState(frameToken);
+  const [frozenFrame, setFrozenFrame] = useState<Frame | null>(null);
+  const svgRef = useRef<SVGSVGElement | null>(null);
+  const dragRef = useRef<{ id: number; x: number; y: number; moved: boolean } | null>(null);
+  const swallowRef = useRef(false);
+  if (seenToken !== frameToken) {
+    setSeenToken(frameToken);
+    setPan({ x: 0, y: 0 });
+    setFrozenFrame(null);
+  }
+  const camera = useOrbit(calm, reduced, grabbing);
   const [hoverId, setHoverId] = useState<string | null>(null);
   const origin = layoutOrigin(WIDTH, HEIGHT);
   const unit = cageRadius(WIDTH, HEIGHT);
@@ -767,9 +807,64 @@ function GalaxyScene({
     })
     .sort((a, b) => a.depth - b.depth);
   const drawnNodes = [...nodes].sort((a, b) => (projected.get(a.id)?.depth ?? 0) - (projected.get(b.id)?.depth ?? 0));
+  const spaceFrame = frozenFrame ?? frame;
+  const shifted = shiftFrame(spaceFrame, pan);
+
+  function onSpacePointerDown(event: React.PointerEvent<SVGSVGElement>) {
+    if (event.button !== 0) return;
+    swallowRef.current = false;
+    dragRef.current = { id: event.pointerId, x: event.clientX, y: event.clientY, moved: false };
+  }
+
+  function onSpacePointerMove(event: React.PointerEvent<SVGSVGElement>) {
+    const drag = dragRef.current;
+    const svg = svgRef.current;
+    if (!drag || !svg || drag.id !== event.pointerId) return;
+    const dx = event.clientX - drag.x;
+    const dy = event.clientY - drag.y;
+    if (!drag.moved) {
+      if (Math.hypot(dx, dy) < 6) return;
+      drag.moved = true;
+      setFrozenFrame((current) => current ?? frame);
+      setGrabbing(true);
+      svg.setPointerCapture(event.pointerId);
+    }
+    const rect = svg.getBoundingClientRect();
+    const delta = grabDelta(dx, dy, spaceFrame, rect.width, rect.height);
+    drag.x = event.clientX;
+    drag.y = event.clientY;
+    setPan((current) => ({ x: current.x + delta.x, y: current.y + delta.y }));
+  }
+
+  function onSpacePointerEnd(event: React.PointerEvent<SVGSVGElement>) {
+    const drag = dragRef.current;
+    if (!drag || drag.id !== event.pointerId) return;
+    if (drag.moved) swallowRef.current = true;
+    dragRef.current = null;
+    setGrabbing(false);
+    const svg = svgRef.current;
+    if (svg?.hasPointerCapture(event.pointerId)) svg.releasePointerCapture(event.pointerId);
+  }
 
   return (
-    <svg className="graph-svg" viewBox={viewBox(frame)} role="group" aria-label="Vault notes">
+    <svg
+      ref={svgRef}
+      className={grabbing ? "graph-svg is-grabbing" : "graph-svg"}
+      viewBox={viewBox(shifted)}
+      role="group"
+      aria-label="Vault notes. Drag to move the space."
+      onPointerDown={onSpacePointerDown}
+      onPointerMove={onSpacePointerMove}
+      onPointerUp={onSpacePointerEnd}
+      onPointerCancel={onSpacePointerEnd}
+      onClickCapture={(event) => {
+        if (!swallowRef.current) return;
+        swallowRef.current = false;
+        event.preventDefault();
+        event.stopPropagation();
+      }}
+    >
+      <rect className="graph-grab" x={shifted.x} y={shifted.y} width={shifted.w} height={shifted.h} fill="transparent" />
       <SpaceBackdrop camera={camera} />
       {drawnEdges.map(({ edge, depth }) => {
         const from = pointById.get(edge.from);
@@ -808,7 +903,7 @@ function GalaxyScene({
         const labelOn = showAllLabels || active || neighbor || onPath || node.kind === "folder" || matchIds.has(node.id);
         const radius = ((node.kind === "folder" ? 7 : 4.2) + Math.min(degree, 8) * 0.85) * (0.42 + point.depth * 1.25);
         const dim = (searching && !matchIds.has(node.id)) || (routeOn && !onPath && !active);
-        const labelLeft = point.x > frame.x + frame.w * 0.68;
+        const labelLeft = point.x > shifted.x + shifted.w * 0.68;
         return (
           <g
             key={node.id}
@@ -861,7 +956,7 @@ function GalaxyScene({
           degree={degreeOf(hover.id, edges)}
           x={hoverPoint.x}
           y={hoverPoint.y}
-          frame={frame}
+          frame={shifted}
         />
       ) : null}
     </svg>
@@ -967,7 +1062,7 @@ function GalaxyBay({
           onChange={(event) => onSearch(event.target.value)}
         />
       </label>
-      <p className="galaxy-hint">The notes sit in a turning sphere. Solid lines are links between notes.</p>
+      <p className="galaxy-hint">Drag the space to move it. The notes sit in a turning sphere. Solid lines are links between notes.</p>
       {matchCount !== null ? (
         <p className="galaxy-note">{matchCount === 0 ? "No note matches that search." : `${matchCount} match${matchCount === 1 ? "" : "es"}`}</p>
       ) : null}

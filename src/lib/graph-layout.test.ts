@@ -1,7 +1,15 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { frameAroundPoints, layoutGalaxy, meanDistance, orbitCamera, projectSpace } from "./graph-layout";
+import {
+  frameAroundPoints,
+  grabDelta,
+  layoutGalaxy,
+  meanDistance,
+  orbitCamera,
+  projectSpace,
+  shiftFrame,
+} from "./graph-layout";
 
 const CANVAS = { width: 2400, height: 1600 };
 
@@ -76,6 +84,26 @@ describe("depth", () => {
     const steps = [samples[1]! - samples[0]!, samples[2]! - samples[1]!, samples[3]! - samples[2]!];
     const first = steps[0] ?? 0;
     assert.equal(steps.some((step) => Math.abs(step - first) > 0.08), true);
+  });
+});
+
+describe("grab the space", () => {
+  it("slides the frame with the pointer", () => {
+    const frame = { x: 100, y: 80, w: 200, h: 100 };
+    const delta = grabDelta(20, -10, frame, 200, 100);
+    assert.equal(delta.x, 20);
+    assert.equal(delta.y, -10);
+    const shifted = shiftFrame(frame, delta);
+    assert.equal(shifted.x, 80);
+    assert.equal(shifted.y, 90);
+    assert.equal(shifted.w, 200);
+    assert.equal(shifted.h, 100);
+  });
+
+  it("stays 1:1 when the screen is letterboxed", () => {
+    const delta = grabDelta(10, 0, { x: 0, y: 0, w: 100, h: 100 }, 200, 400);
+    assert.equal(delta.x, 5);
+    assert.equal(delta.y, 0);
   });
 });
 

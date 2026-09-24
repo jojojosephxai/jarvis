@@ -257,6 +257,7 @@ html[data-boot="done"] .boot-screen {
   position: relative;
   min-width: 0;
   min-height: 0;
+  touch-action: none;
   background:
     radial-gradient(ellipse 58% 50% at 50% 48%, rgba(12, 86, 122, 0.34), transparent 68%),
     radial-gradient(circle at 50% 50%, rgba(73, 212, 255, 0.08), transparent 32%);
@@ -289,6 +290,34 @@ html[data-boot="done"] .boot-screen {
   display: block;
   width: 100%;
   height: 100%;
+  touch-action: none;
+  user-select: none;
+  cursor: grab;
+}
+
+.graph-svg.is-grabbing,
+.graph-svg.is-grabbing .graph-grab,
+.graph-svg.is-grabbing .graph-node {
+  cursor: grabbing;
+}
+
+.graph-grab {
+  cursor: grab;
+  pointer-events: all;
+}
+
+.graph-pan-hint {
+  position: absolute;
+  z-index: 1;
+  right: 0.9rem;
+  bottom: 0.7rem;
+  margin: 0;
+  color: rgba(215, 246, 255, 0.72);
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  pointer-events: none;
 }
 
 .graph-node {

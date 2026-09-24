@@ -29,6 +29,11 @@ export type Frame = {
   h: number;
 };
 
+export type Pan = {
+  x: number;
+  y: number;
+};
+
 export type Camera = {
   yaw: number;
   pitch: number;
@@ -180,6 +185,32 @@ export function frameAroundPoint(point: { x: number; y: number }, width: number,
     y: point.y - height / 2,
     w: width,
     h: height,
+  };
+}
+
+export function shiftFrame(frame: Frame, pan: Pan): Frame {
+  return {
+    x: frame.x - pan.x,
+    y: frame.y - pan.y,
+    w: frame.w,
+    h: frame.h,
+  };
+}
+
+export function grabDelta(
+  movementX: number,
+  movementY: number,
+  frame: Frame,
+  viewWidth: number,
+  viewHeight: number,
+): Pan {
+  const width = Math.max(viewWidth, 1);
+  const height = Math.max(viewHeight, 1);
+  const scale = Math.min(width / Math.max(frame.w, 1), height / Math.max(frame.h, 1));
+  const safe = scale === 0 ? 1 : scale;
+  return {
+    x: movementX / safe,
+    y: movementY / safe,
   };
 }
 
