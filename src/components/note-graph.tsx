@@ -192,6 +192,13 @@ function shortTitle(title: string): string {
   return `${title.slice(0, 21)}…`;
 }
 
+function displayTitle(node: GraphNode): string {
+  if (node.title.length <= 18) return node.title;
+  const stem = node.id.split("/").pop()?.replace(/\.md$/i, "") ?? node.title;
+  if (stem.length > 0 && stem.length <= 18) return stem;
+  return shortTitle(node.title);
+}
+
 function folderToken(folder: string): string {
   return folder === "" ? "root" : folder;
 }
@@ -654,7 +661,7 @@ function SpaceBackdrop({ camera }: { camera: Camera }) {
             key={`cage-${index}`}
             points={points}
             fill="none"
-            stroke="rgba(73, 212, 255, 0.28)"
+            stroke="rgba(90, 214, 255, 0.42)"
             strokeWidth="1"
           />
         );
@@ -799,14 +806,14 @@ function GalaxyScene({
           });
         const onPath = routeIds?.has(node.id) ?? false;
         const labelOn = showAllLabels || active || neighbor || onPath || node.kind === "folder" || matchIds.has(node.id);
-        const radius = ((node.kind === "folder" ? 8 : 5.5) + Math.min(degree, 8) * 1.15) * (0.78 + point.scale * 0.28);
+        const radius = ((node.kind === "folder" ? 7 : 4.2) + Math.min(degree, 8) * 0.85) * (0.42 + point.depth * 1.25);
         const dim = (searching && !matchIds.has(node.id)) || (routeOn && !onPath && !active);
         const labelLeft = point.x > frame.x + frame.w * 0.68;
         return (
           <g
             key={node.id}
             className="graph-node"
-            opacity={dim ? 0.14 : 0.55 + point.depth * 0.45}
+            opacity={dim ? 0.1 : 0.2 + point.depth * 0.8}
             tabIndex={0}
             role="button"
             aria-pressed={active}
@@ -839,10 +846,10 @@ function GalaxyScene({
                 x={labelLeft ? point.x - radius - 8 : point.x + radius + 8}
                 y={point.y + 4}
                 fill="#e7f8ff"
-                fontSize={12 + point.depth * 2}
+                fontSize={10 + point.depth * 6}
                 textAnchor={labelLeft ? "end" : "start"}
               >
-                {shortTitle(node.title)}
+                {displayTitle(node)}
               </text>
             ) : null}
           </g>
@@ -850,7 +857,7 @@ function GalaxyScene({
       })}
       {hover && hoverPoint ? (
         <HoverTip
-          title={hover.title}
+          title={displayTitle(hover)}
           degree={degreeOf(hover.id, edges)}
           x={hoverPoint.x}
           y={hoverPoint.y}
@@ -874,7 +881,7 @@ function HoverTip({
   y: number;
   frame: Frame;
 }) {
-  const name = shortTitle(title);
+  const name = title.length <= 22 ? title : `${title.slice(0, 21)}…`;
   const meta = `${degree} ${degree === 1 ? "link" : "links"} — click to focus`;
   const boxW = Math.max(name.length, meta.length) * 6.6 + 16;
   const left = x + boxW + 18 > frame.x + frame.w ? x - boxW - 14 : x + 14;

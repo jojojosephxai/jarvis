@@ -247,7 +247,7 @@ export function projectSpace(
   return {
     x: origin.x + x1 * scale * safeUnit,
     y: origin.y + y2 * scale * safeUnit * 0.92,
-    depth: clamp((z2 + 1.8) / 3.6, 0, 1),
+    depth: clamp(0.5 + z2 * 0.62, 0.05, 1),
     scale,
   };
 }
