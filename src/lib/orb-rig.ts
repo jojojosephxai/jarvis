@@ -45,11 +45,12 @@ export function pinchZoom(zoom: number, startDistance: number, distance: number)
 }
 
 export function stepZoom(zoom: number, direction: "in" | "out"): number {
+  const current = Math.round(clampZoom(zoom) * 10) / 10;
   switch (direction) {
     case "in":
-      return clampZoom(zoom * 1.16);
+      return clampZoom(current + 0.2);
     case "out":
-      return clampZoom(zoom / 1.16);
+      return clampZoom(current - 0.2);
     default: {
       const neverDirection: never = direction;
       return neverDirection;

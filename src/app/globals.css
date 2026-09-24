@@ -252,6 +252,8 @@ html[data-boot="done"] .boot-screen {
 }
 
 .orb-dock {
+  position: relative;
+  z-index: 2;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -719,6 +721,7 @@ html[data-boot="done"] .boot-screen {
   width: min(72vmin, 58vh, 560px);
   height: min(72vmin, 58vh, 560px);
   place-items: center;
+  overflow: hidden;
   perspective: 900px;
 }
 

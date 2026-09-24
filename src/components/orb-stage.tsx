@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, type KeyboardEvent, type PointerEvent } from "react";
+import { useEffect, useRef, type KeyboardEvent } from "react";
 
 import { orbLabel, Reactor, type OrbMode } from "@/components/reactor";
 import {
@@ -31,76 +31,89 @@ export function OrbStage({ mode }: { mode: OrbMode }) {
   const pinchRef = useRef<{ zoom: number; distance: number } | null>(null);
 
   useEffect(() => {
-    paintRef.current = (pose: OrbPose) => {
+    const frame = frameRef.current;
+    if (!frame) return;
+
+    const paint = (pose: OrbPose) => {
       poseRef.current = pose;
       if (spinRef.current) spinRef.current.style.transform = poseTransform(pose);
       if (zoomRef.current) zoomRef.current.textContent = zoomLabel(pose.zoom);
+    };
+    paintRef.current = paint;
+    paint(poseRef.current);
+
+    const onWheel = (event: WheelEvent) => {
+      event.preventDefault();
+      const pose = poseRef.current;
+      paint({ ...pose, zoom: wheelZoom(pose.zoom, event.deltaY) });
+    };
+
+    const onPointerDown = (event: PointerEvent) => {
+      pointers.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
+      if (pointers.current.size >= 2) {
+        const [first, second] = [...pointers.current.values()];
+        if (first && second) {
+          pinchRef.current = { zoom: poseRef.current.zoom, distance: distance(first, second) };
+        }
+        dragRef.current = null;
+      } else {
+        dragRef.current = { x: event.clientX, y: event.clientY };
+        pinchRef.current = null;
+      }
+      try {
+        frame.setPointerCapture(event.pointerId);
+      } catch {
+        // Drag still tracks while the pointer stays on the orb.
+      }
+    };
+
+    const onPointerMove = (event: PointerEvent) => {
+      if (!pointers.current.has(event.pointerId)) return;
+      pointers.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
+      if (pointers.current.size >= 2 && pinchRef.current) {
+        const [first, second] = [...pointers.current.values()];
+        if (!first || !second) return;
+        const pose = poseRef.current;
+        paint({
+          ...pose,
+          zoom: pinchZoom(pinchRef.current.zoom, pinchRef.current.distance, distance(first, second)),
+        });
+        return;
+      }
+      const drag = dragRef.current;
+      if (!drag) return;
+      paint(dragOrbit(poseRef.current, event.clientX - drag.x, event.clientY - drag.y));
+      dragRef.current = { x: event.clientX, y: event.clientY };
+    };
+
+    const onPointerEnd = (event: PointerEvent) => {
+      pointers.current.delete(event.pointerId);
+      if (frame.hasPointerCapture(event.pointerId)) frame.releasePointerCapture(event.pointerId);
+      if (pointers.current.size < 2) pinchRef.current = null;
+      if (pointers.current.size === 1) {
+        const only = [...pointers.current.values()][0];
+        dragRef.current = only ? { x: only.x, y: only.y } : null;
+        return;
+      }
+      dragRef.current = null;
+    };
+
+    frame.addEventListener("wheel", onWheel, { passive: false });
+    frame.addEventListener("pointerdown", onPointerDown);
+    frame.addEventListener("pointermove", onPointerMove);
+    frame.addEventListener("pointerup", onPointerEnd);
+    frame.addEventListener("pointercancel", onPointerEnd);
+    return () => {
+      frame.removeEventListener("wheel", onWheel);
+      frame.removeEventListener("pointerdown", onPointerDown);
+      frame.removeEventListener("pointermove", onPointerMove);
+      frame.removeEventListener("pointerup", onPointerEnd);
+      frame.removeEventListener("pointercancel", onPointerEnd);
     };
   }, []);
 
   function apply(next: OrbPose) {
     paintRef.current(next);
-  }
-
-  useEffect(() => {
-    paintRef.current(poseRef.current);
-    const frame = frameRef.current;
-    if (!frame) return;
-    const onWheel = (event: WheelEvent) => {
-      event.preventDefault();
-      const pose = poseRef.current;
-      paintRef.current({ ...pose, zoom: wheelZoom(pose.zoom, event.deltaY) });
-    };
-    frame.addEventListener("wheel", onWheel, { passive: false });
-    return () => frame.removeEventListener("wheel", onWheel);
-  }, []);
-
-  function onPointerDown(event: PointerEvent<HTMLDivElement>) {
-    if ((event.target as HTMLElement).closest("button")) return;
-    event.currentTarget.setPointerCapture(event.pointerId);
-    pointers.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
-    if (pointers.current.size >= 2) {
-      const [first, second] = [...pointers.current.values()];
-      if (first && second) {
-        pinchRef.current = { zoom: poseRef.current.zoom, distance: distance(first, second) };
-      }
-      dragRef.current = null;
-      return;
-    }
-    dragRef.current = { x: event.clientX, y: event.clientY };
-  }
-
-  function onPointerMove(event: PointerEvent<HTMLDivElement>) {
-    if (!pointers.current.has(event.pointerId)) return;
-    pointers.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
-    if (pointers.current.size >= 2 && pinchRef.current) {
-      const [first, second] = [...pointers.current.values()];
-      if (!first || !second) return;
-      const pose = poseRef.current;
-      apply({
-        ...pose,
-        zoom: pinchZoom(pinchRef.current.zoom, pinchRef.current.distance, distance(first, second)),
-      });
-      return;
-    }
-    const drag = dragRef.current;
-    if (!drag) return;
-    apply(dragOrbit(poseRef.current, event.clientX - drag.x, event.clientY - drag.y));
-    dragRef.current = { x: event.clientX, y: event.clientY };
-  }
-
-  function onPointerEnd(event: PointerEvent<HTMLDivElement>) {
-    pointers.current.delete(event.pointerId);
-    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-      event.currentTarget.releasePointerCapture(event.pointerId);
-    }
-    if (pointers.current.size < 2) pinchRef.current = null;
-    if (pointers.current.size === 1) {
-      const only = [...pointers.current.values()][0];
-      dragRef.current = only ? { x: only.x, y: only.y } : null;
-      return;
-    }
-    dragRef.current = null;
   }
 
   function onKeyDown(event: KeyboardEvent<HTMLDivElement>) {
@@ -160,10 +173,6 @@ export function OrbStage({ mode }: { mode: OrbMode }) {
           role="application"
           tabIndex={0}
           aria-label="Dynamic orb. Drag to turn. Scroll, pinch, or use the zoom buttons."
-          onPointerDown={onPointerDown}
-          onPointerMove={onPointerMove}
-          onPointerUp={onPointerEnd}
-          onPointerCancel={onPointerEnd}
           onKeyDown={onKeyDown}
         >
           <div ref={spinRef} className="orb-rig-spin">

@@ -30,6 +30,8 @@ test("wheel and pinch zoom in and out inside the limits", () => {
   assert.equal(wheelZoom(start, 0), start);
   assert.equal(pinchZoom(start, 100, 200), 2);
   assert.equal(pinchZoom(0.6, 10, 1), ORB_ZOOM_MIN);
+  assert.equal(stepZoom(1, "in"), 1.2);
+  assert.equal(stepZoom(1.2, "in"), 1.4);
   assert.equal(stepZoom(ORB_ZOOM_MAX, "in"), ORB_ZOOM_MAX);
-  assert.ok(stepZoom(start, "out") < start);
+  assert.equal(stepZoom(1, "out"), 0.8);
 });
