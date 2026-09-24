@@ -16,7 +16,9 @@ The vault inside it is:
 2. Open Obsidian.
 3. Choose **Open folder as vault**. (If a vault is already open: vault switcher at the bottom left, then **Open folder as vault**.)
 4. Select the `vault` folder above.
-5. You should see these notes: About, Goals, Swim, School, Preferences, and this README.
+5. You should see these notes: [[About]], [[Goals]], [[Swim]], [[School]], [[Preferences]], and this README.
+
+See [[About]], [[School]], [[Goals]], [[Swim]], and [[Preferences]]. #rules
 
 The first open creates a hidden `.obsidian` folder next to these notes. That folder is Obsidian's own settings. It stays on your computer and is not part of the notes.
 

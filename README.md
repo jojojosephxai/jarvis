@@ -22,8 +22,8 @@ npm run dev
 Open [http://localhost:4721](http://localhost:4721).
 
 1. A short boot plays. Press **Skip** if you want the main screen now.
-2. You should see a dark screen and a blue wireframe orb in the middle. It spins, and it grows while it is working. Talk is a thin strip at the bottom, not the middle of the screen. Face is online. Brain says **Vault** when no key is set, or **grok-4.7** when a key is set. Voice says **Altair** when Grok speech is set, **This computer** if only the browser can speak, or **Not live** if nothing can speak. **Mic** and **Speak** sit on that strip next to **Send**.
-3. Press **Graph**. You should see the notes from the `vault` folder as a cyan galaxy: real dots, real lines, rings behind them. The count matches the vault. Click a dot and the inspector shows the title, the path, and a short preview. Search finds a note. **Most connected** lists the hubs. **All / Notes / Folders** and the folder menu filter the map. **Repel** and **Link length** move the dots. **Fit** frames them. Pick two notes under **Path** to light the steps between them. Press **Dynamic Orb** to put the orb back in the middle. There is no Ring button and no Cube button.
+2. You should see a dark screen and a blue wireframe orb in the middle. The rings turn at different speeds, and the orb nods, so the motion is not one flat loop. It grows while it is working, and a bright sweep runs around it. Talk is a thin strip at the bottom, not the middle of the screen. Face is online. Brain says **Vault** when no key is set, or **grok-4.7** when a key is set. Voice says **Altair** when Grok speech is set, **This computer** if only the browser can speak, or **Not live** if nothing can speak. **Mic** and **Speak** sit on that strip next to **Send**.
+3. Press **Graph**. The notes from the `vault` folder sit in a turning sphere. Solid lines are real `[[wikilinks]]`. Dotted lines are the folder. Dashed lines are shared tags. The count matches the vault. An empty vault stays empty. Hover a dot to see how many links it has. Click a dot and the inspector shows the title, the path, a short preview, and why each line is there. Search finds a note. **Most connected** lists the hubs. **All / Notes / Folders** and the folder menu filter the map. **Repel** and **Link length** move the dots in space. **Fit** frames the sphere. Pick two notes under **Path** to light the steps between them. Press **Dynamic Orb** to put the orb back in the middle. There is no Ring button and no Cube button.
 4. Type `switch to dynamic orb` and press **Send**. The orb comes back, even if the same line also says graph. Type `open the vault` or `path from About to School` to open the graph. A normal question, like a grade or the calendar, leaves the graph and returns to the orb. Press **Talk** if you want to hide that line again.
 5. Type this and press **Send**:
 
@@ -58,7 +58,7 @@ These still work. They are not vault answers. The orb stays in the middle. The t
 - **Dynamic Orb** or the graph owns the middle. Boot opens on the orb
 - **Dynamic Orb** and **Graph** only. There is no Ring button and no Cube button
 - Talk is a thin strip. Press **Talk** to open the words. It does not take the center
-- Lines on the graph come from folder parents, `[[wikilinks]]`, and shared tags. Notes with no links still connect to their folder. The map will not draw more than 40 notes, and an empty vault stays empty
+- The graph is a turning sphere. Lines come from `[[wikilinks]]`, shared tags, and folder parents. Notes with no links still connect to their folder. The map will not draw more than 40 notes, and an empty vault stays empty
 
 ## Morning brief
 

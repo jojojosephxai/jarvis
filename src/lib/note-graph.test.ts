@@ -112,6 +112,10 @@ describe("loadVaultGraph", () => {
         graph.edges.some((edge) => edge.reason === "folder"),
         true,
       );
+      assert.equal(
+        graph.edges.some((edge) => edge.reason === "wikilink"),
+        true,
+      );
     } finally {
       if (previous === undefined) delete process.env.OBSIDIAN_VAULT_PATH;
       else process.env.OBSIDIAN_VAULT_PATH = previous;

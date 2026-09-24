@@ -9,3 +9,5 @@ These facts are copied from the starter notes that already lived in `data/notes`
 - Science fair idea: how light changes how fast plants grow. The board needs a title, three sections, and a few photos.
 
 Add the school name, classes, and teachers here when you want them in the vault.
+
+See [[Goals]] and [[About]]. #classes

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { frameAroundPoints, layoutGalaxy, meanDistance } from "./graph-layout";
+import { frameAroundPoints, layoutGalaxy, meanDistance, orbitCamera, projectSpace } from "./graph-layout";
 
 const CANVAS = { width: 2400, height: 1600 };
 
@@ -40,6 +40,42 @@ describe("layoutGalaxy", () => {
     const short = layoutGalaxy(pair, link, { repel: 50, link: 80, ...CANVAS });
     const long = layoutGalaxy(pair, link, { repel: 50, link: 280, ...CANVAS });
     assert.equal(meanDistance(long) > meanDistance(short), true);
+  });
+});
+
+describe("depth", () => {
+  it("does not flatten every note onto one plane", () => {
+    const placed = layoutGalaxy(
+      [
+        { id: "folder:", kind: "folder" },
+        { id: "About.md", kind: "note" },
+        { id: "School.md", kind: "note" },
+        { id: "Goals.md", kind: "note" },
+      ],
+      [
+        { from: "About.md", to: "folder:" },
+        { from: "School.md", to: "folder:" },
+        { from: "Goals.md", to: "folder:" },
+      ],
+      { repel: 120, link: 140, ...CANVAS },
+    );
+    const zs = placed.map((point) => point.z);
+    const spread = Math.max(...zs) - Math.min(...zs);
+    assert.equal(spread > 20, true);
+  });
+
+  it("turns a point when the camera yaws", () => {
+    const origin = { x: 0, y: 0, z: 0 };
+    const still = projectSpace({ x: 80, y: 0, z: 0 }, { yaw: 0, pitch: 0.4 }, origin, 100);
+    const turned = projectSpace({ x: 80, y: 0, z: 0 }, { yaw: 0.8, pitch: 0.4 }, origin, 100);
+    assert.equal(Math.abs(turned.x - still.x) > 5, true);
+  });
+
+  it("does not repeat one even spin", () => {
+    const samples = [0.2, 1.5, 2.8, 4.1].map((time) => orbitCamera(time, false).yaw);
+    const steps = [samples[1]! - samples[0]!, samples[2]! - samples[1]!, samples[3]! - samples[2]!];
+    const first = steps[0] ?? 0;
+    assert.equal(steps.some((step) => Math.abs(step - first) > 0.08), true);
   });
 });
 

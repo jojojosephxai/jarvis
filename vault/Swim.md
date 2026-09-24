@@ -4,6 +4,8 @@ This page is for swim. The old notes in `data/notes` do not mention a team, a po
 
 Write the real details when you have them:
 
+See [[About]].
+
 - Team or pool:
 - Practice days:
 - Practice time:

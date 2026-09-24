@@ -6,4 +6,6 @@ The science fair project is about how light changes how fast plants grow. The bo
 
 No other goals were in the old notes. Add yours below this line.
 
+See [[School]] and [[About]]. #classes
+
 -

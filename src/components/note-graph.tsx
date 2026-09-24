@@ -4,7 +4,21 @@ import { useEffect, useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { frameAroundPoint, frameAroundPoints, layoutGalaxy, type Frame } from "@/lib/graph-layout";
+import {
+  cageRadius,
+  cageRings,
+  frameAroundPoint,
+  frameAroundPoints,
+  layoutGalaxy,
+  layoutOrigin,
+  orbitCamera,
+  projectSpace,
+  projectUnit,
+  starField,
+  type Camera,
+  type Frame,
+  type LayoutPoint,
+} from "@/lib/graph-layout";
 import { degreeOf, matchGraphNode, matchingNodes, shortestPath, topHubs } from "@/lib/graph-nav";
 import type { GraphEdge, GraphNode, GraphStatus, NoteGraphPayload } from "@/lib/note-graph";
 
@@ -22,10 +36,13 @@ const EMPTY: NoteGraphPayload = {
 const WIDTH = 1000;
 const HEIGHT = 640;
 const COOL = ["#7ee7ff", "#49d4ff", "#6d8cff", "#5eead4", "#9bb6ff", "#8fd3ff", "#3ec6e0", "#b7d4ff"];
-const STARS = Array.from({ length: 36 }, (_, index) => ({
-  x: 48 + ((index * 137) % 904),
-  y: 36 + ((index * 89 + 23) % 568),
-}));
+const CAGE = cageRings();
+const STARS = starField();
+const TAG_COLOR: Record<string, string> = {
+  classes: "#3dd6ff",
+  person: "#8aa4ff",
+  rules: "#5eead4",
+};
 const TYPE_FILTERS = ["all", "note", "folder"] as const;
 
 type TypeFilter = (typeof TYPE_FILTERS)[number];
@@ -133,13 +150,41 @@ function typeLabel(filter: TypeFilter): string {
   }
 }
 
+function clusterKey(node: GraphNode): string {
+  if (node.kind === "folder") return "folder";
+  return node.tags[0] ?? "note";
+}
+
 function colorFor(node: GraphNode): string {
-  if (node.kind === "folder") return "#d7f6ff";
-  let hash = 0;
-  for (let index = 0; index < node.id.length; index += 1) {
-    hash = (hash * 33 + node.id.charCodeAt(index)) >>> 0;
+  if (node.kind === "folder") return "#f4fdff";
+  const tag = node.tags[0];
+  if (tag) {
+    const known = TAG_COLOR[tag];
+    if (known) return known;
+    let hash = 0;
+    for (let index = 0; index < tag.length; index += 1) {
+      hash = (hash * 33 + tag.charCodeAt(index)) >>> 0;
+    }
+    return COOL[hash % COOL.length] ?? "#7ee7ff";
   }
-  return COOL[hash % COOL.length] ?? "#7ee7ff";
+  return "#8fd3ff";
+}
+
+function clusterLabel(key: string): string {
+  switch (key) {
+    case "folder":
+      return "Folder";
+    case "note":
+      return "Note";
+    case "classes":
+      return "Classes";
+    case "person":
+      return "Person";
+    case "rules":
+      return "Rules";
+    default:
+      return key.slice(0, 1).toUpperCase() + key.slice(1);
+  }
 }
 
 function shortTitle(title: string): string {
@@ -160,24 +205,21 @@ function folderChoiceLabel(token: string): string {
   return token;
 }
 
-function edgePath(x1: number, y1: number, x2: number, y2: number): string {
-  const dx = x2 - x1;
-  const dy = y2 - y1;
-  const mx = (x1 + x2) / 2 - dy * 0.16;
-  const my = (y1 + y2) / 2 + dx * 0.16;
-  return `M ${x1} ${y1} Q ${mx} ${my} ${x2} ${y2}`;
-}
+type LinkRow = {
+  title: string;
+  reason: GraphEdge["reason"];
+};
 
-function polar(cx: number, cy: number, radius: number, deg: number): { x: number; y: number } {
-  const rad = (deg * Math.PI) / 180;
-  return { x: cx + Math.cos(rad) * radius, y: cy + Math.sin(rad) * radius };
-}
-
-function arc(cx: number, cy: number, radius: number, start: number, end: number): string {
-  const from = polar(cx, cy, radius, start);
-  const to = polar(cx, cy, radius, end);
-  const large = end - start > 180 ? 1 : 0;
-  return `M ${from.x} ${from.y} A ${radius} ${radius} 0 ${large} 1 ${to.x} ${to.y}`;
+function linkRows(node: GraphNode | null, nodes: GraphNode[], edges: GraphEdge[]): LinkRow[] {
+  if (!node) return [];
+  const titles = new Map(nodes.map((item) => [item.id, item.title]));
+  return edges
+    .filter((edge) => edge.from === node.id || edge.to === node.id)
+    .map((edge) => {
+      const other = edge.from === node.id ? edge.to : edge.from;
+      return { title: titles.get(other) ?? other, reason: edge.reason };
+    })
+    .sort((a, b) => a.title.localeCompare(b.title) || a.reason.localeCompare(b.reason));
 }
 
 function nodeVisible(node: GraphNode, typeFilter: TypeFilter, folderFilter: string): boolean {
@@ -253,10 +295,12 @@ function GraphBody({ payload, cue }: { payload: NoteGraphPayload; cue: GraphCue 
 }
 
 function GraphEmpty({ payload }: { payload: NoteGraphPayload }) {
+  const reduced = useReducedMotion();
+  const camera = useOrbit(false, reduced);
   return (
     <div className="graph-stage graph-stage-empty">
-      <svg className="graph-empty-rings" viewBox={`0 0 ${WIDTH} ${HEIGHT}`} aria-hidden="true">
-        <GalaxyRings />
+      <svg className="graph-empty-rings" viewBox={viewBox(stableFrame([]))} aria-hidden="true">
+        <SpaceBackdrop camera={camera} />
       </svg>
       <p className="graph-stats">
         {payload.noteCount} notes · {payload.connectionCount} connections
@@ -329,7 +373,6 @@ function GraphReady({ payload, cue }: { payload: NoteGraphPayload; cue: GraphCue
       }),
     [payload.nodes, payload.edges, repel, link],
   );
-  const pointById = useMemo(() => new Map(points.map((point) => [point.id, point])), [points]);
   const hubs = useMemo(() => topHubs(payload.nodes, payload.edges, 5), [payload.nodes, payload.edges]);
   const matches = useMemo(() => matchingNodes(payload.nodes, query), [payload.nodes, query]);
   const matchIds = useMemo(() => new Set(matches.map((node) => node.id)), [matches]);
@@ -358,34 +401,7 @@ function GraphReady({ payload, cue }: { payload: NoteGraphPayload; cue: GraphCue
   const reasons = [...new Set(payload.edges.map((edge) => edge.reason))];
   const searching = query.trim().length > 0;
   const routeOn = Boolean(route && route.length > 1);
-
-  const frame = useMemo(() => {
-    const visiblePoints = points.filter((point) => visibleIds.has(point.id));
-    switch (frameMode) {
-      case "node": {
-        const point = selectedId ? pointById.get(selectedId) : undefined;
-        if (!point || !selectedId || !visibleIds.has(selectedId)) return frameAroundPoints(visiblePoints, 120, 96);
-        return frameAroundPoint(point, 520, 360);
-      }
-      case "path": {
-        const pathPoints = (route ?? [])
-          .map((id) => pointById.get(id))
-          .filter((point): point is { id: string; x: number; y: number } => Boolean(point));
-        if (pathPoints.length === 0) return frameAroundPoints(visiblePoints, 120, 96);
-        return frameAroundPoints(pathPoints, 130, 100);
-      }
-      case "matches": {
-        const matched = visiblePoints.filter((point) => matchIds.has(point.id));
-        return frameAroundPoints(matched.length > 0 ? matched : visiblePoints, 120, 96);
-      }
-      case "fit":
-        return frameAroundPoints(visiblePoints, 120, 100);
-      default: {
-        const neverMode: never = frameMode;
-        return neverMode;
-      }
-    }
-  }, [frameMode, matchIds, pointById, points, route, selectedId, visibleIds]);
+  const clusters = [...new Set(visibleNodes.map(clusterKey))];
 
   function showNode(id: string, mode: FrameMode) {
     setTypeFilter("all");
@@ -426,8 +442,6 @@ function GraphReady({ payload, cue }: { payload: NoteGraphPayload; cue: GraphCue
       setSelectedId(nextTo);
     }
   }
-
-  const showAllLabels = visibleNodes.length <= 24;
 
   return (
     <div className="graph-stage">
@@ -472,101 +486,37 @@ function GraphReady({ payload, cue }: { payload: NoteGraphPayload; cue: GraphCue
           {payload.hiddenCount > 0 ? ` · ${payload.hiddenCount} not drawn` : ""}
           {visibleNodes.length !== payload.nodes.length ? ` · showing ${visibleNodes.length}` : ""}
         </p>
-        <svg className="graph-svg" viewBox={viewBox(frame)} role="group" aria-label="Vault notes">
-          <GalaxyRings />
-          <g aria-hidden="true">
-            {STARS.map((star) => (
-              <circle key={`${star.x}-${star.y}`} cx={star.x} cy={star.y} r="1.1" fill="rgba(126, 231, 255, 0.28)" />
-            ))}
-          </g>
-          {payload.edges.map((edge) => {
-            if (!visibleIds.has(edge.from) || !visibleIds.has(edge.to)) return null;
-            const from = pointById.get(edge.from);
-            const to = pointById.get(edge.to);
-            if (!from || !to) return null;
-            const hot = routeOn ? onRoute(edge, route) : selectedId !== null && (edge.from === selectedId || edge.to === selectedId);
-            const dim = (searching && !matchIds.has(edge.from) && !matchIds.has(edge.to)) || (routeOn && !hot);
-            const d = edgePath(from.x, from.y, to.x, to.y);
-            return (
-              <g key={edge.id} opacity={dim ? 0.12 : 1}>
-                <path d={d} fill="none" stroke={hot ? "rgba(216, 247, 255, 0.35)" : "rgba(73, 212, 255, 0.2)"} strokeWidth={hot ? 7 : 4} />
-                <path
-                  d={d}
-                  fill="none"
-                  stroke={hot ? "#f4fdff" : "rgba(126, 231, 255, 0.72)"}
-                  strokeWidth={hot ? 2.4 : 1.35}
-                  strokeDasharray={dashFor(edge.reason)}
-                />
-              </g>
-            );
-          })}
-          {visibleNodes.map((node) => {
-            const point = pointById.get(node.id);
-            if (!point) return null;
-            const active = node.id === selectedId;
-            const color = colorFor(node);
-            const degree = degreeOf(node.id, payload.edges);
-            const neighbor = selectedId !== null && payload.edges.some((edge) => {
-              return (
-                (edge.from === selectedId && edge.to === node.id) ||
-                (edge.to === selectedId && edge.from === node.id)
-              );
-            });
-            const onPath = routeIds?.has(node.id) ?? false;
-            const labelOn = showAllLabels || active || neighbor || onPath || node.kind === "folder" || matchIds.has(node.id);
-            const radius = (node.kind === "folder" ? 8 : 5.5) + Math.min(degree, 8) * 1.2;
-            const dim = (searching && !matchIds.has(node.id)) || (routeOn && !onPath && !active);
-            const labelLeft = point.x > frame.x + frame.w * 0.68;
-            return (
-              <g
-                key={node.id}
-                className="graph-node"
-                opacity={dim ? 0.16 : 1}
-                tabIndex={0}
-                role="button"
-                aria-pressed={active}
-                aria-label={node.kind === "folder" ? `${node.title} folder` : node.title}
-                onClick={() => {
-                  setSelectedId(node.id);
-                  setFrameMode("node");
-                }}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter" || event.key === " ") {
-                    event.preventDefault();
-                    setSelectedId(node.id);
-                    setFrameMode("node");
-                  }
-                }}
-              >
-                <circle cx={point.x} cy={point.y} r={radius + 12} fill="transparent" />
-                <circle cx={point.x} cy={point.y} r={radius + 6} fill={color} opacity={active || onPath ? 0.22 : 0.1} />
-                <circle
-                  cx={point.x}
-                  cy={point.y}
-                  r={radius}
-                  fill={node.kind === "folder" ? "rgba(4, 16, 24, 0.35)" : active ? color : "#07141c"}
-                  stroke={active ? "#f4fdff" : color}
-                  strokeWidth={active ? 2.6 : 1.7}
-                />
-                {node.kind === "folder" ? (
-                  <circle cx={point.x} cy={point.y} r={radius + 3.5} fill="none" stroke={color} strokeWidth="1" />
-                ) : null}
-                {labelOn ? (
-                  <text
-                    x={labelLeft ? point.x - radius - 8 : point.x + radius + 8}
-                    y={point.y + 4}
-                    fill="#e7f8ff"
-                    fontSize="13"
-                    textAnchor={labelLeft ? "end" : "start"}
-                  >
-                    {shortTitle(node.title)}
-                  </text>
-                ) : null}
-              </g>
-            );
-          })}
-        </svg>
+        <GalaxyScene
+          nodes={visibleNodes}
+          edges={payload.edges}
+          points={points}
+          visibleIds={visibleIds}
+          selectedId={selectedId}
+          frameMode={frameMode}
+          route={route}
+          routeIds={routeIds}
+          routeOn={routeOn}
+          searching={searching}
+          matchIds={matchIds}
+          onSelect={(id) => {
+            setSelectedId(id);
+            setFrameMode("node");
+          }}
+        />
         {visibleNodes.length === 0 ? <p className="galaxy-empty-filter">No notes match this filter.</p> : null}
+        {clusters.length > 0 ? (
+          <ul className="graph-key" aria-label="Note colors">
+            {clusters.map((key) => (
+              <li key={key}>
+                <span
+                  className="graph-swatch"
+                  style={{ background: key === "folder" ? "#f4fdff" : key === "note" ? "#8fd3ff" : (TAG_COLOR[key] ?? "#7ee7ff") }}
+                />
+                {clusterLabel(key)}
+              </li>
+            ))}
+          </ul>
+        ) : null}
         {reasons.length > 0 ? (
           <ul className="graph-legend">
             {reasons.map((reason) => (
@@ -580,6 +530,7 @@ function GraphReady({ payload, cue }: { payload: NoteGraphPayload; cue: GraphCue
         detail={payload.detail}
         degree={selected ? degreeOf(selected.id, payload.edges) : 0}
         onPath={selected ? Boolean(routeIds?.has(selected.id)) : false}
+        links={linkRows(selected, payload.nodes, payload.edges)}
       />
     </div>
   );
@@ -600,31 +551,343 @@ function onRoute(edge: GraphEdge, route: string[] | null): boolean {
   return false;
 }
 
-function GalaxyRings() {
-  const cx = WIDTH / 2;
-  const cy = HEIGHT / 2;
-  const rings = [78, 150, 230, 320, 430];
+function useReducedMotion(): boolean {
+  const [reduced, setReduced] = useState(false);
+  useEffect(() => {
+    const media = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const apply = () => setReduced(media.matches);
+    apply();
+    media.addEventListener("change", apply);
+    return () => media.removeEventListener("change", apply);
+  }, []);
+  return reduced;
+}
+
+const STILL_CAMERA: Camera = { yaw: 0.72, pitch: 0.52 };
+
+function useOrbit(calm: boolean, reduced: boolean): Camera {
+  const [camera, setCamera] = useState<Camera>(STILL_CAMERA);
+  useEffect(() => {
+    if (reduced) return;
+    let frame = 0;
+    let last = 0;
+    const started = performance.now();
+    const tick = (now: number) => {
+      frame = requestAnimationFrame(tick);
+      if (document.hidden) return;
+      if (now - last < 80) return;
+      last = now;
+      setCamera(orbitCamera((now - started) / 1000, calm));
+    };
+    frame = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(frame);
+  }, [calm, reduced]);
+  return reduced ? STILL_CAMERA : camera;
+}
+
+function stableFrame(points: LayoutPoint[]): Frame {
+  const origin = layoutOrigin(WIDTH, HEIGHT);
+  let reach = cageRadius(WIDTH, HEIGHT);
+  for (const point of points) {
+    reach = Math.max(reach, Math.hypot(point.x - origin.x, point.y - origin.y, point.z - origin.z));
+  }
+  reach *= 1.45;
+  return {
+    x: origin.x - reach,
+    y: origin.y - reach * 0.86,
+    w: reach * 2,
+    h: reach * 1.72,
+  };
+}
+
+function wirePath(from: LayoutPoint, to: LayoutPoint, reason: GraphEdge["reason"], camera: Camera): string {
+  const origin = layoutOrigin(WIDTH, HEIGHT);
+  const unit = cageRadius(WIDTH, HEIGHT);
+  const steps = reason === "folder" ? 1 : 6;
+  const parts: string[] = [];
+  for (let step = 0; step <= steps; step += 1) {
+    const t = step / steps;
+    let x = from.x + (to.x - from.x) * t;
+    let y = from.y + (to.y - from.y) * t;
+    let z = from.z + (to.z - from.z) * t;
+    if (reason !== "folder") {
+      const lift = Math.sin(Math.PI * t) * unit * 0.14;
+      const dx = x - origin.x;
+      const dy = y - origin.y;
+      const dz = z - origin.z;
+      const len = Math.hypot(dx, dy, dz) || 1;
+      x += (dx / len) * lift;
+      y += (dy / len) * lift;
+      z += (dz / len) * lift;
+    }
+    const projected = projectSpace({ x, y, z }, camera, origin, unit);
+    parts.push(`${step === 0 ? "M" : "L"} ${projected.x.toFixed(1)} ${projected.y.toFixed(1)}`);
+  }
+  return parts.join(" ");
+}
+
+function SpaceBackdrop({ camera }: { camera: Camera }) {
+  const origin = layoutOrigin(WIDTH, HEIGHT);
   return (
-    <g aria-hidden="true" className="galaxy-rings">
-      {rings.map((radius) => (
-        <circle
-          key={radius}
-          cx={cx}
-          cy={cy}
-          r={radius}
-          fill="none"
-          stroke="rgba(73, 212, 255, 0.16)"
-          strokeDasharray="2 9"
+    <g aria-hidden="true">
+      {STARS.map((star, index) => {
+        const projected = projectUnit(star, camera, WIDTH, HEIGHT);
+        return (
+          <circle
+            key={`star-${index}`}
+            cx={projected.x}
+            cy={projected.y}
+            r={0.7 + projected.depth * 1.1}
+            fill={`rgba(186, 236, 255, ${0.15 + projected.depth * 0.35})`}
+          />
+        );
+      })}
+      {CAGE.map((ring, index) => {
+        const points = ring
+          .map((point) => {
+            const projected = projectUnit(point, camera, WIDTH, HEIGHT);
+            return `${projected.x.toFixed(1)},${projected.y.toFixed(1)}`;
+          })
+          .join(" ");
+        return (
+          <polyline
+            key={`cage-${index}`}
+            points={points}
+            fill="none"
+            stroke="rgba(73, 212, 255, 0.28)"
+            strokeWidth="1"
+          />
+        );
+      })}
+      <line x1={origin.x - 16} y1={origin.y} x2={origin.x - 6} y2={origin.y} stroke="rgba(215, 246, 255, 0.45)" />
+      <line x1={origin.x + 6} y1={origin.y} x2={origin.x + 16} y2={origin.y} stroke="rgba(215, 246, 255, 0.45)" />
+      <line x1={origin.x} y1={origin.y - 16} x2={origin.x} y2={origin.y - 6} stroke="rgba(215, 246, 255, 0.45)" />
+      <line x1={origin.x} y1={origin.y + 6} x2={origin.x} y2={origin.y + 16} stroke="rgba(215, 246, 255, 0.45)" />
+    </g>
+  );
+}
+
+function GalaxyScene({
+  nodes,
+  edges,
+  points,
+  visibleIds,
+  selectedId,
+  frameMode,
+  route,
+  routeIds,
+  routeOn,
+  searching,
+  matchIds,
+  onSelect,
+}: {
+  nodes: GraphNode[];
+  edges: GraphEdge[];
+  points: LayoutPoint[];
+  visibleIds: Set<string>;
+  selectedId: string | null;
+  frameMode: FrameMode;
+  route: string[] | null;
+  routeIds: Set<string> | null;
+  routeOn: boolean;
+  searching: boolean;
+  matchIds: Set<string>;
+  onSelect: (id: string) => void;
+}) {
+  const reduced = useReducedMotion();
+  const calm = frameMode === "node" || frameMode === "path";
+  const camera = useOrbit(calm, reduced);
+  const [hoverId, setHoverId] = useState<string | null>(null);
+  const origin = layoutOrigin(WIDTH, HEIGHT);
+  const unit = cageRadius(WIDTH, HEIGHT);
+  const pointById = new Map(points.map((point) => [point.id, point]));
+  const projected = new Map(
+    points.map((point) => [point.id, projectSpace(point, camera, origin, unit)] as const),
+  );
+  const visibleProjected = nodes
+    .map((node) => projected.get(node.id))
+    .filter((point): point is NonNullable<typeof point> => Boolean(point));
+
+  let frame: Frame;
+  switch (frameMode) {
+    case "node": {
+      const point = selectedId ? projected.get(selectedId) : undefined;
+      frame = point && selectedId && visibleIds.has(selectedId) ? frameAroundPoint(point, 620, 440) : stableFrame(points);
+      break;
+    }
+    case "path": {
+      const pathPoints = (route ?? [])
+        .map((id) => projected.get(id))
+        .filter((point): point is NonNullable<typeof point> => Boolean(point));
+      if (pathPoints.length === 0) {
+        frame = stableFrame(points);
+        break;
+      }
+      const tight = frameAroundPoints(pathPoints, 150, 120);
+      const cx = tight.x + tight.w / 2;
+      const cy = tight.y + tight.h / 2;
+      const w = Math.max(tight.w, 640);
+      const h = Math.max(tight.h, 440);
+      frame = { x: cx - w / 2, y: cy - h / 2, w, h };
+      break;
+    }
+    case "matches": {
+      const matched = nodes
+        .filter((node) => matchIds.has(node.id))
+        .map((node) => projected.get(node.id))
+        .filter((point): point is NonNullable<typeof point> => Boolean(point));
+      frame = frameAroundPoints(matched.length > 0 ? matched : visibleProjected, 140, 110);
+      break;
+    }
+    case "fit":
+      frame = stableFrame(points.filter((point) => visibleIds.has(point.id)));
+      break;
+    default: {
+      const neverMode: never = frameMode;
+      frame = neverMode;
+    }
+  }
+
+  const showAllLabels = nodes.length <= 24;
+  const hover = nodes.find((node) => node.id === hoverId) ?? null;
+  const hoverPoint = hover ? projected.get(hover.id) : undefined;
+  const drawnEdges = edges
+    .filter((edge) => visibleIds.has(edge.from) && visibleIds.has(edge.to))
+    .map((edge) => {
+      const from = projected.get(edge.from);
+      const to = projected.get(edge.to);
+      return { edge, depth: ((from?.depth ?? 0) + (to?.depth ?? 0)) / 2 };
+    })
+    .sort((a, b) => a.depth - b.depth);
+  const drawnNodes = [...nodes].sort((a, b) => (projected.get(a.id)?.depth ?? 0) - (projected.get(b.id)?.depth ?? 0));
+
+  return (
+    <svg className="graph-svg" viewBox={viewBox(frame)} role="group" aria-label="Vault notes">
+      <SpaceBackdrop camera={camera} />
+      {drawnEdges.map(({ edge, depth }) => {
+        const from = pointById.get(edge.from);
+        const to = pointById.get(edge.to);
+        if (!from || !to) return null;
+        const hot = routeOn ? onRoute(edge, route) : selectedId !== null && (edge.from === selectedId || edge.to === selectedId);
+        const dim = (searching && !matchIds.has(edge.from) && !matchIds.has(edge.to)) || (routeOn && !hot);
+        const linked = edge.reason === "wikilink";
+        const width = (linked ? 1.7 : 1.15) * (0.65 + depth * 0.7);
+        return (
+          <path
+            key={edge.id}
+            d={wirePath(from, to, edge.reason, camera)}
+            fill="none"
+            stroke={hot ? "#f4fdff" : linked ? "rgba(210, 246, 255, 0.9)" : "rgba(126, 231, 255, 0.55)"}
+            strokeWidth={hot ? width + 0.8 : width}
+            strokeDasharray={dashFor(edge.reason)}
+            opacity={dim ? 0.12 : 0.35 + depth * 0.65}
+          />
+        );
+      })}
+      {drawnNodes.map((node) => {
+        const point = projected.get(node.id);
+        if (!point) return null;
+        const active = node.id === selectedId;
+        const color = colorFor(node);
+        const degree = degreeOf(node.id, edges);
+        const neighbor =
+          selectedId !== null &&
+          edges.some((edge) => {
+            return (
+              (edge.from === selectedId && edge.to === node.id) || (edge.to === selectedId && edge.from === node.id)
+            );
+          });
+        const onPath = routeIds?.has(node.id) ?? false;
+        const labelOn = showAllLabels || active || neighbor || onPath || node.kind === "folder" || matchIds.has(node.id);
+        const radius = ((node.kind === "folder" ? 8 : 5.5) + Math.min(degree, 8) * 1.15) * (0.78 + point.scale * 0.28);
+        const dim = (searching && !matchIds.has(node.id)) || (routeOn && !onPath && !active);
+        const labelLeft = point.x > frame.x + frame.w * 0.68;
+        return (
+          <g
+            key={node.id}
+            className="graph-node"
+            opacity={dim ? 0.14 : 0.55 + point.depth * 0.45}
+            tabIndex={0}
+            role="button"
+            aria-pressed={active}
+            aria-label={`${node.kind === "folder" ? `${node.title} folder` : node.title}, ${degree} connections`}
+            onPointerEnter={() => setHoverId(node.id)}
+            onPointerLeave={() => setHoverId((current) => (current === node.id ? null : current))}
+            onClick={() => onSelect(node.id)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" || event.key === " ") {
+                event.preventDefault();
+                onSelect(node.id);
+              }
+            }}
+          >
+            <circle cx={point.x} cy={point.y} r={radius + 12} fill="transparent" />
+            <circle cx={point.x} cy={point.y} r={radius + 6} fill={color} opacity={active || onPath ? 0.28 : 0.12} />
+            <circle
+              cx={point.x}
+              cy={point.y}
+              r={radius}
+              fill={node.kind === "folder" ? "rgba(4, 16, 24, 0.35)" : active ? color : "#07141c"}
+              stroke={active ? "#f4fdff" : color}
+              strokeWidth={active ? 2.6 : 1.7}
+            />
+            {node.kind === "folder" ? (
+              <circle cx={point.x} cy={point.y} r={radius + 3.5} fill="none" stroke={color} strokeWidth="1" />
+            ) : null}
+            {labelOn ? (
+              <text
+                x={labelLeft ? point.x - radius - 8 : point.x + radius + 8}
+                y={point.y + 4}
+                fill="#e7f8ff"
+                fontSize={12 + point.depth * 2}
+                textAnchor={labelLeft ? "end" : "start"}
+              >
+                {shortTitle(node.title)}
+              </text>
+            ) : null}
+          </g>
+        );
+      })}
+      {hover && hoverPoint ? (
+        <HoverTip
+          title={hover.title}
+          degree={degreeOf(hover.id, edges)}
+          x={hoverPoint.x}
+          y={hoverPoint.y}
+          frame={frame}
         />
-      ))}
-      <path d={arc(cx, cy, 250, 200, 250)} fill="none" stroke="#7ee7ff" strokeWidth="1.6" />
-      <path d={arc(cx, cy, 250, 20, 70)} fill="none" stroke="rgba(73, 212, 255, 0.85)" strokeWidth="1.4" />
-      <path d={arc(cx, cy, 360, 300, 345)} fill="none" stroke="rgba(126, 231, 255, 0.55)" strokeWidth="1.2" />
-      <path d={arc(cx, cy, 168, 110, 160)} fill="none" stroke="#49d4ff" strokeWidth="1.3" />
-      <line x1={cx - 28} y1={cy} x2={cx - 10} y2={cy} stroke="rgba(215, 246, 255, 0.45)" strokeWidth="1" />
-      <line x1={cx + 10} y1={cy} x2={cx + 28} y2={cy} stroke="rgba(215, 246, 255, 0.45)" strokeWidth="1" />
-      <line x1={cx} y1={cy - 28} x2={cx} y2={cy - 10} stroke="rgba(215, 246, 255, 0.45)" strokeWidth="1" />
-      <line x1={cx} y1={cy + 10} x2={cx} y2={cy + 28} stroke="rgba(215, 246, 255, 0.45)" strokeWidth="1" />
+      ) : null}
+    </svg>
+  );
+}
+
+function HoverTip({
+  title,
+  degree,
+  x,
+  y,
+  frame,
+}: {
+  title: string;
+  degree: number;
+  x: number;
+  y: number;
+  frame: Frame;
+}) {
+  const name = shortTitle(title);
+  const meta = `${degree} ${degree === 1 ? "link" : "links"} — click to focus`;
+  const boxW = Math.max(name.length, meta.length) * 6.6 + 16;
+  const left = x + boxW + 18 > frame.x + frame.w ? x - boxW - 14 : x + 14;
+  const top = Math.max(frame.y + 8, y - 46);
+  return (
+    <g className="graph-tip" transform={`translate(${left} ${top})`} aria-hidden="true">
+      <rect className="graph-tip-box" width={boxW} height="38" />
+      <text className="graph-tip-title" x="8" y="15">
+        {name}
+      </text>
+      <text className="graph-tip-meta" x="8" y="30">
+        {meta}
+      </text>
     </g>
   );
 }
@@ -697,6 +960,7 @@ function GalaxyBay({
           onChange={(event) => onSearch(event.target.value)}
         />
       </label>
+      <p className="galaxy-hint">The notes sit in a turning sphere. Solid lines are links between notes.</p>
       {matchCount !== null ? (
         <p className="galaxy-note">{matchCount === 0 ? "No note matches that search." : `${matchCount} match${matchCount === 1 ? "" : "es"}`}</p>
       ) : null}
@@ -852,18 +1116,20 @@ function Inspector({
   detail,
   degree,
   onPath,
+  links,
 }: {
   node: GraphNode | null;
   detail: string;
   degree: number;
   onPath: boolean;
+  links: LinkRow[];
 }) {
   if (!node) {
     return (
       <aside className="graph-inspector" aria-label="Inspector">
         <p className="line-label">Inspector</p>
         <h3>Click a note</h3>
-        <p className="stub-lead">Notes are the dots. Lines are folder parents, links, or shared tags.</p>
+        <p className="stub-lead">Notes are the dots. A solid line is a wikilink. A dashed line is a shared tag. A dotted line is the folder.</p>
         <p className="status-note inspector-note">{detail}</p>
       </aside>
     );
@@ -884,6 +1150,17 @@ function Inspector({
         {degree} connection{degree === 1 ? "" : "s"}
         {onPath ? " · on the highlighted path" : ""}
       </p>
+      {links.length > 0 ? (
+        <ul className="galaxy-hubs">
+          {links.slice(0, 8).map((link) => (
+            <li key={`${link.reason}:${link.title}`}>
+              {link.title} · {reasonLabel(link.reason)}
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="stub-lead">No lines touch this dot.</p>
+      )}
       <p className="stub-lead">
         {node.kind === "folder"
           ? "This dot is the folder, not a note."

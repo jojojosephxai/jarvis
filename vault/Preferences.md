@@ -10,4 +10,6 @@ These are the working rules for this vault. They are short on purpose.
 
 Add how you like reminders, food, music, or anything else below.
 
+See [[About]] and [[README]]. #rules
+
 -
