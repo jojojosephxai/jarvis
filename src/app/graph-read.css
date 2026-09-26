@@ -1,0 +1,54 @@
+.graph-stage.has-note {
+  grid-template-columns: minmax(11rem, 13.5rem) minmax(0, 1fr) minmax(16rem, 22rem);
+}
+
+.inspector-body {
+  display: block;
+  overflow: visible;
+  white-space: pre-wrap;
+  -webkit-line-clamp: unset;
+  line-clamp: unset;
+}
+
+.inspector-back {
+  border: 1px solid rgba(126, 231, 255, 0.7);
+  background: transparent;
+  color: #f4fdff;
+  cursor: pointer;
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  padding: 0.28rem 0.5rem;
+}
+
+.inspector-back:hover {
+  border-color: #f4fdff;
+}
+
+.inspector-links button {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  border: 0;
+  border-bottom: 1px solid rgba(73, 212, 255, 0.16);
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  padding: 0.28rem 0;
+  text-align: left;
+}
+
+.inspector-links button:hover {
+  color: #f4fdff;
+}
+
+@media (max-width: 800px) {
+  .graph-stage.has-note {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto minmax(10rem, 1fr) minmax(8.5rem, 40%);
+  }
+}
