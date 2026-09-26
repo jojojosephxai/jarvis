@@ -1,27 +1,26 @@
-"use client";
+'use client';
 
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { JarvisBadge } from "@/components/jarvis-badge";
+import { NoteReader, type NoteLink } from "@/components/note-reader";
 import type { OrbMode } from "@/components/reactor";
 import { Input } from "@/components/ui/input";
 import {
   cageRadius,
   frameAroundPoint,
   frameAroundPoints,
-  grabDelta,
   layoutGalaxy,
   layoutOrigin,
   orbitCamera,
   projectSpace,
   projectUnit,
-  shiftFrame,
   starField,
   type Camera,
   type Frame,
   type LayoutPoint,
-  type Pan,
 } from "@/lib/graph-layout";
+import { frameAtZoom, nextZoom, spinCamera, turnedCamera } from "@/lib/graph-turn";
 import { degreeOf, matchGraphNode, matchingNodes, shortestPath } from "@/lib/graph-nav";
 import type { GraphEdge, GraphNode, GraphStatus, NoteGraphPayload } from "@/lib/note-graph";
 
@@ -97,6 +96,7 @@ function isNode(value: unknown): value is GraphNode {
     typeof node.title === "string" &&
     typeof node.folder === "string" &&
     typeof node.excerpt === "string" &&
+    (node.text === undefined || typeof node.text === "string") &&
     isKind(node.kind) &&
     Array.isArray(node.tags) &&
     node.tags.every((tag) => typeof tag === "string")
@@ -177,7 +177,7 @@ function colorFor(node: GraphNode): string {
 function swatchFor(key: string): string {
   if (key === "folder") return "#f4fdff";
   if (key === "note") return "#8fd3ff";
-  return TAG_COLOR[key] ?? colorFor({ id: key, title: key, folder: "", tags: [key], excerpt: "", kind: "note" });
+  return TAG_COLOR[key] ?? colorFor({ id: key, title: key, folder: "", tags: [key], excerpt: "", text: "", kind: "note" });
 }
 
 function clusterLabel(key: string): string {
@@ -299,7 +299,6 @@ function GraphEmpty({
     </div>
   );
 }
-
 function GraphReady({
   payload,
   cue,
@@ -349,9 +348,21 @@ function GraphReady({
         setFrameMode(found.length === 1 ? "node" : "matches");
       }
     } else {
+      setSelectedId(null);
       setFrameMode("fit");
     }
   }
+
+  useEffect(() => {
+    function onKey(event: KeyboardEvent) {
+      if (event.key !== "Escape") return;
+      setSelectedId(null);
+      setFrameMode("fit");
+      setHomeToken((token) => token + 1);
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   const layoutEdges = useMemo(
     () => payload.edges.filter((edge) => edge.reason === "folder"),
@@ -378,6 +389,31 @@ function GraphReady({
   const searching = query.trim().length > 0;
   const routeOn = Boolean(route && route.length > 1);
   const clusters = [...new Set(payload.nodes.map(clusterKey))].sort((a, b) => a.localeCompare(b));
+  const selected = payload.nodes.find((node) => node.id === selectedId) ?? null;
+  const noteLinks: NoteLink[] = selected
+    ? payload.edges.flatMap((edge) => {
+        const otherId = edge.from === selected.id ? edge.to : edge.to === selected.id ? edge.from : "";
+        if (!otherId) return [];
+        const other = payload.nodes.find((node) => node.id === otherId);
+        if (!other) return [];
+        return [{ id: other.id, title: other.title, reason: edge.reason }];
+      })
+    : [];
+
+  function clearFocus() {
+    setSelectedId(null);
+    setFrameMode("fit");
+    setHomeToken((token) => token + 1);
+  }
+
+  function openNote(id: string) {
+    if (id === selectedId) {
+      clearFocus();
+      return;
+    }
+    setSelectedId(id);
+    setFrameMode("node");
+  }
 
   function onSearch(value: string) {
     setQuery(value);
@@ -398,7 +434,7 @@ function GraphReady({
   }
 
   return (
-    <div className="graph-stage">
+    <div className={selected ? "graph-stage has-note" : "graph-stage"}>
       <GalaxyBay
         noteCount={payload.noteCount}
         connectionCount={payload.connectionCount}
@@ -421,10 +457,8 @@ function GraphReady({
           searching={searching}
           matchIds={matchIds}
           frameToken={frameToken}
-          onSelect={(id) => {
-            setSelectedId(id);
-            setFrameMode("node");
-          }}
+          onSelect={openNote}
+          onClear={clearFocus}
         />
         <ul className="graph-legend" aria-label="Note colors">
           {clusters.slice(0, 8).map((key) => (
@@ -434,7 +468,9 @@ function GraphReady({
             </li>
           ))}
         </ul>
+        <p className="graph-pan-hint">Drag to turn · Scroll to zoom · Click a dot to read</p>
       </div>
+      {selected ? <NoteReader node={selected} links={noteLinks} onBack={clearFocus} onOpen={openNote} /> : null}
     </div>
   );
 }
@@ -563,6 +599,7 @@ function GalaxyScene({
   matchIds,
   frameToken,
   onSelect,
+  onClear,
 }: {
   nodes: GraphNode[];
   edges: GraphEdge[];
@@ -577,23 +614,34 @@ function GalaxyScene({
   matchIds: Set<string>;
   frameToken: string;
   onSelect: (id: string) => void;
+  onClear: () => void;
 }) {
   const reduced = useReducedMotion();
   const calm = frameMode === "node" || frameMode === "path";
-  const [pan, setPan] = useState<Pan>({ x: 0, y: 0 });
   const [grabbing, setGrabbing] = useState(false);
-  const [seenToken, setSeenToken] = useState(frameToken);
-  const [frozenFrame, setFrozenFrame] = useState<Frame | null>(null);
+  const [spin, setSpin] = useState<Camera>({ yaw: 0, pitch: 0 });
+  const [zoom, setZoom] = useState(1);
+  const [zoomToken, setZoomToken] = useState(frameToken);
   const svgRef = useRef<SVGSVGElement | null>(null);
   const dragRef = useRef<{ id: number; x: number; y: number; moved: boolean } | null>(null);
   const swallowRef = useRef(false);
-  if (seenToken !== frameToken) {
-    setSeenToken(frameToken);
-    setPan({ x: 0, y: 0 });
-    setFrozenFrame(null);
+  if (zoomToken !== frameToken) {
+    setZoomToken(frameToken);
+    setZoom(1);
   }
-  const camera = useOrbit(calm, reduced, grabbing);
+  const orbit = useOrbit(calm, reduced, grabbing);
+  const camera = turnedCamera(orbit, spin);
   const [hoverId, setHoverId] = useState<string | null>(null);
+  useEffect(() => {
+    const svg = svgRef.current;
+    if (!svg) return;
+    function onWheel(event: WheelEvent) {
+      event.preventDefault();
+      setZoom((current) => nextZoom(current, event.deltaY));
+    }
+    svg.addEventListener("wheel", onWheel, { passive: false });
+    return () => svg.removeEventListener("wheel", onWheel);
+  }, []);
   const origin = layoutOrigin(WIDTH, HEIGHT);
   const unit = cageRadius(WIDTH, HEIGHT);
   const pointById = new Map(points.map((point) => [point.id, point]));
@@ -664,8 +712,7 @@ function GalaxyScene({
     })
     .sort((a, b) => a.depth - b.depth);
   const drawnNodes = [...nodes].sort((a, b) => (projected.get(a.id)?.depth ?? 0) - (projected.get(b.id)?.depth ?? 0));
-  const spaceFrame = frozenFrame ?? frame;
-  const shifted = shiftFrame(spaceFrame, pan);
+  const shifted = frameAtZoom(frame, zoom);
 
   function onSpacePointerDown(event: React.PointerEvent<SVGSVGElement>) {
     if (event.button !== 0) return;
@@ -682,15 +729,12 @@ function GalaxyScene({
     if (!drag.moved) {
       if (Math.hypot(dx, dy) < 6) return;
       drag.moved = true;
-      setFrozenFrame((current) => current ?? frame);
       setGrabbing(true);
       svg.setPointerCapture(event.pointerId);
     }
-    const rect = svg.getBoundingClientRect();
-    const delta = grabDelta(dx, dy, spaceFrame, rect.width, rect.height);
     drag.x = event.clientX;
     drag.y = event.clientY;
-    setPan((current) => ({ x: current.x + delta.x, y: current.y + delta.y }));
+    setSpin((current) => spinCamera(current, dx, dy));
   }
 
   function onSpacePointerEnd(event: React.PointerEvent<SVGSVGElement>) {
@@ -709,7 +753,7 @@ function GalaxyScene({
       className={grabbing ? "graph-svg is-grabbing" : "graph-svg"}
       viewBox={viewBox(shifted)}
       role="group"
-      aria-label="Vault notes. Drag to move the space."
+      aria-label="Vault notes. Drag to turn. Scroll to zoom. Click a note to read it."
       onPointerDown={onSpacePointerDown}
       onPointerMove={onSpacePointerMove}
       onPointerUp={onSpacePointerEnd}
@@ -721,7 +765,22 @@ function GalaxyScene({
         event.stopPropagation();
       }}
     >
-      <rect className="graph-grab" x={shifted.x} y={shifted.y} width={shifted.w} height={shifted.h} fill="transparent" />
+      <rect
+        className="graph-grab"
+        x={shifted.x}
+        y={shifted.y}
+        width={shifted.w}
+        height={shifted.h}
+        fill="transparent"
+        onClick={(event) => {
+          event.stopPropagation();
+          if (swallowRef.current) {
+            swallowRef.current = false;
+            return;
+          }
+          onClear();
+        }}
+      />
       <SpaceBackdrop camera={camera} />
       {drawnEdges.map(({ edge, depth }) => {
         const from = pointById.get(edge.from);
@@ -847,7 +906,7 @@ function HoverTip({
   frame: Frame;
 }) {
   const name = title.length <= 22 ? title : `${title.slice(0, 21)}...`;
-  const meta = `${degree} ${degree === 1 ? "link" : "links"} - click to focus`;
+  const meta = `${degree} ${degree === 1 ? "link" : "links"} - click to read`;
   const boxW = Math.max(name.length, meta.length) * 6.6 + 16;
   const left = x + boxW + 18 > frame.x + frame.w ? x - boxW - 14 : x + 14;
   const top = Math.max(frame.y + 8, y - 46);
