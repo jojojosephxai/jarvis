@@ -337,7 +337,7 @@ export function Face() {
       {booting ? <BootScreen onSkip={endBoot} brainLabel={brainLabel} mouth={voice.mouth} /> : null}
       <header className="hud-top">
         <div>
-          <p className="hud-mark">Jarvis</p>
+          <p className="hud-mark">J.A.R.V.I.S.</p>
         </div>
         <dl className="hud-status" aria-label="Status">
           <div>
@@ -563,9 +563,9 @@ function OpticStage({
 }) {
   switch (view) {
     case "orb":
-      return <OrbStage mode={orb} />;
+      return <OrbStage mode={orb} brainTag={brainTag} />;
     case "graph":
-      return <NoteGraph cue={cue} brainTag={brainTag} />;
+      return <NoteGraph cue={cue} brainTag={brainTag} mode={orb} />;
     default: {
       const neverView: never = view;
       return neverView;

@@ -5,6 +5,7 @@ import type { ReactNode } from "react";
 
 import "./globals.css";
 import "./graph-read.css";
+import "./mark.css";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",

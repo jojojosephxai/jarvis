@@ -19,7 +19,7 @@ function distance(a: Point, b: Point): number {
   return Math.hypot(a.x - b.x, a.y - b.y);
 }
 
-export function OrbStage({ mode }: { mode: OrbMode }) {
+export function OrbStage({ mode, brainTag }: { mode: OrbMode; brainTag: string }) {
   const frameRef = useRef<HTMLDivElement>(null);
   const spinRef = useRef<HTMLDivElement>(null);
   const poseRef = useRef<OrbPose>(restPose());
@@ -172,6 +172,13 @@ export function OrbStage({ mode }: { mode: OrbMode }) {
           </div>
           <ReactorHeart mode={mode} />
         </div>
+      </div>
+      <div className="jarvis-caption">
+        <p className="jarvis-badge-title">J.A.R.V.I.S.</p>
+        <p className="jarvis-badge-online">
+          <span className="jarvis-badge-dot" /> Online
+        </p>
+        <p className="jarvis-badge-model">{brainTag}</p>
       </div>
     </div>
   );

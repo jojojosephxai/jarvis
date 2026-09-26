@@ -1,0 +1,89 @@
+/* The side mark and the center orb share one reactor. The mark grows while Jarvis is busy. */
+
+.jarvis-badge-hero {
+  position: relative;
+  top: auto;
+  right: auto;
+  z-index: auto;
+  transform: none;
+}
+
+.jarvis-badge-core .reactor {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.jarvis-badge-core .jarvis-badge-title {
+  position: relative;
+  z-index: 3;
+  text-shadow: 0 0 12px rgba(1, 4, 8, 0.9);
+}
+
+.jarvis-badge-hero .jarvis-badge-title {
+  font-size: clamp(0.85rem, 2.4vw, 1.15rem);
+}
+
+.jarvis-badge-hero .jarvis-badge-core {
+  width: min(52vw, 280px);
+  height: min(52vw, 280px);
+}
+
+.jarvis-caption {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.28rem;
+  margin-top: 0.15rem;
+  pointer-events: none;
+}
+
+.jarvis-caption .jarvis-badge-title {
+  position: static;
+  text-shadow: none;
+}
+
+.reactor-cage[data-mode="ack"] {
+  animation: mark-breathe 0.95s ease-in-out infinite;
+}
+
+.jarvis-badge[data-mode="ack"] .jarvis-badge-dot {
+  animation: mark-dot 0.95s ease-in-out infinite;
+}
+
+@keyframes mark-breathe {
+  0%,
+  100% {
+    transform: scale3d(0.96, 0.96, 0.96);
+  }
+  50% {
+    transform: scale3d(1.08, 1.08, 1.08);
+  }
+}
+
+@keyframes mark-dot {
+  0%,
+  100% {
+    transform: scale(0.85);
+    opacity: 0.7;
+  }
+  50% {
+    transform: scale(1.2);
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .reactor-cage[data-mode="ack"],
+  .jarvis-badge[data-mode="ack"] .jarvis-badge-dot {
+    animation: none;
+  }
+}
+
+@media (max-height: 640px) {
+  .jarvis-badge-hero .jarvis-badge-core {
+    width: min(42vh, 220px);
+    height: min(42vh, 220px);
+  }
+}

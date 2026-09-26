@@ -1,4 +1,4 @@
-import { Reactor } from "@/components/reactor";
+import { JarvisBadge } from "@/components/jarvis-badge";
 import { Button } from "@/components/ui/button";
 import type { MouthKind } from "@/lib/voice/types";
 
@@ -36,11 +36,7 @@ export function BootScreen({
 }) {
   return (
     <div className="boot-screen" role="dialog" aria-label="Jarvis face is coming online">
-      <div className="boot-logo" aria-hidden="true">
-        <Reactor mode="standby" />
-      </div>
-      <p className="boot-kicker">Face</p>
-      <h1 className="boot-title">Jarvis</h1>
+      <JarvisBadge mode="ack" brainTag={brainLabel} size="hero" />
       <p className="boot-line">{bootLine(brainLabel, mouth)}</p>
       <Button type="button" variant="ghost" className="boot-skip" onClick={onSkip}>
         Skip
