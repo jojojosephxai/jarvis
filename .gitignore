@@ -34,17 +34,6 @@ yarn-error.log*
 .env*
 !.env.example
 
-# local demo data
-data/calendar.json
-data/user-notes/
-data/vault-ledger.json
-
-# compiled unit tests
-.test-dist/
-
-# Obsidian writes this when the vault folder is opened. Keep it local.
-vault/.obsidian/
-
 # vercel
 .vercel
 
