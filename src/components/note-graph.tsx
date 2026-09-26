@@ -1,24 +1,27 @@
-use client";
+"use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import { NoteReader, type NoteLink } from "@/components/note-reader";
+import { JarvisBadge } from "@/components/jarvis-badge";
+import type { OrbMode } from "@/components/reactor";
 import { Input } from "@/components/ui/input";
 import {
   cageRadius,
   frameAroundPoint,
   frameAroundPoints,
+  grabDelta,
   layoutGalaxy,
   layoutOrigin,
   orbitCamera,
   projectSpace,
   projectUnit,
+  shiftFrame,
   starField,
   type Camera,
   type Frame,
   type LayoutPoint,
+  type Pan,
 } from "@/lib/graph-layout";
-import { frameAtZoom, nextZoom, spinCamera, turnedCamera } from "@/lib/graph-turn";
 import { degreeOf, matchGraphNode, matchingNodes, shortestPath } from "@/lib/graph-nav";
 import type { GraphEdge, GraphNode, GraphStatus, NoteGraphPayload } from "@/lib/note-graph";
 
@@ -94,7 +97,6 @@ function isNode(value: unknown): value is GraphNode {
     typeof node.title === "string" &&
     typeof node.folder === "string" &&
     typeof node.excerpt === "string" &&
-    (node.text === undefined || typeof node.text === "string") &&
     isKind(node.kind) &&
     Array.isArray(node.tags) &&
     node.tags.every((tag) => typeof tag === "string")
@@ -175,7 +177,7 @@ function colorFor(node: GraphNode): string {
 function swatchFor(key: string): string {
   if (key === "folder") return "#f4fdff";
   if (key === "note") return "#8fd3ff";
-  return TAG_COLOR[key] ?? colorFor({ id: key, title: key, folder: "", tags: [key], excerpt: "", text: "", kind: "note" });
+  return TAG_COLOR[key] ?? colorFor({ id: key, title: key, folder: "", tags: [key], excerpt: "", kind: "note" });
 }
 
 function clusterLabel(key: string): string {
@@ -201,7 +203,15 @@ function displayTitle(node: GraphNode): string {
   return shortTitle(node.title);
 }
 
-export function NoteGraph({ cue = null, brainTag = "ONLINE" }: { cue?: GraphCue | null; brainTag?: string }) {
+export function NoteGraph({
+  cue = null,
+  brainTag = "ONLINE",
+  mode = "standby",
+}: {
+  cue?: GraphCue | null;
+  brainTag?: string;
+  mode?: OrbMode;
+}) {
   const [payload, setPayload] = useState<NoteGraphPayload | null>(null);
   const [failed, setFailed] = useState(false);
 
@@ -242,25 +252,27 @@ export function NoteGraph({ cue = null, brainTag = "ONLINE" }: { cue?: GraphCue 
     );
   }
 
-  return <GraphBody payload={payload} cue={cue} brainTag={brainTag} />;
+  return <GraphBody payload={payload} cue={cue} brainTag={brainTag} mode={mode} />;
 }
 
 function GraphBody({
   payload,
   cue,
   brainTag,
+  mode,
 }: {
   payload: NoteGraphPayload;
   cue: GraphCue | null;
   brainTag: string;
+  mode: OrbMode;
 }) {
   switch (payload.status) {
     case "not-wired":
     case "missing":
     case "empty":
-      return <GraphEmpty payload={payload} brainTag={brainTag} />;
+      return <GraphEmpty payload={payload} brainTag={brainTag} mode={mode} />;
     case "ready":
-      return <GraphReady payload={payload} cue={cue} brainTag={brainTag} />;
+      return <GraphReady payload={payload} cue={cue} brainTag={brainTag} mode={mode} />;
     default: {
       const neverStatus: never = payload.status;
       return neverStatus;
@@ -268,10 +280,18 @@ function GraphBody({
   }
 }
 
-function GraphEmpty({ payload, brainTag }: { payload: NoteGraphPayload; brainTag: string }) {
+function GraphEmpty({
+  payload,
+  brainTag,
+  mode,
+}: {
+  payload: NoteGraphPayload;
+  brainTag: string;
+  mode: OrbMode;
+}) {
   return (
     <div className="graph-stage graph-stage-empty">
-      <JarvisBadge brainTag={brainTag} />
+      <JarvisBadge mode={mode} brainTag={brainTag} />
       <p className="graph-stats">
         {payload.noteCount} notes · {payload.connectionCount} connections
       </p>
@@ -279,14 +299,17 @@ function GraphEmpty({ payload, brainTag }: { payload: NoteGraphPayload; brainTag
     </div>
   );
 }
+
 function GraphReady({
   payload,
   cue,
   brainTag,
+  mode,
 }: {
   payload: NoteGraphPayload;
   cue: GraphCue | null;
   brainTag: string;
+  mode: OrbMode;
 }) {
   const [query, setQuery] = useState("");
   const [pathFromId, setPathFromId] = useState("");
@@ -326,21 +349,9 @@ function GraphReady({
         setFrameMode(found.length === 1 ? "node" : "matches");
       }
     } else {
-      setSelectedId(null);
       setFrameMode("fit");
     }
   }
-
-  useEffect(() => {
-    function onKey(event: KeyboardEvent) {
-      if (event.key !== "Escape") return;
-      setSelectedId(null);
-      setFrameMode("fit");
-      setHomeToken((token) => token + 1);
-    }
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, []);
 
   const layoutEdges = useMemo(
     () => payload.edges.filter((edge) => edge.reason === "folder"),
@@ -367,31 +378,6 @@ function GraphReady({
   const searching = query.trim().length > 0;
   const routeOn = Boolean(route && route.length > 1);
   const clusters = [...new Set(payload.nodes.map(clusterKey))].sort((a, b) => a.localeCompare(b));
-  const selected = payload.nodes.find((node) => node.id === selectedId) ?? null;
-  const noteLinks: NoteLink[] = selected
-    ? payload.edges.flatMap((edge) => {
-        const otherId = edge.from === selected.id ? edge.to : edge.to === selected.id ? edge.from : "";
-        if (!otherId) return [];
-        const other = payload.nodes.find((node) => node.id === otherId);
-        if (!other) return [];
-        return [{ id: other.id, title: other.title, reason: edge.reason }];
-      })
-    : [];
-
-  function clearFocus() {
-    setSelectedId(null);
-    setFrameMode("fit");
-    setHomeToken((token) => token + 1);
-  }
-
-  function openNote(id: string) {
-    if (id === selectedId) {
-      clearFocus();
-      return;
-    }
-    setSelectedId(id);
-    setFrameMode("node");
-  }
 
   function onSearch(value: string) {
     setQuery(value);
@@ -412,7 +398,7 @@ function GraphReady({
   }
 
   return (
-    <div className={selected ? "graph-stage has-note" : "graph-stage"}>
+    <div className="graph-stage">
       <GalaxyBay
         noteCount={payload.noteCount}
         connectionCount={payload.connectionCount}
@@ -421,7 +407,7 @@ function GraphReady({
         onSearch={onSearch}
       />
       <div className="graph-canvas">
-        <JarvisBadge brainTag={brainTag} />
+        <JarvisBadge mode={mode} brainTag={brainTag} />
         <GalaxyScene
           nodes={payload.nodes}
           edges={payload.edges}
@@ -435,8 +421,10 @@ function GraphReady({
           searching={searching}
           matchIds={matchIds}
           frameToken={frameToken}
-          onSelect={openNote}
-          onClear={clearFocus}
+          onSelect={(id) => {
+            setSelectedId(id);
+            setFrameMode("node");
+          }}
         />
         <ul className="graph-legend" aria-label="Note colors">
           {clusters.slice(0, 8).map((key) => (
@@ -446,9 +434,7 @@ function GraphReady({
             </li>
           ))}
         </ul>
-        <p className="graph-pan-hint">Drag to turn · Scroll to zoom · Click a dot to read</p>
       </div>
-      {selected ? <NoteReader node={selected} links={noteLinks} onBack={clearFocus} onOpen={openNote} /> : null}
     </div>
   );
 }
@@ -563,22 +549,6 @@ function SpaceBackdrop({ camera }: { camera: Camera }) {
   );
 }
 
-function JarvisBadge({ brainTag }: { brainTag: string }) {
-  return (
-    <div className="jarvis-badge" aria-label="Jarvis online">
-      <div className="jarvis-badge-core">
-        <span className="jarvis-badge-ring jarvis-badge-ring-outer" />
-        <span className="jarvis-badge-ring jarvis-badge-ring-mid" />
-        <span className="jarvis-badge-ring jarvis-badge-ring-inner" />
-        <p className="jarvis-badge-title">J.A.R.V.I.S.</p>
-      </div>
-      <p className="jarvis-badge-online">
-        <span className="jarvis-badge-dot" /> Online
-      </p>
-      <p className="jarvis-badge-model">{brainTag}</p>
-    </div>
-  );
-}
 function GalaxyScene({
   nodes,
   edges,
@@ -593,7 +563,6 @@ function GalaxyScene({
   matchIds,
   frameToken,
   onSelect,
-  onClear,
 }: {
   nodes: GraphNode[];
   edges: GraphEdge[];
@@ -608,34 +577,23 @@ function GalaxyScene({
   matchIds: Set<string>;
   frameToken: string;
   onSelect: (id: string) => void;
-  onClear: () => void;
 }) {
   const reduced = useReducedMotion();
   const calm = frameMode === "node" || frameMode === "path";
+  const [pan, setPan] = useState<Pan>({ x: 0, y: 0 });
   const [grabbing, setGrabbing] = useState(false);
-  const [spin, setSpin] = useState<Camera>({ yaw: 0, pitch: 0 });
-  const [zoom, setZoom] = useState(1);
-  const [zoomToken, setZoomToken] = useState(frameToken);
+  const [seenToken, setSeenToken] = useState(frameToken);
+  const [frozenFrame, setFrozenFrame] = useState<Frame | null>(null);
   const svgRef = useRef<SVGSVGElement | null>(null);
   const dragRef = useRef<{ id: number; x: number; y: number; moved: boolean } | null>(null);
   const swallowRef = useRef(false);
-  if (zoomToken !== frameToken) {
-    setZoomToken(frameToken);
-    setZoom(1);
+  if (seenToken !== frameToken) {
+    setSeenToken(frameToken);
+    setPan({ x: 0, y: 0 });
+    setFrozenFrame(null);
   }
-  const orbit = useOrbit(calm, reduced, grabbing);
-  const camera = turnedCamera(orbit, spin);
+  const camera = useOrbit(calm, reduced, grabbing);
   const [hoverId, setHoverId] = useState<string | null>(null);
-  useEffect(() => {
-    const svg = svgRef.current;
-    if (!svg) return;
-    function onWheel(event: WheelEvent) {
-      event.preventDefault();
-      setZoom((current) => nextZoom(current, event.deltaY));
-    }
-    svg.addEventListener("wheel", onWheel, { passive: false });
-    return () => svg.removeEventListener("wheel", onWheel);
-  }, []);
   const origin = layoutOrigin(WIDTH, HEIGHT);
   const unit = cageRadius(WIDTH, HEIGHT);
   const pointById = new Map(points.map((point) => [point.id, point]));
@@ -706,7 +664,8 @@ function GalaxyScene({
     })
     .sort((a, b) => a.depth - b.depth);
   const drawnNodes = [...nodes].sort((a, b) => (projected.get(a.id)?.depth ?? 0) - (projected.get(b.id)?.depth ?? 0));
-  const shifted = frameAtZoom(frame, zoom);
+  const spaceFrame = frozenFrame ?? frame;
+  const shifted = shiftFrame(spaceFrame, pan);
 
   function onSpacePointerDown(event: React.PointerEvent<SVGSVGElement>) {
     if (event.button !== 0) return;
@@ -723,12 +682,15 @@ function GalaxyScene({
     if (!drag.moved) {
       if (Math.hypot(dx, dy) < 6) return;
       drag.moved = true;
+      setFrozenFrame((current) => current ?? frame);
       setGrabbing(true);
       svg.setPointerCapture(event.pointerId);
     }
+    const rect = svg.getBoundingClientRect();
+    const delta = grabDelta(dx, dy, spaceFrame, rect.width, rect.height);
     drag.x = event.clientX;
     drag.y = event.clientY;
-    setSpin((current) => spinCamera(current, dx, dy));
+    setPan((current) => ({ x: current.x + delta.x, y: current.y + delta.y }));
   }
 
   function onSpacePointerEnd(event: React.PointerEvent<SVGSVGElement>) {
@@ -747,7 +709,7 @@ function GalaxyScene({
       className={grabbing ? "graph-svg is-grabbing" : "graph-svg"}
       viewBox={viewBox(shifted)}
       role="group"
-      aria-label="Vault notes. Drag to turn. Scroll to zoom. Click a note to read it."
+      aria-label="Vault notes. Drag to move the space."
       onPointerDown={onSpacePointerDown}
       onPointerMove={onSpacePointerMove}
       onPointerUp={onSpacePointerEnd}
@@ -759,22 +721,7 @@ function GalaxyScene({
         event.stopPropagation();
       }}
     >
-      <rect
-        className="graph-grab"
-        x={shifted.x}
-        y={shifted.y}
-        width={shifted.w}
-        height={shifted.h}
-        fill="transparent"
-        onClick={(event) => {
-          event.stopPropagation();
-          if (swallowRef.current) {
-            swallowRef.current = false;
-            return;
-          }
-          onClear();
-        }}
-      />
+      <rect className="graph-grab" x={shifted.x} y={shifted.y} width={shifted.w} height={shifted.h} fill="transparent" />
       <SpaceBackdrop camera={camera} />
       {drawnEdges.map(({ edge, depth }) => {
         const from = pointById.get(edge.from);
@@ -900,7 +847,7 @@ function HoverTip({
   frame: Frame;
 }) {
   const name = title.length <= 22 ? title : `${title.slice(0, 21)}...`;
-  const meta = `${degree} ${degree === 1 ? "link" : "links"} - click to read`;
+  const meta = `${degree} ${degree === 1 ? "link" : "links"} - click to focus`;
   const boxW = Math.max(name.length, meta.length) * 6.6 + 16;
   const left = x + boxW + 18 > frame.x + frame.w ? x - boxW - 14 : x + 14;
   const top = Math.max(frame.y + 8, y - 46);
