@@ -1,44 +1,30 @@
-import type { Metadata, Viewport } from "next";
-import { Geist } from "next/font/google";
-import Script from "next/script";
-import type { ReactNode } from "react";
-
+import type { Metadata } from "next";
+import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
   subsets: ["latin"],
-  display: "swap",
+});
+
+const geistMono = Geist_Mono({
+  variable: "--font-geist-mono",
+  subsets: ["latin"],
 });
 
 export const metadata: Metadata = {
-  title: "Jarvis",
-  description: "Jarvis Face. A near-black screen with a cyan orb in the middle.",
-  appleWebApp: {
-    capable: true,
-    title: "Jarvis",
-    statusBarStyle: "black-translucent",
-  },
+  title: "Jarvis HUD",
+  description:
+    "A local Iron Man board. Pull up a note, book the calendar, start a focus timer, or ask Jarvis to look once.",
 };
 
-export const viewport: Viewport = {
-  themeColor: "#030508",
-  colorScheme: "dark",
-  width: "device-width",
-  initialScale: 1,
-  viewportFit: "cover",
-  interactiveWidget: "resizes-content",
-};
-
-export default function RootLayout({ children }: { children: ReactNode }) {
+export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html lang="en" className={`${geistSans.variable} dark h-full antialiased`}>
-      <body className="min-h-full">
-        <Script id="jarvis-boot" strategy="beforeInteractive">
-          {`try{if(sessionStorage.getItem("jarvis-boot")==="1"){document.documentElement.dataset.boot="done"}}catch(e){}`}
-        </Script>
-        {children}
-      </body>
+    <html
+      lang="en"
+      className={`${geistSans.variable} ${geistMono.variable} dark h-full antialiased`}
+    >
+      <body className="min-h-full flex flex-col bg-[#05080d]">{children}</body>
     </html>
   );
 }
