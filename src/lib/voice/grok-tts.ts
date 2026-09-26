@@ -61,7 +61,7 @@ export function grokTtsPublicStatus(env?: GrokTtsEnv): VoicePublicStatus {
         provider: "grok",
         live: true,
         voice: config.voiceId,
-        detail: `Grok voice ${config.voiceId} is configured. The key stays on the server.`,
+        detail: `Grok voice ${config.voiceId} is ready.`,
       };
     default: {
       const neverConfig: never = config;

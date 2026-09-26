@@ -138,7 +138,7 @@ describe("answerFromVault", () => {
     assert.match(answer.reply, /9th grade/);
     assert.match(answer.reply, /\(School\)/);
     assert.match(answer.reply, /Notes used:/);
-    assert.match(answer.notice ?? "", /vault notes were included/);
+    assert.match(answer.notice ?? "", /Notes used as context/);
   });
 
   it("calls the model for a greeting when no vault note matches", async () => {
@@ -160,7 +160,7 @@ describe("answerFromVault", () => {
     assert.equal(answer.sources.length, 0);
     assert.match(answer.reply, /Hello\. How can I help\?/);
     assert.doesNotMatch(answer.reply, /don't have that in the vault notes|nothing was sent to a model/i);
-    assert.match(answer.notice ?? "", /No vault note matched/);
+    assert.equal(answer.notice, undefined);
   });
 });
 
@@ -244,8 +244,8 @@ describe("starter vault", () => {
       useModel: false,
     });
     assert.ok(swim.sources.includes("Swim"));
-    assert.match(swim.reply, /blank|not filled|do not mention/i);
-    assert.doesNotMatch(swim.reply, /\b\d{1,2}:\d{2}\b|\b\d{1,2}\s*(am|pm)\b/i);
+    assert.match(swim.reply, /6|8pm|practice|AG1B|evening/i);
+    assert.doesNotMatch(swim.reply, /don't have that in the vault notes/i);
 
     const email = await answerFromVault("Did you email me overnight?", {
       vaultPath: vault,

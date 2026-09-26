@@ -212,21 +212,21 @@ function speakerClause(input: {
 }): string {
   if (input.grokLive && input.grokVoice) {
     const name = input.grokVoice.toLowerCase() === "altair" ? "Altair" : input.grokVoice;
-    return `Speaker: ${name}, a Grok voice. The key stays on the server.`;
+    return `Speaker: ${name}.`;
   }
   if (input.azureLive && input.azureVoice) {
-    return `Speaker: ${friendlyVoiceName(input.azureVoice)}, a British neural voice (Azure free tier).`;
+    return `Speaker: ${friendlyVoiceName(input.azureVoice)}.`;
   }
   if (input.browserCanSpeak && input.browserVoice?.british) {
-    return `Speaker: ${input.browserVoice.name} on this computer (British).`;
+    return `Speaker: ${input.browserVoice.name}.`;
   }
   if (input.browserCanSpeak && input.browserVoice) {
-    return `Speaker: ${input.browserVoice.name} on this computer. It may not sound British. An Azure speech key turns on Sonia (British).`;
+    return `Speaker: ${input.browserVoice.name}.`;
   }
   if (input.browserCanSpeak) {
-    return "Speaker: this browser may use its default voice. It might not work, and British is not guaranteed. An Azure speech key turns on Sonia.";
+    return "Speaker: this computer.";
   }
-  return "Speaker is not live. This browser can't speak, and no Azure speech key is set.";
+  return "Speaker is not live.";
 }
 
 export function voiceSnapshot(input: {
@@ -255,10 +255,7 @@ export function voiceSnapshot(input: {
     browserCanSpeak: input.browserCanSpeak,
     browserVoice: input.browserVoice,
   });
-  const mic =
-    ears === "browser"
-      ? "Mic listens for British English."
-      : "Mic is not available in this browser. Type instead.";
+  const mic = ears === "browser" ? "Mic: British English." : "Mic: off — type instead.";
   return { ears, mouth, line: `${mic} ${speaker}` };
 }
 

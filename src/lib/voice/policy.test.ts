@@ -149,7 +149,7 @@ describe("voiceSnapshot", () => {
     });
     assert.equal(snapshot.ears, "unsupported");
     assert.equal(snapshot.mouth, "not-live");
-    assert.match(snapshot.line, /Mic is not available/);
+    assert.match(snapshot.line, /Mic: off/);
     assert.match(snapshot.line, /Speaker is not live/);
   });
 
@@ -164,8 +164,8 @@ describe("voiceSnapshot", () => {
       browserVoice: { name: "Google UK English Female", british: true },
     });
     assert.equal(snapshot.mouth, "grok");
-    assert.match(snapshot.line, /Altair/);
-    assert.doesNotMatch(snapshot.line, /Google UK/);
+    assert.match(snapshot.line, /Mic: British English/);
+    assert.doesNotMatch(snapshot.line, /key stays on the server/i);
   });
 
   it("names Sonia when Azure is configured", () => {
@@ -178,7 +178,7 @@ describe("voiceSnapshot", () => {
     });
     assert.equal(snapshot.mouth, "azure");
     assert.match(snapshot.line, /Sonia/);
-    assert.match(snapshot.line, /Mic listens for British English/);
+    assert.match(snapshot.line, /Mic: British English/);
   });
 });
 

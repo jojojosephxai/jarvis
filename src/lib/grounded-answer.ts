@@ -192,6 +192,7 @@ export type AnswerOptions = {
 type ScoredNote = {
   note: VaultNote;
   score: number;
+  hitTerms: number;
 };
 
 export function questionTerms(question: string): string[] {
@@ -207,36 +208,43 @@ export function questionTerms(question: string): string[] {
 }
 
 function occurrenceScore(hay: string, term: string): number {
-  let score = 0;
-  let from = 0;
-  while (from < hay.length && score < 4) {
-    const found = hay.indexOf(term, from);
-    if (found === -1) break;
-    score += 1;
-    from = found + term.length;
-  }
-  return score;
+  const pattern = new RegExp(`\\b${escapeRegExp(term)}\\b`, "g");
+  const hits = hay.match(pattern);
+  return hits ? Math.min(hits.length, 4) : 0;
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function scoreNote(note: VaultNote, terms: string[], question: string): ScoredNote {
   const title = note.title.toLowerCase();
   const body = note.text.toLowerCase();
   let score = 0;
+  let hitTerms = 0;
   for (const term of terms) {
     const inTitle = occurrenceScore(title, term);
     const inBody = occurrenceScore(body, term);
     if (inTitle + inBody === 0) continue;
+    hitTerms += 1;
     score += inTitle * 8 + inBody;
   }
+  if (hitTerms === 0) return { note, score: 0, hitTerms: 0 };
+  // Prefer notes that cover more of the question, not one loud word like "project".
+  score += hitTerms * 10;
   if (terms.length >= 2) {
     const phrase = terms.join(" ");
     if (body.includes(phrase) || title.includes(phrase)) score += 6;
+  }
+  // A multi-word ask needs more than one overlapping word (e.g. "email" alone ≠ overnight mail).
+  if (terms.length >= 2 && hitTerms < 2) {
+    score = Math.round(score * 0.15);
   }
   const asksForGuide = /\b(obsidian|vault|open|readme)\b/i.test(question);
   if (path.basename(note.filePath).toLowerCase() === "readme.md" && !asksForGuide) {
     score = Math.round(score * 0.3);
   }
-  return { note, score };
+  return { note, score, hitTerms };
 }
 
 function contentLines(text: string): string[] {
@@ -339,7 +347,7 @@ export async function answerFromVault(question: string, options: AnswerOptions =
       ? []
       : loaded.notes
           .map((note) => scoreNote(note, terms, question))
-          .filter((scored) => scored.score > 0)
+          .filter((scored) => scored.score >= 4)
           .sort((a, b) => b.score - a.score);
 
   const best = ranked[0];
@@ -370,10 +378,8 @@ export async function answerFromVault(question: string, options: AnswerOptions =
       reply: withSourcesFooter(result.text, local.sources),
       mode: "grok",
       sources: local.sources,
-      notice:
-        local.sources.length > 0
-          ? "Grok answered. Matching vault notes were included as context."
-          : "Grok answered. No vault note matched, so none were cited.",
+      // Quiet on a miss — shouting “no vault note matched” under hello-style chat feels unfinished.
+      notice: local.sources.length > 0 ? "Notes used as context." : undefined,
     };
   }
 

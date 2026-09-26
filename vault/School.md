@@ -34,6 +34,12 @@ Conestoga High School — Tredyffrin/Easttown SD, Wayne / Main Line, Chester Cou
 
 Teacher names for other classes: leave blank — do not invent ([[People]]).
 
+## Near-term school work
+
+- Soccer practice is usually after school.
+- A library book is due Friday (title not written down).
+- Science fair idea: how **light** changes how fast plants grow. The board needs a title, three sections, and a few photos ([[Goals]]).
+
 ## Standing school rules
 
 - Stay current in AP Bio and AP World ([[Goals]])

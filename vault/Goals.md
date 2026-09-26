@@ -20,6 +20,7 @@ Near-term (roughly **1–3 months**). Keep them concrete. Cross-check with [[Sch
 - **Atelier**: small finished pieces, not endless redesign ([[Projects]])
 - **Skill compounding** — ship, learn, repeat ([[Tech-setup]])
 - **Faith practice** — church and baptism class: **Sundays 11am–2pm** (locked; see [[Routines]], [[About]], [[Voice-and-tone]])
+- **Science fair** — project is how **light** changes how fast plants grow (board needs a title, three sections, and a few photos) ([[School]])
 
 ## Swim goals (season)
 

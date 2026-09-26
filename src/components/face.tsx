@@ -334,32 +334,12 @@ export function Face() {
 
   return (
     <div className="hud">
-      {booting ? <BootScreen onSkip={endBoot} /> : null}
+      {booting ? <BootScreen onSkip={endBoot} brainLabel={brainLabel} mouth={voice.mouth} /> : null}
       <header className="hud-top">
         <div>
           <p className="hud-mark">Jarvis</p>
         </div>
-        <div className="view-switch" role="group" aria-label="View">
-          {FACE_VIEWS.map((view) => (
-            <Button
-              key={view}
-              type="button"
-              variant={viewMode === view ? "default" : "ghost"}
-              aria-pressed={viewMode === view}
-              className="view-button h-9 rounded-none px-3"
-              onClick={() => setViewMode(view)}
-            >
-              {viewLabel(view)}
-            </Button>
-          ))}
-        </div>
-        <p className="hud-link">{brainLabel}</p>
-      </header>
-      <div className="hud-stage">
-        <OpticStage view={viewMode} orb={orb} cue={cue} brainTag={brainLabel} />
-      </div>
-      <div className="status-bar" aria-label="Status">
-        <dl className="status-grid">
+        <dl className="hud-status" aria-label="Status">
           <div>
             <dt>Face</dt>
             <dd>
@@ -388,6 +368,23 @@ export function Face() {
             </dd>
           </div>
         </dl>
+      </header>
+      <div className="hud-stage">
+        <OpticStage view={viewMode} orb={orb} cue={cue} brainTag={brainLabel} />
+        <div className="mode-rail" role="group" aria-label="View">
+          {FACE_VIEWS.map((view) => (
+            <button
+              key={view}
+              type="button"
+              className="mode-rail-item"
+              data-active={viewMode === view ? "true" : "false"}
+              aria-pressed={viewMode === view}
+              onClick={() => setViewMode(view)}
+            >
+              {viewLabel(view)}
+            </button>
+          ))}
+        </div>
       </div>
       <section className="talk-drawer" data-open={talkOpen ? "true" : "false"} aria-label="Talk">
         {talkOpen ? (
@@ -400,8 +397,8 @@ export function Face() {
               <div className="comms-actions">
                 <Button
                   type="button"
-                  variant="outline"
-                  className="h-11 rounded-none px-3"
+                  variant="ghost"
+                  className="hud-chip h-9 rounded-none px-3"
                   disabled={pending}
                   onClick={() => void runBrief()}
                 >
@@ -411,7 +408,7 @@ export function Face() {
                   <Button
                     type="button"
                     variant="ghost"
-                    className="h-11 px-3"
+                    className="hud-chip h-9 rounded-none px-3"
                     onClick={() => {
                       voice.stop();
                       setItems([]);
@@ -423,12 +420,13 @@ export function Face() {
               </div>
             </div>
             {events.length > 0 ? (
-              <div className="stub-receipt" style={{ marginBottom: "0.85rem" }}>
-                <p>Demo calendar ({events.length})</p>
+              <div className="talk-calendar" aria-label="Demo calendar">
+                <p className="talk-calendar-label">Calendar · {events.length}</p>
                 <ul>
                   {events.map((event) => (
                     <li key={event.id}>
-                      {event.title} — {event.when}
+                      <span>{event.title}</span>
+                      <span>{event.when}</span>
                     </li>
                   ))}
                 </ul>
@@ -459,7 +457,7 @@ export function Face() {
           <Button
             type="button"
             variant="ghost"
-            className="talk-toggle h-11 rounded-none px-3"
+            className="talk-toggle h-8 rounded-none px-2.5"
             aria-expanded={talkOpen}
             onClick={() => setTalkOpen((open) => !open)}
           >
@@ -484,7 +482,7 @@ export function Face() {
               autoComplete="off"
               enterKeyHint="send"
               placeholder="Type here"
-              className="h-12 min-w-0 flex-1 rounded-none border-border bg-card px-3 text-base md:text-base"
+              className="h-8 min-w-0 flex-1 rounded-none border-border bg-card px-2.5 text-sm md:text-sm"
               onChange={(event) => setDraft(event.target.value)}
               onFocus={() => inputRef.current?.scrollIntoView({ block: "nearest" })}
               disabled={pending}
@@ -507,16 +505,18 @@ export function Face() {
             />
             <Button
               type="submit"
-              className="h-12 shrink-0 rounded-none px-4 text-base"
+              className="h-8 shrink-0 rounded-none px-3 text-sm"
               disabled={pending || draft.trim() === ""}
             >
               Send
             </Button>
           </form>
         </div>
-        <div className="voice-line">
-          <VoiceStatus line={voice.line} notice={voice.notice} mouth={voice.mouth} />
-        </div>
+        {voice.notice || voice.listening ? (
+          <div className="voice-line">
+            <VoiceStatus line={voice.line} notice={voice.notice} mouth={voice.mouth} />
+          </div>
+        ) : null}
       </section>
     </div>
   );
