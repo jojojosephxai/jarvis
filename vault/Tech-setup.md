@@ -30,6 +30,7 @@ How I ship. No secrets here — env var **names** only if needed, never values.
 ## Jarvis product locks
 
 - UI: Iron Man HUD + denser Zubair-style graph / Armory / screen help
+- Face quality P0: [[Jarvis-north-star]] + repo `NORTH_STAR.md` + Linear JOS-43
 - Brain: **grok-4.7**
 - TTS: **Altair** British butler
 - No phone / SMS channel
@@ -37,7 +38,7 @@ How I ship. No secrets here — env var **names** only if needed, never values.
 - Quiet mid-build
 - READY emails OK to apoianjoseph@gmail.com
 
-Full behavior wants in [[Jarvis-wants]]; tone in [[Voice-and-tone]].
+Full behavior wants in [[Jarvis-wants]]; tone in [[Voice-and-tone]]; Face feel bar in [[Jarvis-north-star]].
 
 ## How Jarvis should use this
 

@@ -1,5 +1,7 @@
 # Jarvis
 
+**Agents — Face P0 north star:** read [`NORTH_STAR.md`](NORTH_STAR.md) and `vault/Jarvis-north-star.md` before Face/UI work. Linear: [JOS-43](https://linear.app/joseph-apo/issue/JOS-43) (Urgent · Ready).
+
 Jarvis is a personal assistant you open in a browser. This version is the **Face**: a near-black screen with a cyan energy orb in the middle, and a thin strip at the bottom where you can talk.
 
 The **brain** calls **grok-4.7** for normal chat when `XAI_API_KEY` is set. Matching vault notes are context, and Jarvis cites them. If no note matches, Jarvis still answers. It does not skip the model just because the vault was quiet. With no key, a local reader quotes the notes instead. It does not send email.
@@ -22,7 +24,7 @@ npm run dev
 Open [http://localhost:4721](http://localhost:4721).
 
 1. A short boot plays. Press **Skip** if you want the main screen now.
-2. You should see a dark screen and a blue wireframe orb in the middle. The rings turn at different speeds, and the orb nods, so the motion is not one flat loop. Drag the orb to turn it in 3D. Scroll, pinch, or press **+** and **−** to zoom. **Reset** puts the view back. It grows while it is working, and a bright sweep runs around it. Talk is a thin strip at the bottom, not the middle of the screen. Face is online. Brain says **Vault** when no key is set, or **grok-4.7** when a key is set. Voice says **Altair** when Grok speech is set, **This computer** if only the browser can speak, or **Not live** if nothing can speak. **Mic** and **Speak** sit on that strip next to **Send**.
+2. You should see a dark screen and a blue wireframe orb in the middle. The rings turn at different speeds, and the orb nods, so the motion is not one flat loop. Drag the orb to turn it in 3D. Scroll, pinch, or press **+** and **−** to zoom. **Reset** puts the view back. It grows while it is working, and a bright sweep runs around it. Talk is a thin strip at the bottom, not the middle of the screen. Face / Brain / Voice lamps sit in the top bar (Face online; Brain says **Vault** or **grok-4.7**; Voice says **Altair**, **This computer**, or **Not live**). The long Mic/Speaker line stays hidden until you use the mic or something goes wrong. **Mic** and **Speak** sit on that thin strip next to **Send**.
 3. Press **Graph**. The notes from the `vault` folder sit in a turning sphere. Click and drag the space to slide the view. **Fit** brings the sphere back to the middle. Solid lines are real `[[wikilinks]]`. Dotted lines are the folder. Dashed lines are shared tags. The count matches the vault. An empty vault stays empty. Hover a dot to see how many links it has. Click a dot and the inspector shows the title, the type, the path, a short body, and the connections, each in its own cyan block. Search finds a note. **Most connected** lists the hubs. **All / Notes / Folders** and the folder menu filter the map. **Repel** and **Link length** move the dots in space. **Fit** frames the sphere. Pick two notes under **Path** to light the steps between them. Press **Dynamic Orb** to put the orb back in the middle. There is no Ring button and no Cube button.
 4. Type `switch to dynamic orb` and press **Send**. The orb comes back, even if the same line also says graph. Type `open the vault` or `path from About to School` to open the graph. A normal question, like a grade or the calendar, leaves the graph and returns to the orb. Press **Talk** if you want to hide that line again.
 5. Type this and press **Send**:
@@ -36,7 +38,7 @@ Open [http://localhost:4721](http://localhost:4721).
 More questions:
 
 - `What is the science fair project about?` — Goals says the project is how light changes how fast plants grow.
-- `What time is swim practice?` — Swim leaves the time blank, and the reply says that.
+- `What time is swim practice?` — Swim lists the evening AG1B grid (Mon/Wed 6–8pm, and the other days in that note).
 - `Did you email me overnight?` — the notes do not say that. With no key, Jarvis says the vault does not have it. With a key, grok-4.7 still answers, and it does not claim an email was sent.
 
 A refresh clears the talk lines. They stay on this screen only.
@@ -57,7 +59,7 @@ These still work. They are not vault answers. The orb stays in the middle. The t
 
 - **Dynamic Orb** or the graph owns the middle. Boot opens on the orb. Drag turns the orb. Scroll, pinch, or the **+** / **−** buttons zoom it.
 - **Dynamic Orb** and **Graph** only. There is no Ring button and no Cube button
-- Talk is a thin strip. Press **Talk** to open the words. It does not take the center
+- Talk is a thin strip at the bottom. Press **Talk** to open the words. It does not take the center. Status lamps live in the top bar so the orb keeps the middle
 - The graph is a turning sphere. Drag the space to move it. Lines come from `[[wikilinks]]`, shared tags, and folder parents. Notes with no links still connect to their folder. The map will not draw more than 40 notes, and an empty vault stays empty
 
 ## Morning brief
@@ -65,7 +67,7 @@ These still work. They are not vault answers. The orb stays in the middle. The t
 1. Press **Talk**, then **Morning brief**. Or type `morning brief` and press **Send**.
 2. You should see today's date, then two parts: the demo calendar, and priority lines copied from the vault.
 3. With no saved events, the brief says the demo calendar is empty. It does not add a fake practice or a meeting.
-4. The starter vault is thin. You should see the science fair, soccer after school, and the library book due Friday, copied from Goals and School. Swim practice time stays under **Not written down**.
+4. The starter vault is thin. You should see the science fair, soccer after school, and the library book due Friday, copied from Goals and School. Swim practice windows come from the Swim note grid.
 5. The brief says no mail was read. It will not claim an overnight email.
 6. Grok is not called for the brief. If you want Brain to read a note, ask in the talk box. Example: `What time is swim practice?`
 

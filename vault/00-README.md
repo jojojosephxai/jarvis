@@ -4,7 +4,7 @@ tags:
   - vault
   - index
   - jarvis
-updated: 2026-09-23
+updated: 2026-09-25
 ---
 
 # Vault map
@@ -13,15 +13,16 @@ I am Joseph Michael Apoian. This vault is my second brain for Jarvis Graph. Read
 
 ## How Graph should read this
 
-- Start here, then fan out through [[About]], [[Voice-and-tone]], [[Preferences]], and [[Jarvis-wants]].
+- Start here, then fan out through [[About]], [[Voice-and-tone]], [[Preferences]], [[Jarvis-wants]], and **[[Jarvis-north-star]]** (P0 Face feel bar).
 - For day-to-day planning, pull [[School]], [[Swim]], [[Routines]], [[Goals]], and [[Health-energy]] together.
-- For product and coding work, use [[Projects]], [[Tech-setup]], and [[Decisions]].
+- For product and coding work, use [[Projects]], [[Tech-setup]], [[Decisions]], and [[Jarvis-north-star]].
 - Treat [[People]] as sparse and confirm-heavy — do not invent contacts or reach out.
 - When notes conflict, **latest Joseph instruction wins**. Mark stale lines for me instead of guessing.
 
 ## Note index
 
 - [[00-README]] — this map
+- [[Jarvis-north-star]] — **P0** Face ease / JARVISness / HUD / style (agents: also `NORTH_STAR.md`)
 - [[About]] — who I am
 - [[People]] — known people only
 - [[School]] — Conestoga schedule and courses

@@ -1,5 +1,7 @@
 This folder holds the exact prompts Jarvis Ship sent to Cursor cloud agents, so Joseph can browse them in the IDE.
 
+**Before Face/UI prompts:** read repo root [`NORTH_STAR.md`](../NORTH_STAR.md) and Linear [JOS-43](https://linear.app/joseph-apo/issue/JOS-43) (P0 ease / JARVISness / HUD / style).
+
 - [2026-09-23 JOS-5 vault](2026-09-23_jos-5-vault_bc-22a9b537.md)
 - [2026-09-23 JOS-10 brain](2026-09-23_jos-10-brain_bc-6ae3b9b6.md)
 - [2026-09-23 JOS-8 hands](2026-09-23_jos-8-hands_bc-56e2466b.md)

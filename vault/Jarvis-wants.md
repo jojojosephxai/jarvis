@@ -4,12 +4,12 @@ tags:
   - jarvis
   - product
   - help
-updated: 2026-09-23
+updated: 2026-09-25
 ---
 
 # How I want Jarvis to help
 
-This is the product contract. Pair with [[Voice-and-tone]], [[Preferences]], [[Decisions]], and [[Tech-setup]].
+This is the product contract. Pair with [[Voice-and-tone]], [[Preferences]], [[Decisions]], [[Tech-setup]], and **[[Jarvis-north-star]]** (P0 Face feel bar — ease, JARVISness, HUD, style).
 
 ## Help modes I want
 
@@ -33,6 +33,7 @@ This is the product contract. Pair with [[Voice-and-tone]], [[Preferences]], [[D
 ## Product vision locks
 
 - Iron Man HUD + denser Zubair-style graph / Armory / screen help
+- **Face P0:** obey [[Jarvis-north-star]] / repo `NORTH_STAR.md` / Linear **JOS-43** (Urgent) before new Face chrome
 - Brain: **grok-4.7**
 - TTS: **Altair** British butler
 - No phone / SMS
@@ -47,4 +48,4 @@ This is the product contract. Pair with [[Voice-and-tone]], [[Preferences]], [[D
 
 ## How Jarvis should use this
 
-Obey this file as the help-policy overlay on the whole vault. When unsure, choose the smaller change, protect [[Swim]]/[[School]]/sleep, and ask before outreach or spend. Stay quiet mid-build; email READY when done.
+Obey this file as the help-policy overlay on the whole vault. For Face/UI feel, also obey [[Jarvis-north-star]]. When unsure, choose the smaller change, protect [[Swim]]/[[School]]/sleep, and ask before outreach or spend. Stay quiet mid-build; email READY when done.
