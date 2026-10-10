@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
 
 import { browserEarsSupported, browserMouthSupported, startBrowserListen } from "@/lib/voice/browser";
 import { EARS_UNAVAILABLE, voiceSnapshot, type VoiceSnapshot } from "@/lib/voice/policy";
@@ -45,8 +45,10 @@ export function useVoice(onSpeakingChange: (active: boolean) => void): {
   speak: (text: string) => Promise<boolean>;
   pressMic: (onText: (text: string, isFinal: boolean) => void) => void;
   stop: () => void;
+  levelRef: RefObject<number>;
 } {
   const onSpeakingChangeRef = useRef(onSpeakingChange);
+  const levelRef = useRef(0);
   const listenStop = useRef<(() => void) | null>(null);
   const [listening, setListening] = useState(false);
   const [snapshot, setSnapshot] = useState<VoiceSnapshot>({
@@ -98,15 +100,26 @@ export function useVoice(onSpeakingChange: (active: boolean) => void): {
     listenStop.current?.();
     listenStop.current = null;
     setListening(false);
+    levelRef.current = 0;
     stopSpeaking();
+    onSpeakingChangeRef.current(false);
   }, []);
 
   const speak = useCallback(async (text: string): Promise<boolean> => {
     setNotice(null);
     try {
       const result = await speakAloud(text, {
-        onStart: () => onSpeakingChangeRef.current(true),
-        onEnd: () => onSpeakingChangeRef.current(false),
+        onStart: () => {
+          levelRef.current = 1;
+          onSpeakingChangeRef.current(true);
+        },
+        onLevel: (level) => {
+          levelRef.current = level;
+        },
+        onEnd: () => {
+          levelRef.current = 0;
+          onSpeakingChangeRef.current(false);
+        },
       });
       if (result.notice) setNotice(result.notice);
       if (!result.played && result.notice && /did not speak|can't speak|Speaker is not live/.test(result.notice)) {
@@ -125,6 +138,7 @@ export function useVoice(onSpeakingChange: (active: boolean) => void): {
       return result.played;
     } catch {
       setNotice("Speaking hit a problem. Nothing was played.");
+      levelRef.current = 0;
       onSpeakingChangeRef.current(false);
       return false;
     }
@@ -180,5 +194,6 @@ export function useVoice(onSpeakingChange: (active: boolean) => void): {
     speak,
     pressMic,
     stop,
+    levelRef,
   };
 }

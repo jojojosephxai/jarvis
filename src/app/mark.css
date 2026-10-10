@@ -1,4 +1,4 @@
-/* The side mark and the center orb share one reactor. The mark grows while Jarvis is busy. */
+/* ONLINE mark is a still heart. The center orb is the WebGL sphere. */
 
 .jarvis-badge-hero {
   position: relative;
@@ -44,12 +44,14 @@
   text-shadow: none;
 }
 
-.reactor-cage[data-mode="ack"] {
-  animation: mark-breathe 0.95s ease-in-out infinite;
+.jarvis-badge[data-mode="ack"] .jarvis-badge-dot,
+.jarvis-badge[data-mode="speaking"] .jarvis-badge-dot,
+.jarvis-badge[data-mode="working"] .jarvis-badge-dot {
+  animation: mark-dot 1.8s ease-in-out infinite;
 }
 
-.jarvis-badge[data-mode="ack"] .jarvis-badge-dot {
-  animation: mark-dot 0.95s ease-in-out infinite;
+.jarvis-badge[data-mode="listening"] .jarvis-badge-dot {
+  opacity: 0.45;
 }
 
 @keyframes mark-breathe {
@@ -75,9 +77,13 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .reactor-cage[data-mode="ack"],
-  .jarvis-badge[data-mode="ack"] .jarvis-badge-dot {
+  .jarvis-badge[data-mode="ack"] .jarvis-badge-dot,
+  .jarvis-badge[data-mode="speaking"] .jarvis-badge-dot,
+  .jarvis-badge[data-mode="working"] .jarvis-badge-dot,
+  .orb-layout,
+  .orb-terminal-slot {
     animation: none;
+    transition: none;
   }
 }
 

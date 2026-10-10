@@ -10,18 +10,22 @@ import {
   cageRadius,
   frameAroundPoint,
   frameAroundPoints,
+  labelEligible,
+  labelRank,
   layoutGalaxy,
   layoutOrigin,
-  orbitCamera,
+  pickLabels,
   projectSpace,
   projectUnit,
+  restCamera,
   starField,
   type Camera,
   type Frame,
+  type LabelCandidate,
   type LayoutPoint,
 } from "@/lib/graph-layout";
 import { frameAtZoom, nextZoom, spinCamera, turnedCamera } from "@/lib/graph-turn";
-import { degreeOf, matchGraphNode, matchingNodes, shortestPath } from "@/lib/graph-nav";
+import { degreeOf, matchGraphNode, matchingNodes, shortestPath, topHubs } from "@/lib/graph-nav";
 import type { GraphEdge, GraphNode, GraphStatus, NoteGraphPayload } from "@/lib/note-graph";
 
 const EMPTY: NoteGraphPayload = {
@@ -191,16 +195,10 @@ function clusterLabel(key: string): string {
   }
 }
 
-function shortTitle(title: string): string {
-  if (title.length <= 22) return title;
-  return `${title.slice(0, 21)}...`;
-}
-
 function displayTitle(node: GraphNode): string {
-  if (node.title.length <= 18) return node.title;
-  const stem = node.id.split("/").pop()?.replace(/\.md$/i, "") ?? node.title;
-  if (stem.length > 0 && stem.length <= 18) return stem;
-  return shortTitle(node.title);
+  const title = node.title.trim();
+  if (title.length <= 36) return title;
+  return `${title.slice(0, 35)}...`;
 }
 
 export function NoteGraph({
@@ -390,6 +388,10 @@ function GraphReady({
   const searching = query.trim().length > 0;
   const routeOn = Boolean(route && route.length > 1);
   const clusters = [...new Set(payload.nodes.map(clusterKey))].sort((a, b) => a.localeCompare(b));
+  const hubIds = useMemo(
+    () => new Set(topHubs(payload.nodes, payload.edges, 8).map((entry) => entry.node.id)),
+    [payload.nodes, payload.edges],
+  );
   const selected = payload.nodes.find((node) => node.id === selectedId) ?? null;
   const noteLinks: NoteLink[] = selected
     ? payload.edges.flatMap((edge) => {
@@ -458,6 +460,7 @@ function GraphReady({
           searching={searching}
           matchIds={matchIds}
           frameToken={frameToken}
+          hubIds={hubIds}
           onSelect={openNote}
           onClear={clearFocus}
         />
@@ -489,54 +492,6 @@ function onRoute(edge: GraphEdge, route: string[] | null): boolean {
     if ((edge.from === from && edge.to === to) || (edge.from === to && edge.to === from)) return true;
   }
   return false;
-}
-
-function useReducedMotion(): boolean {
-  const [reduced, setReduced] = useState(false);
-  useEffect(() => {
-    const media = window.matchMedia("(prefers-reduced-motion: reduce)");
-    const apply = () => setReduced(media.matches);
-    apply();
-    media.addEventListener("change", apply);
-    return () => media.removeEventListener("change", apply);
-  }, []);
-  return reduced;
-}
-
-const STILL_CAMERA: Camera = { yaw: 0.72, pitch: 0.52 };
-
-function useOrbit(calm: boolean, reduced: boolean, held = false): Camera {
-  const [camera, setCamera] = useState<Camera>(STILL_CAMERA);
-  const heldRef = useRef(held);
-  useEffect(() => {
-    heldRef.current = held;
-  }, [held]);
-  useEffect(() => {
-    if (reduced) return;
-    let frame = 0;
-    let last = 0;
-    let pausedAt = 0;
-    let pausedFor = 0;
-    const started = performance.now();
-    const tick = (now: number) => {
-      frame = requestAnimationFrame(tick);
-      if (document.hidden) return;
-      if (heldRef.current) {
-        if (pausedAt === 0) pausedAt = now;
-        return;
-      }
-      if (pausedAt !== 0) {
-        pausedFor += now - pausedAt;
-        pausedAt = 0;
-      }
-      if (now - last < 80) return;
-      last = now;
-      setCamera(orbitCamera((now - started - pausedFor) / 1000, calm));
-    };
-    frame = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(frame);
-  }, [calm, reduced]);
-  return reduced ? STILL_CAMERA : camera;
 }
 
 function stableFrame(points: LayoutPoint[]): Frame {
@@ -599,6 +554,7 @@ function GalaxyScene({
   searching,
   matchIds,
   frameToken,
+  hubIds,
   onSelect,
   onClear,
 }: {
@@ -614,24 +570,24 @@ function GalaxyScene({
   searching: boolean;
   matchIds: Set<string>;
   frameToken: string;
+  hubIds: Set<string>;
   onSelect: (id: string) => void;
   onClear: () => void;
 }) {
-  const reduced = useReducedMotion();
-  const calm = frameMode === "node" || frameMode === "path";
   const [grabbing, setGrabbing] = useState(false);
   const [spin, setSpin] = useState<Camera>({ yaw: 0, pitch: 0 });
   const [zoom, setZoom] = useState(1);
   const [zoomToken, setZoomToken] = useState(frameToken);
   const svgRef = useRef<SVGSVGElement | null>(null);
+  const frameWidthRef = useRef(1);
   const dragRef = useRef<{ id: number; x: number; y: number; moved: boolean } | null>(null);
   const swallowRef = useRef(false);
   if (zoomToken !== frameToken) {
     setZoomToken(frameToken);
     setZoom(1);
   }
-  const orbit = useOrbit(calm, reduced, grabbing);
-  const camera = turnedCamera(orbit, spin);
+  const camera = turnedCamera(restCamera(), spin);
+  const [pxPerUnit, setPxPerUnit] = useState(0.8);
   const [hoverId, setHoverId] = useState<string | null>(null);
   useEffect(() => {
     const svg = svgRef.current;
@@ -642,6 +598,18 @@ function GalaxyScene({
     }
     svg.addEventListener("wheel", onWheel, { passive: false });
     return () => svg.removeEventListener("wheel", onWheel);
+  }, []);
+  useEffect(() => {
+    const svg = svgRef.current;
+    if (!svg) return;
+    const measure = () => {
+      const width = svg.clientWidth;
+      if (width > 0) setPxPerUnit(width / Math.max(frameWidthRef.current, 1));
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(svg);
+    return () => observer.disconnect();
   }, []);
   const origin = layoutOrigin(WIDTH, HEIGHT);
   const unit = cageRadius(WIDTH, HEIGHT);
@@ -693,7 +661,48 @@ function GalaxyScene({
     }
   }
 
+  const shifted = frameAtZoom(frame, zoom);
+  frameWidthRef.current = shifted.w;
   const showAllLabels = nodes.length <= 24;
+  const liveWidth = svgRef.current?.clientWidth ?? 0;
+  const labelScale = liveWidth > 0 ? liveWidth / Math.max(shifted.w, 1) : pxPerUnit;
+  const fontUser = 12 / Math.max(labelScale, 0.12);
+  const labelBoxes: LabelCandidate[] = [];
+  for (const node of nodes) {
+    const point = projected.get(node.id);
+    if (!point || !visibleIds.has(node.id)) continue;
+    const neighbor =
+      selectedId !== null &&
+      edges.some(
+        (edge) =>
+          (edge.from === selectedId && edge.to === node.id) || (edge.to === selectedId && edge.from === node.id),
+      );
+    const flags = {
+      selected: node.id === selectedId,
+      hover: node.id === hoverId,
+      hub: hubIds.has(node.id),
+      onPath: routeIds?.has(node.id) ?? false,
+      neighbor,
+      folder: node.kind === "folder",
+      match: matchIds.has(node.id),
+      depth: point.depth,
+    };
+    if (!labelEligible(flags, zoom, showAllLabels)) continue;
+    const rank = labelRank(flags);
+    const text = displayTitle(node);
+    labelBoxes.push({
+      id: node.id,
+      x: point.x,
+      y: point.y,
+      w: Math.max(fontUser * 2.2, text.length * fontUser * 0.58 + fontUser * 0.8),
+      h: fontUser * 1.45,
+      depth: point.depth,
+      priority: rank.priority,
+      protected: rank.protected,
+    });
+  }
+  const placedLabels = new Map(pickLabels(labelBoxes).map((label) => [label.id, label]));
+  const labelWidth = new Map(labelBoxes.map((label) => [label.id, label.w]));
   const hover = nodes.find((node) => node.id === hoverId) ?? null;
   const hoverPoint = hover ? projected.get(hover.id) : undefined;
   const drawnEdges = edges
@@ -713,7 +722,6 @@ function GalaxyScene({
     })
     .sort((a, b) => a.depth - b.depth);
   const drawnNodes = [...nodes].sort((a, b) => (projected.get(a.id)?.depth ?? 0) - (projected.get(b.id)?.depth ?? 0));
-  const shifted = frameAtZoom(frame, zoom);
 
   function onSpacePointerDown(event: React.PointerEvent<SVGSVGElement>) {
     if (event.button !== 0) return;
@@ -818,23 +826,19 @@ function GalaxyScene({
         const active = node.id === selectedId;
         const color = colorFor(node);
         const degree = degreeOf(node.id, edges);
-        const neighbor =
-          selectedId !== null &&
-          edges.some((edge) => {
-            return (
-              (edge.from === selectedId && edge.to === node.id) || (edge.to === selectedId && edge.from === node.id)
-            );
-          });
         const onPath = routeIds?.has(node.id) ?? false;
-        const labelOn = showAllLabels || active || neighbor || onPath || node.kind === "folder" || matchIds.has(node.id);
+        const label = placedLabels.get(node.id);
+        const plate = labelWidth.get(node.id) ?? fontUser * 4;
         const radius = ((node.kind === "folder" ? 11 : 7.2) + Math.min(degree, 8) * 0.55) * (0.62 + point.depth * 0.85);
         const dim = (searching && !matchIds.has(node.id)) || (routeOn && !onPath && !active);
         const labelLeft = point.x > shifted.x + shifted.w * 0.68;
+        const plateX = labelLeft ? point.x - radius - 10 - plate : point.x + radius + 8;
+        const plateY = point.y - fontUser * 0.95;
         return (
           <g
             key={node.id}
             className="graph-node"
-            opacity={dim ? 0.14 : 0.55 + point.depth * 0.45}
+            opacity={label && label.opacity === 1 ? 1 : dim ? 0.14 : 0.55 + point.depth * 0.45}
             tabIndex={0}
             role="button"
             aria-pressed={active}
@@ -865,17 +869,25 @@ function GalaxyScene({
             {node.kind === "folder" ? (
               <circle cx={point.x} cy={point.y} r={radius + 4} fill="none" stroke={color} strokeWidth="1.2" />
             ) : null}
-            {labelOn ? (
-              <text
-                x={labelLeft ? point.x - radius - 8 : point.x + radius + 8}
-                y={point.y + 4}
-                fill="#f0fbff"
-                fontSize={11 + point.depth * 4}
-                fontWeight={active ? 600 : 500}
-                textAnchor={labelLeft ? "end" : "start"}
-              >
-                {displayTitle(node)}
-              </text>
+            {label ? (
+              <g className="graph-label" opacity={label.opacity}>
+                <rect
+                  className="graph-label-plate"
+                  x={plateX}
+                  y={plateY}
+                  width={plate}
+                  height={fontUser * 1.45}
+                  rx={2}
+                />
+                <text
+                  className="graph-label-text"
+                  x={plateX + fontUser * 0.4}
+                  y={point.y + fontUser * 0.22}
+                  fontSize={fontUser}
+                >
+                  {displayTitle(node)}
+                </text>
+              </g>
             ) : null}
           </g>
         );
@@ -906,7 +918,7 @@ function HoverTip({
   y: number;
   frame: Frame;
 }) {
-  const name = title.length <= 22 ? title : `${title.slice(0, 21)}...`;
+  const name = title.length <= 36 ? title : `${title.slice(0, 35)}...`;
   const meta = `${degree} ${degree === 1 ? "link" : "links"} - click to read`;
   const boxW = Math.max(name.length, meta.length) * 6.6 + 16;
   const left = x + boxW + 18 > frame.x + frame.w ? x - boxW - 14 : x + 14;

@@ -11,6 +11,7 @@ import type { ServerSpeakFailure, SpeakOutcome } from "./types";
 export type SpeakHooks = {
   onStart: () => void;
   onEnd: () => void;
+  onLevel?: (level: number) => void;
 };
 
 let token = 0;
@@ -18,8 +19,19 @@ let speakAbort: AbortController | null = null;
 let audio: HTMLAudioElement | null = null;
 let objectUrl: string | null = null;
 let cancelBrowser: (() => void) | null = null;
+let audioContext: AudioContext | null = null;
+let levelFrame = 0;
+let levelEmit: ((level: number) => void) | null = null;
+
+function stopLevelMonitor() {
+  if (levelFrame) cancelAnimationFrame(levelFrame);
+  levelFrame = 0;
+  levelEmit?.(0);
+  levelEmit = null;
+}
 
 function releaseAudio() {
+  stopLevelMonitor();
   if (audio) {
     audio.pause();
     audio.src = "";
@@ -28,6 +40,40 @@ function releaseAudio() {
   if (objectUrl) {
     URL.revokeObjectURL(objectUrl);
     objectUrl = null;
+  }
+}
+
+async function wireAnalyser(element: HTMLAudioElement, emit: (level: number) => void): Promise<boolean> {
+  const Ctx = window.AudioContext;
+  if (!Ctx) return false;
+  try {
+    if (!audioContext) audioContext = new Ctx();
+    if (audioContext.state === "suspended") await audioContext.resume();
+    if (audioContext.state !== "running") return false;
+    const source = audioContext.createMediaElementSource(element);
+    const analyser = audioContext.createAnalyser();
+    analyser.fftSize = 512;
+    analyser.smoothingTimeConstant = 0.72;
+    source.connect(analyser);
+    analyser.connect(audioContext.destination);
+    const bins = new Uint8Array(analyser.fftSize);
+    levelEmit = emit;
+    const tick = () => {
+      analyser.getByteTimeDomainData(bins);
+      let sum = 0;
+      for (let index = 0; index < bins.length; index += 1) {
+        const sample = ((bins[index] ?? 128) - 128) / 128;
+        sum += sample * sample;
+      }
+      const level = Math.max(0, Math.min(1, Math.sqrt(sum / bins.length) * 3.4));
+      levelEmit?.(level);
+      levelFrame = requestAnimationFrame(tick);
+    };
+    levelFrame = requestAnimationFrame(tick);
+    return true;
+  } catch {
+    stopLevelMonitor();
+    return false;
   }
 }
 
@@ -60,6 +106,13 @@ async function playAzure(blob: Blob, still: () => boolean, hooks: SpeakHooks): P
   objectUrl = url;
   const element = new Audio(url);
   audio = element;
+  if (hooks.onLevel && still()) {
+    await wireAnalyser(element, hooks.onLevel);
+    if (!still()) {
+      releaseAudio();
+      return "cancelled";
+    }
+  }
 
   return new Promise((resolve) => {
     let opened = false;

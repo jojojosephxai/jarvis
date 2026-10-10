@@ -162,12 +162,19 @@ html[data-boot="done"] .boot-screen {
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: 0.75rem;
+  max-height: 40px;
+  overflow: hidden;
   border-bottom: 1px solid rgba(73, 212, 255, 0.12);
-  padding-top: 0.45rem;
-  padding-bottom: 0.45rem;
+  padding-top: 0.2rem;
+  padding-bottom: 0.2rem;
   padding-left: max(1rem, env(safe-area-inset-left));
   padding-right: max(1rem, env(safe-area-inset-right));
   background: rgba(1, 2, 4, 0.72);
+}
+
+.hud-top .hud-mark {
+  font-size: 0.78rem;
+  letter-spacing: 0.22em;
 }
 
 .hud-link {
@@ -271,13 +278,97 @@ html[data-boot="done"] .boot-screen {
   cursor: grabbing;
 }
 
-.orb-rig-spin {
+.orb-layout {
   position: absolute;
   inset: 0;
   display: grid;
   place-items: center;
-  transform-style: preserve-3d;
+  transform-origin: center center;
+  transition: transform 720ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.stage-orb[data-layout="corner"] .orb-layout {
+  transform: translate(26%, -30%) scale(0.36);
+}
+
+.orb-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.orb-canvas {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
   pointer-events: none;
+}
+
+.orb-heart-still {
+  position: absolute;
+  inset: 14%;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+}
+
+.orb-heart-still .reactor-halo,
+.orb-heart-still .reactor-halo-late,
+.orb-heart-still .reactor-iris,
+.orb-heart-still .reactor-core {
+  animation: none;
+}
+
+.orb-dock {
+  position: absolute;
+  z-index: 5;
+  top: 0.65rem;
+  left: max(0.85rem, env(safe-area-inset-left));
+  margin: 0;
+  padding: 0.12rem 0;
+  border: 0;
+  border-bottom: 1px solid rgba(126, 231, 255, 0.5);
+  background: transparent;
+  color: #8eebff;
+  cursor: pointer;
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.16em;
+  line-height: 1.2;
+  text-transform: uppercase;
+}
+
+.orb-dock:focus-visible {
+  outline: 1px solid rgba(126, 231, 255, 0.8);
+  outline-offset: 3px;
+}
+
+.orb-terminal-slot {
+  position: absolute;
+  z-index: 1;
+  top: 18%;
+  right: 40%;
+  bottom: 10%;
+  left: max(0.8rem, env(safe-area-inset-left));
+  border: 1px solid transparent;
+  background: transparent;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(18px);
+  transition:
+    opacity 720ms ease,
+    transform 720ms cubic-bezier(0.22, 1, 0.36, 1),
+    border-color 720ms ease,
+    background 720ms ease;
+}
+
+.stage-orb[data-layout="corner"] .orb-terminal-slot {
+  border-color: rgba(73, 212, 255, 0.28);
+  background: rgba(2, 6, 10, 0.78);
+  opacity: 1;
+  transform: none;
 }
 
 .mode-rail {
@@ -425,6 +516,22 @@ html[data-boot="done"] .boot-screen {
 
 .graph-node:focus circle:nth-of-type(2) {
   stroke: #f4fdff;
+}
+
+.graph-label {
+  pointer-events: none;
+}
+
+.graph-label-plate {
+  fill: rgba(2, 8, 12, 0.9);
+  stroke: rgba(73, 212, 255, 0.55);
+  stroke-width: 1;
+}
+
+.graph-label-text {
+  fill: #f4fdff;
+  font-family: var(--font-sans);
+  font-weight: 500;
 }
 
 .graph-legend {
@@ -927,11 +1034,6 @@ html[data-boot="done"] .boot-screen {
 
 .reactor-cage {
   transform-style: preserve-3d;
-  animation: orb-breathe 5.2s ease-in-out infinite;
-}
-
-.reactor-cage[data-mode="ack"] {
-  animation: orb-work 0.9s ease-in-out infinite;
 }
 
 .reactor-heart {
@@ -943,7 +1045,6 @@ html[data-boot="done"] .boot-screen {
   position: absolute;
   inset: 0;
   transform-style: preserve-3d;
-  animation: reactor-tumble 12.8s ease-in-out infinite;
 }
 
 .reactor-spin {
@@ -952,32 +1053,10 @@ html[data-boot="done"] .boot-screen {
   transform-style: preserve-3d;
 }
 
-.reactor-spin-y-slow {
-  animation: reactor-spin-y 17s linear infinite;
-}
-
-.reactor-spin-y-back {
-  animation: reactor-spin-y 11.5s linear infinite reverse;
-}
-
+.reactor-spin-y-slow,
+.reactor-spin-y-back,
 .reactor-spin-y-fast {
-  animation: reactor-spin-y 7.4s linear infinite;
-}
-
-.reactor-cage[data-mode="ack"] .reactor-tumble {
-  animation-duration: 3.4s;
-}
-
-.reactor-cage[data-mode="ack"] .reactor-spin-y-slow {
-  animation-duration: 3.6s;
-}
-
-.reactor-cage[data-mode="ack"] .reactor-spin-y-back {
-  animation-duration: 2.2s;
-}
-
-.reactor-cage[data-mode="ack"] .reactor-spin-y-fast {
-  animation-duration: 1.25s;
+  animation: none;
 }
 
 .reactor-halo,
@@ -1099,20 +1178,9 @@ html[data-boot="done"] .boot-screen {
   transform-style: preserve-3d;
 }
 
-.reactor-glint-arm-a {
-  animation: reactor-glint-eq 6.4s linear infinite;
-}
-
+.reactor-glint-arm-a,
 .reactor-glint-arm-b {
-  animation: reactor-glint-mer 9.1s linear infinite reverse;
-}
-
-.reactor-cage[data-mode="ack"] .reactor-glint-arm-a {
-  animation-duration: 1.05s;
-}
-
-.reactor-cage[data-mode="ack"] .reactor-glint-arm-b {
-  animation-duration: 1.7s;
+  animation: none;
 }
 
 .reactor-glint {
@@ -1146,9 +1214,9 @@ html[data-boot="done"] .boot-screen {
   transform: rotateX(70deg);
 }
 
-.reactor-cage[data-mode="ack"] .reactor-sweep {
-  display: block;
-  animation: reactor-glint-eq 1.15s linear infinite;
+.reactor-cage[data-mode="ack"] .reactor-sweep,
+.reactor-cage[data-mode="working"] .reactor-sweep {
+  display: none;
 }
 
 .reactor-iris {
@@ -1156,11 +1224,6 @@ html[data-boot="done"] .boot-screen {
   height: 44%;
   background: linear-gradient(180deg, rgba(120, 220, 255, 0.42), rgba(6, 28, 44, 0.15));
   clip-path: polygon(50% 0, 93% 25%, 93% 75%, 50% 100%, 7% 75%, 7% 25%);
-  animation: reactor-iris 19s ease-in-out infinite;
-}
-
-.reactor-heart[data-mode="ack"] .reactor-iris {
-  animation-duration: 2.8s;
 }
 
 .reactor-core {
@@ -1175,9 +1238,8 @@ html[data-boot="done"] .boot-screen {
   animation: core-pulse 3.6s ease-in-out infinite;
 }
 
-.reactor-heart[data-mode="ack"] .reactor-core,
-.reactor-heart[data-mode="ack"] .reactor-halo {
-  animation-duration: 0.45s;
+.reactor-heart[data-mode="listening"] .reactor-iris {
+  transform: scale(1.12);
 }
 
 .status-bar {
@@ -1219,26 +1281,27 @@ html[data-boot="done"] .boot-screen {
 }
 
 .talk-drawer {
+  position: relative;
   display: flex;
   flex: 0 0 auto;
   flex-direction: column;
   min-height: 0;
-  max-height: 3.1rem;
+  max-height: 2.75rem;
   margin: 0 0.45rem max(0.28rem, env(safe-area-inset-bottom));
   border: 1px solid rgba(73, 212, 255, 0.28);
   background: rgba(4, 10, 16, 0.9);
-}
-
-.talk-drawer:has(.voice-line) {
-  max-height: 4.35rem;
 }
 
 .talk-drawer[data-open="true"] {
   max-height: min(28vh, 14rem);
 }
 
-.talk-drawer[data-open="true"]:has(.voice-line) {
-  max-height: min(30vh, 15.2rem);
+.talk-drawer[data-open="false"] .voice-line {
+  position: absolute;
+  right: 0.35rem;
+  bottom: calc(100% + 0.15rem);
+  left: 0.35rem;
+  background: rgba(2, 6, 10, 0.9);
 }
 
 .talk-bar {
@@ -1247,7 +1310,7 @@ html[data-boot="done"] .boot-screen {
   flex-wrap: nowrap;
   align-items: center;
   gap: 0.3rem;
-  padding: 0.22rem 0.3rem;
+  padding: 0.12rem 0.3rem;
 }
 
 .voice-line {

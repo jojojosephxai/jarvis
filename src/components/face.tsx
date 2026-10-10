@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type RefObject } from "react";
 
 import { BootScreen } from "@/components/boot-screen";
 import { NoteGraph, type GraphCue } from "@/components/note-graph";
@@ -8,6 +8,7 @@ import { PlanCard } from "@/components/plan-card";
 import { ReceiptCard } from "@/components/receipt-card";
 import { OrbStage } from "@/components/orb-stage";
 import { type OrbMode } from "@/components/reactor";
+import { resolveOrbMode } from "@/lib/orb-mode";
 import { useVoice } from "@/components/use-voice";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -62,7 +63,9 @@ function formatStamp(iso: string): string {
 export function Face() {
   const [items, setItems] = useState<LogItem[]>([]);
   const [draft, setDraft] = useState("");
-  const [orb, setOrb] = useState<OrbMode>("standby");
+  const [speaking, setSpeaking] = useState(false);
+  const [ackOn, setAckOn] = useState(false);
+  const [working, setWorking] = useState(false);
   const [viewMode, setViewMode] = useState<FaceView>("graph");
   const [cue, setCue] = useState<GraphCue | null>(null);
   const cueToken = useRef(0);
@@ -79,7 +82,13 @@ export function Face() {
   const speakingRef = useRef(false);
   const voice = useVoice((active) => {
     speakingRef.current = active;
-    setOrb(active ? "ack" : "standby");
+    setSpeaking(active);
+  });
+  const orb = resolveOrbMode({
+    speaking,
+    working,
+    listening: voice.listening,
+    ack: ackOn,
   });
 
   useEffect(() => {
@@ -133,12 +142,43 @@ export function Face() {
     endRef.current?.scrollIntoView({ block: "end" });
   }, [items]);
 
-  function pulseOrb() {
-    if (speakingRef.current) return;
-    setOrb("ack");
+  function clearAckTimer() {
     if (ackTimer.current !== null) window.clearTimeout(ackTimer.current);
-    ackTimer.current = window.setTimeout(() => setOrb("standby"), 900);
+    ackTimer.current = null;
+  }
+
+  function pulseOrb() {
+    if (speakingRef.current || pendingRef.current) return;
+    setAckOn(true);
+    clearAckTimer();
+    ackTimer.current = window.setTimeout(() => setAckOn(false), 900);
     if (window.matchMedia("(pointer: fine)").matches) inputRef.current?.focus();
+  }
+
+  function startJob() {
+    pendingRef.current = true;
+    setPending(true);
+    setWorking(false);
+    setAckOn(true);
+    clearAckTimer();
+    ackTimer.current = window.setTimeout(() => {
+      setAckOn(false);
+      if (pendingRef.current) setWorking(true);
+    }, 900);
+  }
+
+  function startHands() {
+    pendingRef.current = true;
+    setPending(true);
+    clearAckTimer();
+    setAckOn(false);
+    setWorking(true);
+  }
+
+  function finishJob() {
+    pendingRef.current = false;
+    setPending(false);
+    setWorking(false);
   }
 
   async function send(text: string) {
@@ -173,9 +213,7 @@ export function Face() {
 
     setItems((current) => [...current, { kind: "you" as const, id: makeId("you"), text: trimmed, at }].slice(-40));
     setDraft("");
-    pendingRef.current = true;
-    setPending(true);
-    setOrb("ack");
+    startJob();
     try {
       const response = await fetch("/api/chat", {
         method: "POST",
@@ -248,23 +286,19 @@ export function Face() {
         ].slice(-40),
       );
     } finally {
-      pendingRef.current = false;
-      setPending(false);
-      pulseOrb();
+      finishJob();
     }
   }
 
   async function runBrief() {
     if (pendingRef.current) return;
-    pendingRef.current = true;
     setViewMode("orb");
     setTalkOpen(true);
     const at = new Date().toISOString();
     setItems((current) =>
       [...current, { kind: "you" as const, id: makeId("you"), text: "Morning brief", at }].slice(-40),
     );
-    setPending(true);
-    setOrb("ack");
+    startJob();
     try {
       const response = await fetch("/api/brief");
       const payload: unknown = await response.json();
@@ -295,17 +329,13 @@ export function Face() {
         ].slice(-40),
       );
     } finally {
-      pendingRef.current = false;
-      setPending(false);
-      pulseOrb();
+      finishJob();
     }
   }
 
   async function decide(itemId: string, plan: HandPlan, decision: "yes" | "no") {
     if (plan.state !== "waiting" || plan.gate !== "confirm" || pendingRef.current) return;
-    pendingRef.current = true;
-    setPending(true);
-    setOrb("ack");
+    startHands();
     try {
       const response = await fetch("/api/hands", {
         method: "POST",
@@ -326,9 +356,7 @@ export function Face() {
     } catch {
       // The plan stays waiting so it can be tried again.
     } finally {
-      pendingRef.current = false;
-      setPending(false);
-      pulseOrb();
+      finishJob();
     }
   }
 
@@ -342,35 +370,20 @@ export function Face() {
         <dl className="hud-status" aria-label="Status">
           <div>
             <dt>Face</dt>
-            <dd>
-              <span className="lamp lamp-on" />
-              Online
-            </dd>
+            <dd>Online</dd>
           </div>
           <div>
             <dt>Brain</dt>
-            <dd>
-              <span className={brainLabel === "Brain wiring" ? "lamp" : "lamp lamp-on"} />
-              {brainLabel}
-            </dd>
+            <dd>{brainLabel}</dd>
           </div>
           <div>
             <dt>Voice</dt>
-            <dd>
-              <span
-                className={
-                  voice.mouth === "grok" || voice.mouth === "azure" || voice.mouth === "browser"
-                    ? "lamp lamp-on"
-                    : "lamp"
-                }
-              />
-              {voiceLamp(voice.mouth)}
-            </dd>
+            <dd>{voiceLamp(voice.mouth)}</dd>
           </div>
         </dl>
       </header>
       <div className="hud-stage">
-        <OpticStage view={viewMode} orb={orb} cue={cue} brainTag={brainLabel} />
+        <OpticStage view={viewMode} orb={orb} cue={cue} brainTag={brainLabel} levelRef={voice.levelRef} />
         <div className="mode-rail" role="group" aria-label="View">
           {FACE_VIEWS.map((view) => (
             <button
@@ -433,9 +446,7 @@ export function Face() {
               </div>
             ) : null}
             {items.length === 0 ? (
-              <p className="empty-talk">
-                Ask about the notes, or press Morning brief. The orb stays in the middle. This strip only holds the words.
-              </p>
+              <p className="empty-talk">Notes, or Morning brief.</p>
             ) : (
               <div className="talk-list" aria-live="polite">
                 {items.map((item) => (
@@ -555,15 +566,17 @@ function OpticStage({
   orb,
   cue,
   brainTag,
+  levelRef,
 }: {
   view: FaceView;
   orb: OrbMode;
   cue: GraphCue | null;
   brainTag: string;
+  levelRef: RefObject<number>;
 }) {
   switch (view) {
     case "orb":
-      return <OrbStage mode={orb} brainTag={brainTag} />;
+      return <OrbStage mode={orb} brainTag={brainTag} levelRef={levelRef} />;
     case "graph":
       return <NoteGraph cue={cue} brainTag={brainTag} mode={orb} />;
     default: {

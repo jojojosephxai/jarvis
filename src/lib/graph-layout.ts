@@ -251,13 +251,97 @@ export function cageFrame(width: number, height: number): Frame {
   };
 }
 
-export function orbitCamera(seconds: number, calm: boolean): Camera {
-  const speed = calm ? 0.34 : 1;
-  const t = seconds * speed;
-  return {
-    yaw: t * 0.15 + Math.sin(t * 0.47) * 0.9 + Math.sin(t * 0.19) * 0.34,
-    pitch: 0.42 + Math.sin(t * 0.27) * 0.26 + Math.sin(t * 0.11) * 0.12,
-  };
+export const REST_YAW = 0.72;
+export const REST_PITCH = 0.52;
+
+/** Fixed graph camera. User drag adds spin on top. Time does not move it. */
+export function restCamera(): Camera {
+  return { yaw: REST_YAW, pitch: REST_PITCH };
+}
+
+export type LabelCandidate = {
+  id: string;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  depth: number;
+  priority: number;
+  protected: boolean;
+};
+
+export type PlacedLabel = {
+  id: string;
+  opacity: number;
+};
+
+export function labelRank(flags: {
+  selected: boolean;
+  hover: boolean;
+  hub: boolean;
+  onPath: boolean;
+  neighbor: boolean;
+  folder: boolean;
+  match: boolean;
+}): { priority: number; protected: boolean } {
+  if (flags.selected) return { priority: 100, protected: true };
+  if (flags.hover) return { priority: 90, protected: true };
+  if (flags.hub) return { priority: 80, protected: true };
+  if (flags.onPath) return { priority: 60, protected: false };
+  if (flags.neighbor) return { priority: 55, protected: false };
+  if (flags.folder) return { priority: 50, protected: false };
+  if (flags.match) return { priority: 40, protected: false };
+  return { priority: 10, protected: false };
+}
+
+export function labelEligible(
+  flags: {
+    selected: boolean;
+    hover: boolean;
+    hub: boolean;
+    onPath: boolean;
+    neighbor: boolean;
+    folder: boolean;
+    match: boolean;
+    depth: number;
+  },
+  zoom: number,
+  showAll: boolean,
+): boolean {
+  if (flags.hub || flags.selected || flags.hover || flags.folder || flags.neighbor || flags.onPath || flags.match) {
+    return true;
+  }
+  if (showAll) return true;
+  return zoom >= 1.35 && flags.depth >= 0.42;
+}
+
+function labelBoxesOverlap(a: LabelCandidate, b: LabelCandidate): boolean {
+  const pad = 6;
+  return Math.abs(a.x - b.x) < (a.w + b.w) / 2 + pad && Math.abs(a.y - b.y) < (a.h + b.h) / 2 + pad;
+}
+
+/**
+ * Hubs, the hovered note, and the selected note are protected: a collision
+ * never hides them. Other titles drop when they overlap a label already kept.
+ */
+export function pickLabels(candidates: LabelCandidate[]): PlacedLabel[] {
+  const ordered = [...candidates].sort((a, b) => {
+    if (b.priority !== a.priority) return b.priority - a.priority;
+    if (a.id < b.id) return -1;
+    if (a.id > b.id) return 1;
+    return 0;
+  });
+  const placed: LabelCandidate[] = [];
+  const out: PlacedLabel[] = [];
+  for (const label of ordered) {
+    const hits = placed.some((other) => labelBoxesOverlap(label, other));
+    if (!label.protected && hits) continue;
+    if (!label.protected && label.depth < 0.32 && label.priority < 50) continue;
+    const opacity = label.protected ? 1 : label.depth < 0.32 ? 0.45 : Math.min(1, 0.55 + label.depth * 0.45);
+    placed.push(label);
+    out.push({ id: label.id, opacity });
+  }
+  return out;
 }
 
 export function projectSpace(

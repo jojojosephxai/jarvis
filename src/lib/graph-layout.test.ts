@@ -4,10 +4,12 @@ import { describe, it } from "node:test";
 import {
   frameAroundPoints,
   grabDelta,
+  labelEligible,
   layoutGalaxy,
   meanDistance,
-  orbitCamera,
+  pickLabels,
   projectSpace,
+  restCamera,
   shiftFrame,
 } from "./graph-layout";
 
@@ -79,11 +81,57 @@ describe("depth", () => {
     assert.equal(Math.abs(turned.x - still.x) > 5, true);
   });
 
-  it("does not repeat one even spin", () => {
-    const samples = [0.2, 1.5, 2.8, 4.1].map((time) => orbitCamera(time, false).yaw);
-    const steps = [samples[1]! - samples[0]!, samples[2]! - samples[1]!, samples[3]! - samples[2]!];
-    const first = steps[0] ?? 0;
-    assert.equal(steps.some((step) => Math.abs(step - first) > 0.08), true);
+  it("rests the camera so time does not drift it", () => {
+    const first = restCamera();
+    const second = restCamera();
+    assert.deepEqual(first, second);
+    assert.equal(first.yaw, 0.72);
+    assert.equal(first.pitch, 0.52);
+  });
+});
+
+describe("graph labels", () => {
+  it("keeps a hub when it collides with a note", () => {
+    const placed = pickLabels([
+      { id: "note", x: 0, y: 0, w: 40, h: 16, depth: 0.8, priority: 10, protected: false },
+      { id: "hub", x: 4, y: 0, w: 40, h: 16, depth: 0.5, priority: 80, protected: true },
+    ]);
+    assert.deepEqual(
+      placed.map((label) => label.id),
+      ["hub"],
+    );
+    assert.equal(placed[0]?.opacity, 1);
+  });
+
+  it("keeps overlapping hubs", () => {
+    const placed = pickLabels([
+      { id: "hub-a", x: 0, y: 0, w: 30, h: 14, depth: 0.2, priority: 80, protected: true },
+      { id: "hub-b", x: 2, y: 1, w: 30, h: 14, depth: 0.2, priority: 80, protected: true },
+    ]);
+    assert.deepEqual(
+      placed.map((label) => label.id).sort(),
+      ["hub-a", "hub-b"],
+    );
+  });
+
+  it("drops a far quiet note and shows more titles when zoomed in", () => {
+    const placed = pickLabels([
+      { id: "far", x: 0, y: 0, w: 20, h: 12, depth: 0.1, priority: 10, protected: false },
+    ]);
+    assert.equal(placed.length, 0);
+    const quiet = {
+      selected: false,
+      hover: false,
+      hub: false,
+      onPath: false,
+      neighbor: false,
+      folder: false,
+      match: false,
+      depth: 0.7,
+    };
+    assert.equal(labelEligible(quiet, 1, false), false);
+    assert.equal(labelEligible(quiet, 1.4, false), true);
+    assert.equal(labelEligible({ ...quiet, hub: true, depth: 0.1 }, 1, false), true);
   });
 });
 

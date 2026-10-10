@@ -1,5 +1,5 @@
 .graph-stage.has-note {
-  grid-template-columns: minmax(11rem, 13.5rem) minmax(0, 1fr) minmax(16rem, 22rem);
+  grid-template-columns: minmax(11rem, 13.5rem) minmax(0, 1fr) minmax(14rem, 15rem);
 }
 
 .inspector-body {
