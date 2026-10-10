@@ -4,7 +4,7 @@ tags:
   - routines
   - schedule
   - sleep
-updated: 2026-09-23
+updated: 2026-10-06
 ---
 
 # Routines
@@ -16,25 +16,29 @@ School day + swim week + sleep windows. Binding constraint: **time + recovery** 
 - Wake ~**6:00am**
 - School: first bell **7:50**, out **2:50** ([[School]])
 - Garnet / Gray alternating; Wed+Thu Lunch and Learn; lunch ~10:30am
-- Prefer homework **before** late practice (~3:15–5:20 Mon/Wed/Thu) when I can
+- Prefer homework **before** late practice when I can (Mon/Wed still leave a gap after school; Tue/Thu practice starts 5:30)
 
-## Swim week (evening AG1B — current)
+## Swim week (evening AG1B — winter, from Oct 5 2026)
 
-Full grid in [[Swim]]. **Locked.** No doubles for now.
+Full grid in [[Swim]]. **Locked.** No doubles for now. Source: coach email 2026-10-05.
 
-- Mon 6–8pm — distance threshold
-- Tue 4–6pm — IM active rest
-- Wed 6–8pm — VO2 protect
-- Thu 6:15–8:15pm — sprint protect
+- Mon **6:30–8:30pm** — threshold G1–3 (80/85/90%), distance (100–300s)
+- Tue **5:30–7:00pm** — active rest; best-stroke focus; 100s (50 best fast + 50 free easy)
+- Wed **7:00–9:00pm** — VO2; fast sprints, off the block + rest
+- Thu **5:30–7:00pm** — threshold G3–5 (90/95/100%), sprint ~100s
 - Fri off (optional lift later — no invent sets; see [[Fun]], [[Health-energy]])
-- Sat 10am–12pm
-- Sun off swim — **church and baptism class 11am–2pm** ([[Goals]]); Y **no-touch** for lifts/extras 8am–4pm
+- Sat **10:00am–12:00pm** — active rest; more IM focus
+- Sun **12:00–1:30pm** swim (kick + sprints latter half) — also **church and baptism class 11am–2pm** ([[Goals]]); flag the overlap; Y **no-touch** for lifts/extras outside those windows unless Joseph says otherwise
 
-## Sleep / night cutoff
+### Near-term exceptions
+- Mon Oct 5, 5:45pm — team-room meeting ([[Swim]])
+- Oct 10–11 — no practice (SJAC Fall Classic)
 
-- Mon / Wed / Thu lights-out ~**10:15–10:30**
-- After **10:15pm**: homework / kitchen / phone **off**
-- Homework after 10:15 is junk — don't pretend otherwise ([[Goals]])
+## Sleep / night
+
+- **Minimum sleep: 7 hours** (floor, not optional)
+- Aim lights-out so you hit that floor; kitchen / phone wind-down near lights-out helps
+- There is **no** evening work cutoff — late homework is allowed, but protect the 7-hour floor
 
 ## Food (practical)
 
@@ -46,4 +50,4 @@ Full grid in [[Swim]]. **Locked.** No doubles for now.
 
 ## How Jarvis should use this
 
-Schedule suggestions must respect wake, school bells, swim windows, Sunday church/baptism class (11am–2pm), and the 10:15 cutoff. Don't propose all-nighters, Sunday Y lifts/extras, or extras that hit Wed VO2 / Thu sprint ([[Swim]], [[Health-energy]]). Cross-link planning with [[Goals]] and [[Jarvis-wants]].
+Schedule suggestions must respect wake, school bells, swim windows (winter AG1B grid), and Sunday church/baptism class (11am–2pm) plus Sunday swim (12–1:30pm). Protect the **7-hour sleep floor**. There is **no** evening work cutoff — late homework is allowed when it still leaves 7 hours. Don't propose Sunday Y lifts/extras that fight church or swim, or extras that trash Wed/Thu hard sessions ([[Swim]], [[Health-energy]]). Cross-link planning with [[Goals]] and [[Jarvis-wants]].

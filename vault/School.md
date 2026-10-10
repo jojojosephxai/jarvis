@@ -1,10 +1,10 @@
----
+﻿---
 title: School
 tags:
   - school
   - conestoga
   - schedule
-updated: 2026-09-23
+updated: 2026-10-06
 ---
 
 # School
@@ -19,7 +19,7 @@ Conestoga High School — Tredyffrin/Easttown SD, Wayne / Main Line, Chester Cou
 - Wed + Thu: **Lunch and Learn**
 - Lunch: ~**10:30am**
 - Prefer homework **before** late practice (~3:15–5:20 Mon/Wed/Thu) when possible ([[Routines]], [[Swim]])
-- Homework after **10:15pm** is junk — stop ([[Health-energy]], [[Goals]])
+- There is **no** evening work cutoff — late homework is allowed; still protect the **7-hour sleep floor** ([[Routines]], [[Health-energy]])
 
 ## Courses (current)
 
@@ -48,4 +48,4 @@ Teacher names for other classes: leave blank — do not invent ([[People]]).
 
 ## How Jarvis should use this
 
-Plan around bell times, Garnet/Gray, Lunch and Learn, and the 10:15pm cutoff. Quiz/help is fine; **never write work I turn in** ([[Jarvis-wants]]). Cross-link with [[Routines]], [[Swim]], [[Goals]], and [[Health-energy]].
+Plan around bell times, Garnet/Gray, Lunch and Learn, and the 7-hour sleep floor. Do **not** enforce a 10:15 / evening clock cutoff. Quiz/help is fine; **never write work I turn in** ([[Jarvis-wants]]). Cross-link with [[Routines]], [[Swim]], [[Goals]], and [[Health-energy]].

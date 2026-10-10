@@ -1,11 +1,11 @@
----
+﻿---
 title: Health-energy
 tags:
   - health
   - sleep
   - recovery
   - energy
-updated: 2026-09-23
+updated: 2026-10-06
 ---
 
 # Health and energy
@@ -14,8 +14,9 @@ Performance inputs — not a body-stat log. **Omit** height, weight, BMI, medica
 
 ## Sleep as performance
 
-- Protect sleep windows in [[Routines]] (Mon/Wed/Thu lights-out ~10:15–10:30)
-- After 10:15: homework / kitchen / phone off
+- Protect the **7-hour sleep floor** in [[Routines]]
+- Aim lights-out so that floor is real; kitchen / phone wind-down near lights-out helps
+- There is **no** fixed evening work cutoff — late homework is allowed when it still leaves 7 hours
 - All-nighters are an anti-goal ([[Goals]])
 
 ## Recovery
@@ -46,4 +47,4 @@ Performance inputs — not a body-stat log. **Omit** height, weight, BMI, medica
 
 ## How Jarvis should use this
 
-Ask before adding training load. Never invent calories, body stats, or prescribed lifts. Schedule and fitness advice must protect sleep, key swim sessions, and Sunday church 11am–2pm ([[Swim]], [[Routines]], [[Jarvis-wants]]).
+Ask before adding training load. Never invent calories, body stats, or prescribed lifts. Schedule and fitness advice must protect the 7-hour sleep floor, key swim sessions, and Sunday church 11am–2pm ([[Swim]], [[Routines]], [[Jarvis-wants]]). Never tell Joseph to stop work solely because of a clock time.

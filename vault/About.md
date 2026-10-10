@@ -1,10 +1,10 @@
----
+﻿---
 title: About
 tags:
   - identity
   - joseph
   - background
-updated: 2026-09-23
+updated: 2026-10-06
 ---
 
 # About me
@@ -37,11 +37,12 @@ I turn **15 on May 28, 2027**. At YMCA SC Nationals **Mar 30–Apr 3, 2027** (Gr
 - Strong student at Conestoga while competing for UMLY ([[Swim]])
 - Capable builder still learning — ship real software ([[Projects]], [[Tech-setup]])
 - Protect sleep and recovery as performance inputs ([[Health-energy]], [[Routines]])
+- **EOY 2026:** Jarvis as primary assistant surface ([[Goals]]); Grok Bot primary do-er until then ([[Tech-setup]])
 
 ## Standing constraints
 
 - Binding constraint: **time + recovery**
-- Homework after ~10:15pm is junk ([[Routines]])
+- **7-hour sleep floor**; **no** evening work cutoff ([[Routines]])
 - School + swim before coding when they collide ([[Decisions]])
 
 ## How Jarvis should use this

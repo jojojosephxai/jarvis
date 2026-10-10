@@ -4,7 +4,7 @@ tags:
   - swim
   - umly
   - competition
-updated: 2026-09-23
+updated: 2026-10-06
 ---
 
 # Swim
@@ -38,21 +38,25 @@ Swimcloud: https://www.swimcloud.com/swimmer/1745162/
 - Age band: at Mar 30–Apr 3 2027 Nationals I am still **14 / 15-under** (birthday May 28, 2012 — turn 15 May 28, 2027) ([[About]])
 - Details also in [[Goals]]
 
-## Evening practice grid (current — AG1B)
+## Practice grid (current — AG1B winter, starts Oct 5 2026)
 
-**Locked.** Evening AG1B grid is correct. **No doubles for now.**
+Source: coach email via Guiding Agent, 2026-10-05. Replaces the prior evening grid.
 
-| Day | Window | Focus |
+| Day | Window | Notes |
 |-----|--------|--------|
-| Mon | 6–8pm | distance threshold |
-| Tue | 4–6pm | IM active rest |
-| Wed | 6–8pm | VO2 protect |
-| Thu | 6:15–8:15pm | sprint protect |
+| Mon | **6:30–8:30pm** | Threshold G1–3 (80/85/90%); distance focus (100–300s) |
+| Tue | **5:30–7:00pm** | Active rest; best-stroke focus; lots of 100s (50 best fast + 50 free easy) |
+| Wed | **7:00–9:00pm** | VO2; fast sprints, off the block + rest |
+| Thu | **5:30–7:00pm** | Threshold G3–5 (90/95/100%); sprint work ~100s |
 | Fri | off | — |
-| Sat | 10am–12pm | — |
-| Sun | off | Church/baptism class 11am–2pm ([[Routines]], [[Goals]]); Y **no-touch** for lifts/extras 8am–4pm |
+| Sat | **10:00am–12:00pm** | Active rest; more IM focus |
+| Sun | **12:00–1:30pm** | Kick + sprints in the latter half. Overlaps church/baptism class Sundays 11am–2pm ([[Routines]]) — flag conflicts |
 
-Protect **Wed VO2** and **Thu sprint** from extras ([[Health-energy]], [[Routines]]). Don't rewrite coach sets. Don't cut swim for PE ([[School]], [[Decisions]]).
+### Near-term exceptions
+- **Mon Oct 5, 2026 — 5:45pm** team-room meeting (not the normal Mon practice window alone; confirm with Joseph/coach if practice still follows)
+- **Oct 10–11** — no practice (SJAC Fall Classic meet)
+
+Protect hard midweek sessions from extras ([[Health-energy]], [[Routines]]). Don't rewrite coach sets. Don't cut swim for PE ([[School]], [[Decisions]]).
 
 ## Meets
 
@@ -66,4 +70,4 @@ Protect **Wed VO2** and **Thu sprint** from extras ([[Health-energy]], [[Routine
 
 ## How Jarvis should use this
 
-Treat the evening AG1B grid as current (no morning doubles). Never invent PBs or coach sets. Do not schedule Tetrathlon or a Jan 15–17 meet. When scheduling coding or homework, protect Mon/Wed/Thu evenings, Wed VO2 / Thu sprint, and Sunday church 11am–2pm ([[Routines]], [[Goals]], [[Jarvis-wants]]). Ask before adding load ([[Health-energy]]).
+Treat the **winter AG1B grid** (from Oct 5 2026) as current. Never invent PBs or coach sets. Do not schedule Tetrathlon or a Jan 15–17 meet. When scheduling coding or homework, protect Mon–Thu evenings, Sat mornings, Sun 12–1:30pm swim, and Sunday church 11am–2pm ([[Routines]], [[Goals]], [[Jarvis-wants]]). Ask before adding load ([[Health-energy]]).
