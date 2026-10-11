@@ -2,7 +2,7 @@
 
 Docs only. Read this before any UI change. Target frame is **1920×1080 desktop**. Phone is out of scope.
 
-Sources: `face-redesign-spec.md` and `design/superdesign/` (`A-home-speaking.png`, `A-working.png`, `C-graph-function-ref.png`). Where a screenshot and the spec disagree, **the spec wins**. The conflicts are listed at the end so they are not “fixed” back toward the pictures.
+Sources: `face-redesign-spec.md` and `design/superdesign/` (`A-home-speaking.png`, `A-working.png`, `C-graph-function-ref.png`). This file wins over the spec and over the screenshots. The Joseph tweaks — status only under the orb, the ask box, round outlined tool buttons, thicker graph links, and the node-size hierarchy — override any stricter line in the spec or in an older draft of this file. The remaining screenshot conflicts are listed at the end so they are not pulled back toward the pictures.
 
 **Rule: space goes to whatever is in use.** The graph owns the frame while Joseph explores. The orb owns it while Jarvis listens or speaks. A task panel owns it while Jarvis works. Chrome stays thin and floats over the graph. It never becomes a second page beside the graph.
 
@@ -16,18 +16,20 @@ One navy field, one cyan accent. Rainbow is only the graph type legend.
 | Center lift | `#071426` | Faint radial toward the middle of the graph |
 | Accent | `#49D4FF` | Active cyan |
 | Dim | `#1C6F8C` | Resting cyan |
-| Line | `rgba(73, 212, 255, .35)` | 1px borders, ticks, idle links |
+| Line | `rgba(73, 212, 255, .35)` | 1px borders and ticks. Not graph links |
+| Graph link | `rgba(73, 212, 255, .85)` | Idle edges, 2px in screen space at the default Fit zoom |
 | Text | `#CFEFFF` | Primary type |
 | Muted | `#6FA9BF` | Counts, paths, secondary type |
 | Glass | `rgba(5, 14, 28, .55)` | Panel fill |
 
-Three glow levels, and no others:
+Four glow levels, and no others:
 
 | Level | Look | Use |
 |---|---|---|
 | Faint | Dim `#1C6F8C` | Resting orb shell, quiet grid |
-| Ring | Line at 35% | Borders, tick ring, idle links |
-| Peak | Accent `#49D4FF` at full | Voice peak, selection, live status |
+| Ring | Line at 35% | Borders, tick ring |
+| Link | Accent at 85%, 2px | Idle graph edges. They must read at the default zoom |
+| Peak | Accent `#49D4FF` at full | Voice peak, selection, the status dot, a traced path |
 
 Do not paint chrome, buttons, the header, or the orb status with the type rainbow.
 
@@ -45,7 +47,7 @@ Every dot is one real vault item. No filler dots and no decorative dots. Color m
 | Journal entry | `#FF6BB5` |
 | Decision | `#FF7A45` |
 
-Selection is a peak ring around the node, not an eighth color. Link lines stay on the line token. A traced path uses peak cyan.
+Selection is a peak ring around the node, not an eighth color. Idle graph links use the graph-link token: **2px** in screen space at the default Fit zoom, accent at 85%. That is brighter and thicker than a panel border, so every connection is obvious without zooming in. Do not drop them back to a 1px 35% hairline. A traced path uses peak cyan at the same thickness or thicker.
 
 Hubs are tags. A note may sit in several hubs. A note with no tag falls back to its folder, or to `Unsorted`. The graph dot for a hub still uses the tag/hub color above. **Top Hubs** adds a second, smaller job: a stable color for the row marker and the hub label only. That color is not a Filter entry and is not painted onto note dots.
 
@@ -77,9 +79,9 @@ Section labels are uppercase. Node titles and the caption are not. Tracking stay
 
 ## Lines and panels
 
-Borders are **1px** in the line color. Panels are see-through glass over the graph: glass fill, 1px border, **2px** radius, **8px** corner ticks. No solid cards, no drop shadows, no thick borders.
+Chrome borders are **1px** in the line color. Graph links are the exception: **2px** and brighter (see Color). Panels are see-through glass over the graph: glass fill, 1px border, **2px** radius, **8px** corner ticks. No solid cards, no drop shadows, no thick chrome borders.
 
-Banned: chunky filled buttons, pills, and shadows. Controls are words or line icons in a 1px box. The active one is marked with a 1px underline or a peak border, not a filled capsule. Slider tracks are 1px. The thumb is a **6px** square of accent cyan.
+Banned: chunky filled buttons, filled pills, and shadows. Chrome controls are words or line icons in a 1px box. The tool row is the exception: round outlined buttons, as in the mockup (see Layout). The active control is marked with a 1px underline or a peak border, not a filled capsule. Slider tracks are 1px. The thumb is a **6px** square of accent cyan.
 
 ## Layout
 
@@ -100,20 +102,20 @@ Superdesign **A**, on a full-screen graph. Widths below are for 1920×1080.
 - **Display**: Hubs, Labels, Edges
 - Footer: live `N NOTES` and `N LINKS`
 
-**Top center:** `FIT` and zoom in / zoom out, as 1px text controls, plus the status mark. The mark is the word `LISTENING`, `SPEAKING`, or `WORKING` in a 1px box. It is hidden while exploring. It is not a filled pill.
+**Top center:** `FIT` and zoom in / zoom out, as 1px text controls. Nothing else. No status pill, status box, or status word.
 
 **Filter**, 200px glass, top right. The type legend and live counts. Click a row to show or hide that type.
 
-**Orb dial**, right side. Resting size **160px**, inside a 1px tick ring (ticks every 5°, longer every 30°). Under it, **one status line**: what Jarvis is doing, or which skill it is using. No on/off toggles and no capability switches. The dial does not carry a settings panel.
+**Orb dial**, right side. Resting size **160px**, inside a 1px tick ring (ticks every 5°, longer every 30°). Under it, and only under it, **one status mark**: a small glowing accent dot plus one word. The word is `LISTENING`, `SPEAKING`, `WORKING`, or the skill name when a skill is in use (for example `CALENDAR-CHECK`). The dot is peak cyan, about 6px, with a soft glow. The word is 12–13px. The mark follows the orb when the orb grows to the center or docks bottom-right. It is hidden while exploring, unless a skill is already in use. There is no second copy anywhere else on the frame. No on/off toggles and no capability switches. The dial does not carry a settings panel.
 
 **Inspector**, 300px glass, right side, only after a note is clicked. Order: type (dot + label), title, path, excerpt (6 lines), connections (click to jump). Footer: `SHIFT-CLICK ANOTHER NOTE TO TRACE PATH`. Filter stays available.
 
 **Bottom center:** the live caption, then the ask bar, then the tool row.
 
-- Ask bar at rest: one 1px line, 360px wide, 24px above the bottom, caret blinking, `ASK JARVIS · HOLD SPACE TO TALK`
-- While typing: the line becomes a 560×36px glass field
-- Enter sends. There is no Send button and no Speak button. Voice runs on its own when it is on
-- Tool row: real actions only, drawn as 1px line icons. Not filled circles
+- Ask bar: always a visible glass box, at rest and while typing. About **560×36px**, 1px border, 24px above the bottom. It does not collapse to a 1px line. Inside, as in the Superdesign mockup: `ASK`, then the example prompts `"remind me…"`, `"good morning"`, and `"show swim times"`, with the arrow glyph at the right end of the box. The caret blinks in the box.
+- While typing: the same box holds what Joseph types. The examples step aside. The box stays a box.
+- Enter sends. The arrow is the mockup’s glyph inside the box. There is no separate Speak button. Voice runs on its own when it is on.
+- Tool row: the mockup’s **round outlined** buttons. Each is a 1px circle with a line icon inside, not a filled disc and not a square. Real actions only. The row in the mockup is mic, copy, eye, calendar, bulb, and gear.
 
 **Chat / Tasks / Log**, glass card, bottom right, three text tabs. The active tab is underlined. The card shows real replies, tasks, or log lines only.
 
@@ -121,8 +123,18 @@ Superdesign **A**, on a full-screen graph. Widths below are for 1920×1080.
 
 The frame is Layout A. The graph inside it behaves like Layout C.
 
-- Edges between real notes are visible. Same-hub links hug the cluster. Cross-hub links read as arcs across the middle
-- Hubs and key notes have readable titles (11px minimum). Selected, hovered, and hub labels win collisions and stay on screen. Other labels drop when they overlap. Labels on the far side of a turned cluster stay hidden
+- Edges between real notes are **thicker and brighter** than chrome: 2px in screen space at the default Fit zoom, accent at 85%. Same-hub links hug the cluster. Cross-hub links read as arcs across the middle. A connection that only appears after zooming in is wrong.
+- Node size is three steps, plus the source-note bump. Every step stays readable at normal zoom. Nothing is a speck.
+
+| Tier | What | Diameter |
+|---|---|---|
+| Top hub / category | School, Swim, and the other Top Hubs | 22px, the biggest |
+| Subcategory | A tag or folder under a top hub | 16px, one step smaller |
+| Source-of-truth note | The canonical note for that hub | 14px, a bit bigger than a normal note |
+| Note, file, link | Everything else | 12px, never under 10px |
+
+- A source-of-truth note is placed **right next to its hub**, not drifted out into the cluster. `School-schedule.md` sits beside School. `Swim.md` sits beside Swim. Its title stays on with the hub label.
+- Hubs, source-of-truth notes, and other key notes have readable titles (11px minimum). Selected, hovered, hub, and source-of-truth labels win collisions and stay on screen. Other labels drop when they overlap. Labels on the far side of a turned cluster stay hidden.
 - Click a note: it focuses and the Inspector opens
 - Click a hub, a Top Hubs row, or a search hit: that cluster takes the graph. Every note in it is labeled. The rest dims
 - Search, hubs, filters, and focus all work on the real vault
@@ -134,19 +146,19 @@ The frame is Layout A. The graph inside it behaves like Layout C.
 
 ### Explore
 
-The graph takes the space. The orb stays in the right dial at 160px. It does not spin or drift. Fit is available. The status mark is hidden. The orb line is quiet unless a skill is already in use.
+The graph takes the space. The orb stays in the right dial at 160px. It does not spin or drift. Fit is available. The status mark under the orb is hidden unless a skill is already in use. There is no top-center status.
 
 ### Listening
 
-Joseph is talking. The orb leaves the dial, grows into the center, and reacts to his voice (the tick ring brightens, the listen arc follows the mic). The graph steps back and dims, still visible behind the glass. The top status mark and the orb line both read `LISTENING`. The caption shows his words on one line.
+Joseph is talking. The orb leaves the dial, grows into the center, and reacts to his voice (the tick ring brightens, the listen arc follows the mic). The graph steps back and dims, still visible behind the glass. The only status is under the orb: a glowing dot plus `LISTENING`. The caption shows his words on one line.
 
 ### Speaking
 
-Jarvis is talking. The orb stays large and morphs with his voice (the shell moves and brightens with the audio). The caption shows his reply on one line, 18–20px. The status mark reads `SPEAKING`. When speech ends, the orb eases back to the right dial and the graph takes the space again.
+Jarvis is talking. The orb stays large and morphs with his voice (the shell moves and brightens with the audio). The caption shows his reply on one line, 18–20px. The status under the orb is a glowing dot plus `SPEAKING`. When speech ends, the orb eases back to the right dial and the graph takes the space again.
 
 ### Working
 
-A real task is running. The task panel **slides up** from the bottom into the center, like a terminal pull-up. It does not cut in. The panel takes the space. The graph stays behind it, dimmed. The orb docks **bottom-right** at 160px and stays still except for a voice pulse if he is also speaking. The status mark reads `WORKING`. The orb line names the skill in use (for example `CALENDAR-CHECK`).
+A real task is running. The task panel **slides up** from the bottom into the center, like a terminal pull-up. It does not cut in. The panel takes the space. The graph stays behind it, dimmed. The orb docks **bottom-right** at 160px and stays still except for a voice pulse if he is also speaking. The status under the orb is a glowing dot plus `WORKING`, or the skill name when a skill is in use (for example `CALENDAR-CHECK`). There is no top-center status.
 
 The panel shows only real work: current objective, steps with real timings, context that was actually loaded, model activity, and a progress figure only when a real fraction is known. No fake steps and no fake progress text. `STOP` is a 1px text control on the panel footer. Esc, Stop, or a click on the docked orb closes the panel, and the orb flies back to the right dial.
 
@@ -190,9 +202,12 @@ The orb never spins, tumbles, or drifts on its own. Removed for good: reactor tu
 
 - `A-home-speaking.png` leaves the dial small during listening. Listening and Speaking grow the orb, and the graph steps back.
 - The frames set `J.A.R.V.I.S.` in wide tracking. Type here is `JARVIS` at 12–13px with light tracking.
-- Layout A’s graph is mostly unlabeled dots, and its Filter mixes hubs with types (School, Swim, Files). The graph keeps Layout C: visible links, readable labels, real nodes only. Filter is the seven types with live counts.
+- Layout A’s graph is mostly unlabeled dots, and its Filter mixes hubs with types (School, Swim, Files). The graph keeps Layout C’s behaviour inside Layout A: real nodes only, readable labels, and links that are thicker and brighter than the hairlines in the frames. Filter is the seven types with live counts.
+- The frames draw most nodes as tiny specks of one size. Node diameter follows the hierarchy in Graph: top hubs biggest, subcategories one step smaller, notes, files, and links smallest but still readable. Source-of-truth notes (`School-schedule.md`, `Swim.md`) are a bit bigger than a normal note and sit beside their hub.
 - Counts baked into the frames (284 notes, School 42, and the rest) are mock.
-- Round filled tool buttons and the filled status capsule are out. Controls are 1px line icons and 1px text.
+- The frames put a `LISTENING` or `WORKING` pill at top center, next to Fit and zoom. That pill is out. Status is only the glowing dot plus the word under the orb.
+- Filled tool buttons and a filled status capsule are out. The tool row keeps the mockup’s round outlined buttons. Other controls stay 1px text or line icons.
+- The spec’s ask bar is a 1px line that grows into a field. That line is out. The ask bar is always the mockup’s visible box, with `"remind me…"` and the other example prompts.
 - Older phone notes in the spec (sheets, 96px dock, phone type size) are out of scope.
 
 ## Out of scope
