@@ -15,6 +15,29 @@ export type GraphStatus = "ready" | "not-wired" | "missing" | "empty";
 
 export type GraphNodeKind = "note" | "folder";
 
+export type GraphNodeType = "note" | "hub" | "person" | "link" | "file" | "journal" | "decision";
+
+export type GraphLegendEntry = {
+  type: GraphNodeType;
+  label: string;
+  color: string;
+  count: number;
+};
+
+export const GRAPH_NODE_TYPES: readonly { type: GraphNodeType; label: string; color: string }[] = [
+  { type: "note", label: "Markdown note", color: "#3DDC97" },
+  { type: "hub", label: "Tag / hub", color: "#C084FC" },
+  { type: "person", label: "Person", color: "#F5C451" },
+  { type: "link", label: "Link / URL", color: "#6AA6FF" },
+  { type: "file", label: "File / attachment", color: "#C6E05A" },
+  { type: "journal", label: "Journal entry", color: "#FF6BB5" },
+  { type: "decision", label: "Decision", color: "#FF7A45" },
+];
+
+const TOP_HUB_NAMES = new Set(["school", "swim", "jarvis", "people", "journal", "decisions", "unsorted"]);
+
+const NODE_DIAMETER = { hub: 22, sub: 16, ssot: 14, note: 12 } as const;
+
 export type GraphNode = {
   id: string;
   title: string;
@@ -23,6 +46,9 @@ export type GraphNode = {
   excerpt: string;
   text: string;
   kind: GraphNodeKind;
+  nodeType: GraphNodeType;
+  ssot: boolean;
+  hubs: string[];
 };
 
 export type GraphEdge = {
@@ -41,6 +67,7 @@ export type NoteGraphPayload = {
   connectionCount: number;
   hiddenCount: number;
   capped: boolean;
+  legend: GraphLegendEntry[];
 };
 
 export type NoteSourceFile = {
@@ -61,7 +88,89 @@ function blank(status: GraphStatus, detail: string): NoteGraphPayload {
     connectionCount: 0,
     hiddenCount: 0,
     capped: false,
+    legend: [],
   };
+}
+
+export function tagHubId(tag: string): string {
+  return `tag:${tag}`;
+}
+
+export function folderHubId(folder: string): string {
+  return folder ? `folder:${folder}` : "folder:";
+}
+
+export function nodeColor(type: GraphNodeType): string {
+  return GRAPH_NODE_TYPES.find((entry) => entry.type === type)?.color ?? "#3DDC97";
+}
+
+export function nodeTypeLabel(type: GraphNodeType): string {
+  return GRAPH_NODE_TYPES.find((entry) => entry.type === type)?.label ?? "Markdown note";
+}
+
+export function sizeTier(node: Pick<GraphNode, "kind" | "nodeType" | "ssot" | "title">): keyof typeof NODE_DIAMETER {
+  if (node.kind === "folder" || node.nodeType === "hub") {
+    return TOP_HUB_NAMES.has(node.title.trim().toLowerCase()) ? "hub" : "sub";
+  }
+  if (node.ssot) return "ssot";
+  return "note";
+}
+
+/** Screen diameter at the default Fit zoom. Never under 10px. */
+export function nodeDiameterPx(node: Pick<GraphNode, "kind" | "nodeType" | "ssot" | "title">): number {
+  return Math.max(10, NODE_DIAMETER[sizeTier(node)]);
+}
+
+export function legendFromNodes(nodes: Pick<GraphNode, "nodeType">[]): GraphLegendEntry[] {
+  const counts = new Map<GraphNodeType, number>();
+  for (const node of nodes) counts.set(node.nodeType, (counts.get(node.nodeType) ?? 0) + 1);
+  return GRAPH_NODE_TYPES.flatMap((entry) => {
+    const count = counts.get(entry.type) ?? 0;
+    if (count <= 0) return [];
+    return [{ type: entry.type, label: entry.label, color: entry.color, count }];
+  });
+}
+
+function frontmatterValue(front: string, key: string): string {
+  const match = front.match(new RegExp(`^\\s*${key}\\s*:\\s*(.+)\\s*$`, "im"));
+  if (!match?.[1]) return "";
+  return match[1].trim().replace(/^['"]|['"]$/g, "").toLowerCase();
+}
+
+function frontmatterFlag(front: string, key: string): boolean {
+  const value = frontmatterValue(front, key);
+  return value === "true" || value === "yes";
+}
+
+export function classifyNote(input: {
+  path: string;
+  folder: string;
+  tags: string[];
+  frontType: string;
+  kind: GraphNodeKind;
+}): GraphNodeType {
+  if (input.kind === "folder") return "hub";
+  const type = input.frontType;
+  const tags = new Set(input.tags.map((tag) => tag.toLowerCase()));
+  const folder = input.folder.toLowerCase();
+  const base = input.path.split("/").pop()?.toLowerCase() ?? "";
+  if (
+    type === "journal" ||
+    folder === "journal" ||
+    folder.startsWith("journal/") ||
+    tags.has("journal") ||
+    tags.has("diary")
+  ) {
+    return "journal";
+  }
+  if (type === "decision" || tags.has("decision") || tags.has("decisions") || base === "decisions.md") return "decision";
+  if (type === "person" || type === "people" || tags.has("person") || tags.has("people") || base === "people.md") {
+    return "person";
+  }
+  if (type === "file" || type === "attachment" || tags.has("file") || tags.has("attachment")) return "file";
+  if (type === "link" || type === "url" || tags.has("link") || tags.has("url")) return "link";
+  if (base.length > 0 && !base.endsWith(".md")) return "file";
+  return "note";
 }
 
 function norm(value: string): string {
@@ -75,10 +184,11 @@ function titleFrom(filePath: string, body: string): string {
 }
 
 function splitFrontmatter(text: string): { front: string; body: string } {
-  if (!text.startsWith("---")) return { front: "", body: text };
-  const end = text.indexOf("\n---", 3);
-  if (end === -1) return { front: "", body: text };
-  return { front: text.slice(3, end), body: text.slice(end + 4) };
+  const source = text.charCodeAt(0) === 0xfeff ? text.slice(1) : text;
+  if (!source.startsWith("---")) return { front: "", body: source };
+  const end = source.indexOf("\n---", 3);
+  if (end === -1) return { front: "", body: source };
+  return { front: source.slice(3, end), body: source.slice(end + 4) };
 }
 
 function cleanTag(value: string): string {
@@ -164,14 +274,25 @@ export function buildNoteGraph(files: NoteSourceFile[]): NoteGraphPayload {
     const posix = file.path.replace(/\\/g, "/");
     const { front, body } = splitFrontmatter(file.text);
     const folder = path.posix.dirname(posix);
+    const cleanFolder = folder === "." ? "" : folder;
+    const tags = unique([...tagsFromFrontmatter(front), ...tagsFromBody(body)]);
     return {
       id: posix,
       title: titleFrom(posix, body),
-      folder: folder === "." ? "" : folder,
-      tags: unique([...tagsFromFrontmatter(front), ...tagsFromBody(body)]),
+      folder: cleanFolder,
+      tags,
       excerpt: excerptFrom(body),
       text: noteText(body),
       kind: "note",
+      nodeType: classifyNote({
+        path: posix,
+        folder: cleanFolder,
+        tags,
+        frontType: frontmatterValue(front, "type"),
+        kind: "note",
+      }),
+      ssot: frontmatterFlag(front, "ssot"),
+      hubs: tags.map((tag) => tagHubId(tag)),
     };
   });
 
@@ -208,29 +329,11 @@ export function buildNoteGraph(files: NoteSourceFile[]): NoteGraphPayload {
     }
   }
 
-  const tagGroups = new Map<string, string[]>();
+  const tagHubs = new Map<string, GraphNode>();
   for (const note of nodes) {
     for (const tag of note.tags) {
-      const group = tagGroups.get(tag) ?? [];
-      group.push(note.id);
-      tagGroups.set(tag, group);
-    }
-  }
-  for (const group of tagGroups.values()) {
-    const ordered = [...group].sort();
-    if (ordered.length < 2) continue;
-    const hub = ordered[0];
-    if (!hub) continue;
-    if (ordered.length > 6) {
-      for (const id of ordered.slice(1)) addEdge(hub, id, "tag");
-    } else {
-      for (let i = 0; i < ordered.length; i += 1) {
-        for (let j = i + 1; j < ordered.length; j += 1) {
-          const left = ordered[i];
-          const right = ordered[j];
-          if (left && right) addEdge(left, right, "tag");
-        }
-      }
+      if (!tagHubs.has(tag)) tagHubs.set(tag, tagHub(tag));
+      addEdge(note.id, tagHubId(tag), "tag");
     }
   }
 
@@ -251,8 +354,14 @@ export function buildNoteGraph(files: NoteSourceFile[]): NoteGraphPayload {
   }
 
   const folderHubs = linkLooseFolderNotes(nodes, edges, addEdge);
+  for (const note of nodes) {
+    if (note.kind !== "note" || note.hubs.length > 0) continue;
+    const hub = folderHubs.get(note.folder);
+    if (hub) note.hubs = [hub.id];
+  }
   const noteCount = nodes.length;
   for (const hub of folderHubs.values()) nodes.push(hub);
+  for (const hub of tagHubs.values()) nodes.push(hub);
 
   const detail = capped
     ? "Some notes were left out so this stays light on an older computer."
@@ -267,6 +376,24 @@ export function buildNoteGraph(files: NoteSourceFile[]): NoteGraphPayload {
     connectionCount: edges.length,
     hiddenCount,
     capped,
+    legend: legendFromNodes(nodes),
+  };
+}
+
+function tagHub(tag: string): GraphNode {
+  const title = tag.slice(0, 1).toUpperCase() + tag.slice(1);
+  const excerpt = `Tag ${tag}. Notes with this tag cluster here. It is not a separate note.`;
+  return {
+    id: tagHubId(tag),
+    title,
+    folder: "",
+    tags: [tag],
+    excerpt,
+    text: excerpt,
+    kind: "folder",
+    nodeType: "hub",
+    ssot: false,
+    hubs: [],
   };
 }
 
@@ -322,13 +449,16 @@ function folderHub(folder: string): GraphNode {
     ? `Folder ${folder}. Notes inside it use this as their parent. It is not a note.`
     : "Top of the vault. Notes in this folder connect here. It is not a note.";
   return {
-    id: folder ? `folder:${folder}` : "folder:",
-    title: folder ? path.posix.basename(folder) : "Vault",
+    id: folderHubId(folder),
+    title: folder ? path.posix.basename(folder) : "Unsorted",
     folder: folder ? parent : "",
     tags: [],
     excerpt,
     text: excerpt,
     kind: "folder",
+    nodeType: "hub",
+    ssot: false,
+    hubs: [],
   };
 }
 
@@ -342,7 +472,9 @@ async function walkMarkdown(dir: string, rootReal: string, depth: number, acc: s
   }
   for (const entry of entries) {
     if (acc.length >= MAX_SCAN) return;
-    if (entry.name.startsWith(".") || entry.name === "node_modules") continue;
+    if (entry.name.startsWith(".") || entry.name === "node_modules" || entry.name.startsWith("_sync-backups")) {
+      continue;
+    }
     const full = path.join(dir, entry.name);
     let real: string;
     try {

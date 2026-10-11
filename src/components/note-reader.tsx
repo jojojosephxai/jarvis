@@ -1,6 +1,6 @@
 "use client";
 
-import type { GraphEdge, GraphNode } from "@/lib/note-graph";
+import { nodeColor, nodeTypeLabel, type GraphEdge, type GraphNode } from "@/lib/note-graph";
 
 export type NoteLink = {
   id: string;
@@ -35,10 +35,14 @@ export function NoteReader({
   onOpen: (id: string) => void;
 }) {
   const body = (node.text || node.excerpt).trim();
+  const color = nodeColor(node.nodeType);
   return (
     <aside className="graph-inspector" aria-label="Note">
       <div className="inspector-head">
-        <p className="inspector-kicker">{node.kind === "folder" ? "Folder" : "Note"}</p>
+        <p className="inspector-kicker inspector-type">
+          <span className="inspector-type-dot" style={{ background: color }} />
+          {nodeTypeLabel(node.nodeType)}
+        </p>
         <button type="button" className="inspector-back" onClick={onBack}>
           Back
         </button>

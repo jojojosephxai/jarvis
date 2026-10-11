@@ -115,7 +115,7 @@ Superdesign **A**, on a full-screen graph. Widths below are for 1920×1080.
 - Ask bar: always a visible glass box, at rest and while typing. About **560×36px**, 1px border, 24px above the bottom. It does not collapse to a 1px line. Inside, as in the Superdesign mockup: `ASK`, then the example prompts `"remind me…"`, `"good morning"`, and `"show swim times"`, with the arrow glyph at the right end of the box. The caret blinks in the box.
 - While typing: the same box holds what Joseph types. The examples step aside. The box stays a box.
 - Enter sends. The arrow is the mockup’s glyph inside the box. There is no separate Speak button. Voice runs on its own when it is on.
-- Tool row: the mockup’s **round outlined** buttons. Each is a 1px circle with a line icon inside, not a filled disc and not a square. Real actions only. The row in the mockup is mic, copy, eye, calendar, bulb, and gear.
+- Tool row: **round outlined** buttons, as in the mockup. Each is a 1px circle with a line icon inside, not a filled disc and not a square. Real actions only. The six tools are Hands, Calendar, School, Vault, Voice, and Settings. The mockup’s mic, copy, eye, calendar, bulb, and gear glyphs are placeholders, not the tools.
 
 **Chat / Tasks / Log**, glass card, bottom right, three text tabs. The active tab is underlined. The card shows real replies, tasks, or log lines only.
 
@@ -130,10 +130,10 @@ The frame is Layout A. The graph inside it behaves like Layout C.
 |---|---|---|
 | Top hub / category | School, Swim, and the other Top Hubs | 22px, the biggest |
 | Subcategory | A tag or folder under a top hub | 16px, one step smaller |
-| Source-of-truth note | The canonical note for that hub | 14px, a bit bigger than a normal note |
+| Source-of-truth note | A note whose frontmatter has `ssot: true` | 14px, a bit bigger than a normal note |
 | Note, file, link | Everything else | 12px, never under 10px |
 
-- A source-of-truth note is placed **right next to its hub**, not drifted out into the cluster. `School-schedule.md` sits beside School. `Swim.md` sits beside Swim. Its title stays on with the hub label.
+- A note is a source of truth when its frontmatter has `ssot: true`. That note is placed **right next to its hub**, not drifted out into the cluster. Its title stays on with the hub label. A filename does not make a note a source of truth.
 - Hubs, source-of-truth notes, and other key notes have readable titles (11px minimum). Selected, hovered, hub, and source-of-truth labels win collisions and stay on screen. Other labels drop when they overlap. Labels on the far side of a turned cluster stay hidden.
 - Click a note: it focuses and the Inspector opens
 - Click a hub, a Top Hubs row, or a search hit: that cluster takes the graph. Every note in it is labeled. The rest dims
@@ -203,10 +203,10 @@ The orb never spins, tumbles, or drifts on its own. Removed for good: reactor tu
 - `A-home-speaking.png` leaves the dial small during listening. Listening and Speaking grow the orb, and the graph steps back.
 - The frames set `J.A.R.V.I.S.` in wide tracking. Type here is `JARVIS` at 12–13px with light tracking.
 - Layout A’s graph is mostly unlabeled dots, and its Filter mixes hubs with types (School, Swim, Files). The graph keeps Layout C’s behaviour inside Layout A: real nodes only, readable labels, and links that are thicker and brighter than the hairlines in the frames. Filter is the seven types with live counts.
-- The frames draw most nodes as tiny specks of one size. Node diameter follows the hierarchy in Graph: top hubs biggest, subcategories one step smaller, notes, files, and links smallest but still readable. Source-of-truth notes (`School-schedule.md`, `Swim.md`) are a bit bigger than a normal note and sit beside their hub.
+- The frames draw most nodes as tiny specks of one size. Node diameter follows the hierarchy in Graph: top hubs biggest, subcategories one step smaller, notes, files, and links smallest but still readable. A source-of-truth note is one whose frontmatter has `ssot: true`. It is a bit bigger than a normal note and sits beside its hub.
 - Counts baked into the frames (284 notes, School 42, and the rest) are mock.
 - The frames put a `LISTENING` or `WORKING` pill at top center, next to Fit and zoom. That pill is out. Status is only the glowing dot plus the word under the orb.
-- Filled tool buttons and a filled status capsule are out. The tool row keeps the mockup’s round outlined buttons. Other controls stay 1px text or line icons.
+- Filled tool buttons and a filled status capsule are out. The tool row keeps round outlined buttons, and the buttons are Hands, Calendar, School, Vault, Voice, and Settings. The mockup’s mic, copy, eye, bulb, and gear glyphs are not tools. Other controls stay 1px text or line icons.
 - The spec’s ask bar is a 1px line that grows into a field. That line is out. The ask bar is always the mockup’s visible box, with `"remind me…"` and the other example prompts.
 - Older phone notes in the spec (sheets, 96px dock, phone type size) are out of scope.
 

@@ -9,6 +9,45 @@ import type { EarsKind, MouthKind, VoicePublicStatus } from "@/lib/voice/types";
 
 const CHECKING_LINE = "Checking the microphone and speaker.";
 
+function startMicLevel(onLevel: (level: number) => void): Promise<() => void> {
+  return (async () => {
+    if (typeof navigator === "undefined" || !navigator.mediaDevices?.getUserMedia) return () => {};
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: { echoCancellation: true, noiseSuppression: true },
+    });
+    const context = new AudioContext();
+    const source = context.createMediaStreamSource(stream);
+    const analyser = context.createAnalyser();
+    analyser.fftSize = 512;
+    analyser.smoothingTimeConstant = 0.7;
+    source.connect(analyser);
+    const samples = new Uint8Array(analyser.fftSize);
+    let frame = 0;
+    let stopped = false;
+    const tick = () => {
+      if (stopped) return;
+      analyser.getByteTimeDomainData(samples);
+      let sum = 0;
+      for (let index = 0; index < samples.length; index += 1) {
+        const sample = ((samples[index] ?? 128) - 128) / 128;
+        sum += sample * sample;
+      }
+      const rms = Math.sqrt(sum / samples.length);
+      onLevel(Math.max(0, Math.min(1, (rms - 0.015) / 0.16)));
+      frame = requestAnimationFrame(tick);
+    };
+    frame = requestAnimationFrame(tick);
+    return () => {
+      stopped = true;
+      cancelAnimationFrame(frame);
+      onLevel(0);
+      source.disconnect();
+      for (const track of stream.getTracks()) track.stop();
+      void context.close();
+    };
+  })();
+}
+
 function isVoiceStatus(value: unknown): value is VoicePublicStatus {
   if (!value || typeof value !== "object") return false;
   const record = value as Partial<VoicePublicStatus>;
@@ -50,6 +89,8 @@ export function useVoice(onSpeakingChange: (active: boolean) => void): {
   const onSpeakingChangeRef = useRef(onSpeakingChange);
   const levelRef = useRef(0);
   const listenStop = useRef<(() => void) | null>(null);
+  const meterStop = useRef<(() => void) | null>(null);
+  const meterGen = useRef(0);
   const [listening, setListening] = useState(false);
   const [snapshot, setSnapshot] = useState<VoiceSnapshot>({
     ears: "unsupported",
@@ -92,18 +133,47 @@ export function useVoice(onSpeakingChange: (active: boolean) => void): {
       cancelled = true;
       listenStop.current?.();
       listenStop.current = null;
+      meterGen.current += 1;
+      meterStop.current?.();
+      meterStop.current = null;
       stopSpeaking();
     };
+  }, []);
+
+  const disarmMeter = useCallback(() => {
+    meterGen.current += 1;
+    meterStop.current?.();
+    meterStop.current = null;
+    levelRef.current = 0;
+  }, []);
+
+  const armMeter = useCallback(() => {
+    const generation = meterGen.current + 1;
+    meterGen.current = generation;
+    void startMicLevel((level) => {
+      if (meterGen.current !== generation) return;
+      levelRef.current = level;
+    })
+      .then((stopMeter) => {
+        if (meterGen.current !== generation) {
+          stopMeter();
+          return;
+        }
+        meterStop.current = stopMeter;
+      })
+      .catch(() => {
+        // Speech recognition can still hear him. The shell stays quiet if the meter cannot open.
+      });
   }, []);
 
   const stop = useCallback(() => {
     listenStop.current?.();
     listenStop.current = null;
     setListening(false);
-    levelRef.current = 0;
+    disarmMeter();
     stopSpeaking();
     onSpeakingChangeRef.current(false);
-  }, []);
+  }, [disarmMeter]);
 
   const speak = useCallback(async (text: string): Promise<boolean> => {
     setNotice(null);
@@ -149,6 +219,7 @@ export function useVoice(onSpeakingChange: (active: boolean) => void): {
       listenStop.current();
       listenStop.current = null;
       setListening(false);
+      disarmMeter();
       return;
     }
 
@@ -160,6 +231,7 @@ export function useVoice(onSpeakingChange: (active: boolean) => void): {
       onEnd: () => {
         listenStop.current = null;
         setListening(false);
+        disarmMeter();
       },
     });
 
@@ -172,7 +244,8 @@ export function useVoice(onSpeakingChange: (active: boolean) => void): {
     listenStop.current = started.stop;
     setListening(true);
     setNotice(null);
-  }, []);
+    armMeter();
+  }, [armMeter, disarmMeter]);
 
   const pressMic = useCallback(
     (onText: (text: string, isFinal: boolean) => void) => {

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { orbModeIndex, resolveOrbMode } from "./orb-mode";
+import { orbModeIndex, orbStatusWord, resolveOrbMode } from "./orb-mode";
 
 describe("resolveOrbMode", () => {
   it("lets speaking win, then working, then listening, then ack", () => {
@@ -33,5 +33,17 @@ describe("resolveOrbMode", () => {
     assert.equal(orbModeIndex("speaking"), 2);
     assert.equal(orbModeIndex("ack"), 3);
     assert.equal(orbModeIndex("working"), 4);
+  });
+});
+
+describe("orbStatusWord", () => {
+  it("names the live state and hides the mark while exploring", () => {
+    assert.equal(orbStatusWord("listening", null), "LISTENING");
+    assert.equal(orbStatusWord("speaking", "CALENDAR-LIST"), "SPEAKING");
+    assert.equal(orbStatusWord("working", null), "WORKING");
+    assert.equal(orbStatusWord("working", "CALENDAR-LIST"), "CALENDAR-LIST");
+    assert.equal(orbStatusWord("standby", null), null);
+    assert.equal(orbStatusWord("ack", null), null);
+    assert.equal(orbStatusWord("standby", "CALENDAR-LIST"), "CALENDAR-LIST");
   });
 });

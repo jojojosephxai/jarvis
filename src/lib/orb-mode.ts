@@ -13,6 +13,16 @@ export function resolveOrbMode(input: {
   return "standby";
 }
 
+/** One word under the orb. Hidden while exploring unless a skill is already running. */
+export function orbStatusWord(mode: OrbMode, skill: string | null): string | null {
+  if (mode === "listening") return "LISTENING";
+  if (mode === "speaking") return "SPEAKING";
+  const name = skill?.trim();
+  if (name) return name;
+  if (mode === "working") return "WORKING";
+  return null;
+}
+
 export function orbModeIndex(mode: OrbMode): number {
   switch (mode) {
     case "standby":

@@ -2,9 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import { JarvisBadge } from "@/components/jarvis-badge";
 import { NoteReader, type NoteLink } from "@/components/note-reader";
-import type { OrbMode } from "@/components/reactor";
 import { Input } from "@/components/ui/input";
 import {
   cageRadius,
@@ -16,17 +14,24 @@ import {
   layoutOrigin,
   pickLabels,
   projectSpace,
-  projectUnit,
   restCamera,
-  starField,
   type Camera,
   type Frame,
   type LabelCandidate,
   type LayoutPoint,
 } from "@/lib/graph-layout";
 import { frameAtZoom, nextZoom, spinCamera, turnedCamera } from "@/lib/graph-turn";
-import { degreeOf, matchGraphNode, matchingNodes, shortestPath, topHubs } from "@/lib/graph-nav";
-import type { GraphEdge, GraphNode, GraphStatus, NoteGraphPayload } from "@/lib/note-graph";
+import { degreeOf, matchGraphNode, matchingNodes, shortestPath } from "@/lib/graph-nav";
+import {
+  nodeColor,
+  nodeDiameterPx,
+  type GraphEdge,
+  type GraphLegendEntry,
+  type GraphNode,
+  type GraphNodeType,
+  type GraphStatus,
+  type NoteGraphPayload,
+} from "@/lib/note-graph";
 
 const EMPTY: NoteGraphPayload = {
   status: "not-wired",
@@ -37,49 +42,23 @@ const EMPTY: NoteGraphPayload = {
   connectionCount: 0,
   hiddenCount: 0,
   capped: false,
+  legend: [],
 };
 
 const WIDTH = 1000;
 const HEIGHT = 640;
 const LAYOUT_REPEL = 260;
 const LAYOUT_LINK = 230;
-const STARS = starField();
-const NEON = [
-  "#5dff9a",
-  "#49d4ff",
-  "#ff8a3d",
-  "#c084fc",
-  "#f472b6",
-  "#22d3ee",
-  "#a3e635",
-  "#fb7185",
-  "#818cf8",
-  "#fbbf24",
-  "#2dd4bf",
-  "#e879f9",
-];
-const TAG_COLOR: Record<string, string> = {
-  classes: "#49d4ff",
-  person: "#c084fc",
-  people: "#c084fc",
-  rules: "#5eead4",
-  vault: "#5dff9a",
-  identity: "#22d3ee",
-  decisions: "#ff8a3d",
-  fun: "#f472b6",
-  goals: "#a3e635",
-  health: "#fb7185",
-  jarvis: "#49d4ff",
-  preferences: "#818cf8",
-  projects: "#e879f9",
-  routines: "#2dd4bf",
-  school: "#fbbf24",
-  swim: "#22d3ee",
-  tech: "#818cf8",
-  voice: "#c084fc",
-};
+const LINK_COLOR = "rgba(73, 212, 255, 0.85)";
+const LINK_HOT = "#49D4FF";
 
 type FrameMode = "fit" | "node" | "path" | "matches";
+type ZoomKind = "in" | "out" | "fit";
+
+type ZoomCommand = {
+  token: number;
+  kind: ZoomKind;
+};
 
 export type GraphCue = {
   token: number;
@@ -92,6 +71,18 @@ function isKind(value: unknown): value is GraphNode["kind"] {
   return value === "note" || value === "folder";
 }
 
+function isNodeType(value: unknown): value is GraphNodeType {
+  return (
+    value === "note" ||
+    value === "hub" ||
+    value === "person" ||
+    value === "link" ||
+    value === "file" ||
+    value === "journal" ||
+    value === "decision"
+  );
+}
+
 function isNode(value: unknown): value is GraphNode {
   if (!value || typeof value !== "object") return false;
   const node = value as Partial<GraphNode>;
@@ -102,8 +93,23 @@ function isNode(value: unknown): value is GraphNode {
     typeof node.excerpt === "string" &&
     (node.text === undefined || typeof node.text === "string") &&
     isKind(node.kind) &&
+    isNodeType(node.nodeType) &&
+    typeof node.ssot === "boolean" &&
+    Array.isArray(node.hubs) &&
+    node.hubs.every((hub) => typeof hub === "string") &&
     Array.isArray(node.tags) &&
     node.tags.every((tag) => typeof tag === "string")
+  );
+}
+
+function isLegend(value: unknown): value is GraphLegendEntry[] {
+  return (
+    Array.isArray(value) &&
+    value.every((entry) => {
+      if (!entry || typeof entry !== "object") return false;
+      const row = entry as Partial<GraphLegendEntry>;
+      return isNodeType(row.type) && typeof row.label === "string" && typeof row.color === "string" && typeof row.count === "number";
+    })
   );
 }
 
@@ -132,67 +138,12 @@ function isPayload(value: unknown): value is NoteGraphPayload {
     typeof payload.connectionCount === "number" &&
     typeof payload.hiddenCount === "number" &&
     typeof payload.capped === "boolean" &&
+    isLegend(payload.legend) &&
     Array.isArray(payload.nodes) &&
     payload.nodes.every(isNode) &&
     Array.isArray(payload.edges) &&
     payload.edges.every(isEdge)
   );
-}
-
-function dashFor(reason: GraphEdge["reason"]): string | undefined {
-  switch (reason) {
-    case "wikilink":
-      return undefined;
-    case "tag":
-      return "6 6";
-    case "folder":
-      return undefined;
-    default: {
-      const neverReason: never = reason;
-      return neverReason;
-    }
-  }
-}
-
-function clusterKey(node: GraphNode): string {
-  if (node.kind === "folder") return "folder";
-  return node.tags[0] ?? "note";
-}
-
-function colorFor(node: GraphNode): string {
-  if (node.kind === "folder") return "#f4fdff";
-  const tag = node.tags[0];
-  if (tag) {
-    const known = TAG_COLOR[tag];
-    if (known) return known;
-    let hash = 0;
-    for (let index = 0; index < tag.length; index += 1) {
-      hash = (hash * 33 + tag.charCodeAt(index)) >>> 0;
-    }
-    return NEON[hash % NEON.length] ?? "#7ee7ff";
-  }
-  let hash = 0;
-  for (let index = 0; index < node.id.length; index += 1) {
-    hash = (hash * 33 + node.id.charCodeAt(index)) >>> 0;
-  }
-  return NEON[hash % NEON.length] ?? "#8fd3ff";
-}
-
-function swatchFor(key: string): string {
-  if (key === "folder") return "#f4fdff";
-  if (key === "note") return "#8fd3ff";
-  return TAG_COLOR[key] ?? colorFor({ id: key, title: key, folder: "", tags: [key], excerpt: "", text: "", kind: "note" });
-}
-
-function clusterLabel(key: string): string {
-  switch (key) {
-    case "folder":
-      return "Folder";
-    case "note":
-      return "Note";
-    default:
-      return key.slice(0, 1).toUpperCase() + key.slice(1);
-  }
 }
 
 function displayTitle(node: GraphNode): string {
@@ -201,15 +152,7 @@ function displayTitle(node: GraphNode): string {
   return `${title.slice(0, 35)}...`;
 }
 
-export function NoteGraph({
-  cue = null,
-  brainTag = "ONLINE",
-  mode = "standby",
-}: {
-  cue?: GraphCue | null;
-  brainTag?: string;
-  mode?: OrbMode;
-}) {
+export function NoteGraph({ cue = null }: { cue?: GraphCue | null }) {
   const [payload, setPayload] = useState<NoteGraphPayload | null>(null);
   const [failed, setFailed] = useState(false);
 
@@ -250,27 +193,17 @@ export function NoteGraph({
     );
   }
 
-  return <GraphBody payload={payload} cue={cue} brainTag={brainTag} mode={mode} />;
+  return <GraphBody payload={payload} cue={cue} />;
 }
 
-function GraphBody({
-  payload,
-  cue,
-  brainTag,
-  mode,
-}: {
-  payload: NoteGraphPayload;
-  cue: GraphCue | null;
-  brainTag: string;
-  mode: OrbMode;
-}) {
+function GraphBody({ payload, cue }: { payload: NoteGraphPayload; cue: GraphCue | null }) {
   switch (payload.status) {
     case "not-wired":
     case "missing":
     case "empty":
-      return <GraphEmpty payload={payload} brainTag={brainTag} mode={mode} />;
+      return <GraphEmpty payload={payload} />;
     case "ready":
-      return <GraphReady payload={payload} cue={cue} brainTag={brainTag} mode={mode} />;
+      return <GraphReady payload={payload} cue={cue} />;
     default: {
       const neverStatus: never = payload.status;
       return neverStatus;
@@ -278,18 +211,9 @@ function GraphBody({
   }
 }
 
-function GraphEmpty({
-  payload,
-  brainTag,
-  mode,
-}: {
-  payload: NoteGraphPayload;
-  brainTag: string;
-  mode: OrbMode;
-}) {
+function GraphEmpty({ payload }: { payload: NoteGraphPayload }) {
   return (
     <div className="graph-stage graph-stage-empty">
-      <JarvisBadge mode={mode} brainTag={brainTag} />
       <p className="graph-stats">
         {payload.noteCount} notes · {payload.connectionCount} connections
       </p>
@@ -298,17 +222,7 @@ function GraphEmpty({
   );
 }
 
-function GraphReady({
-  payload,
-  cue,
-  brainTag,
-  mode,
-}: {
-  payload: NoteGraphPayload;
-  cue: GraphCue | null;
-  brainTag: string;
-  mode: OrbMode;
-}) {
+function GraphReady({ payload, cue }: { payload: NoteGraphPayload; cue: GraphCue | null }) {
   const [query, setQuery] = useState("");
   const [pathFromId, setPathFromId] = useState("");
   const [pathToId, setPathToId] = useState("");
@@ -316,6 +230,7 @@ function GraphReady({
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [seenCue, setSeenCue] = useState(0);
   const [homeToken, setHomeToken] = useState(0);
+  const [zoomCommand, setZoomCommand] = useState<ZoomCommand>({ token: 0, kind: "fit" });
   const frameToken = `${frameMode}|${selectedId ?? ""}|${pathFromId}|${pathToId}|${query}|${homeToken}`;
 
   if (cue && cue.token !== seenCue) {
@@ -363,19 +278,24 @@ function GraphReady({
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  const layoutEdges = useMemo(
-    () => payload.edges.filter((edge) => edge.reason === "folder"),
-    [payload.edges],
+  const layoutNodes = useMemo(
+    () =>
+      payload.nodes.map((node) => ({
+        id: node.id,
+        kind: node.kind,
+        anchorId: node.ssot ? node.hubs[0] : undefined,
+      })),
+    [payload.nodes],
   );
   const points = useMemo(
     () =>
-      layoutGalaxy(payload.nodes, layoutEdges, {
+      layoutGalaxy(layoutNodes, payload.edges, {
         repel: LAYOUT_REPEL,
         link: LAYOUT_LINK,
         width: WIDTH,
         height: HEIGHT,
       }),
-    [payload.nodes, layoutEdges],
+    [layoutNodes, payload.edges],
   );
   const matches = useMemo(() => matchingNodes(payload.nodes, query), [payload.nodes, query]);
   const matchIds = useMemo(() => new Set(matches.map((node) => node.id)), [matches]);
@@ -387,11 +307,6 @@ function GraphReady({
   const visibleIds = useMemo(() => new Set(payload.nodes.map((node) => node.id)), [payload.nodes]);
   const searching = query.trim().length > 0;
   const routeOn = Boolean(route && route.length > 1);
-  const clusters = [...new Set(payload.nodes.map(clusterKey))].sort((a, b) => a.localeCompare(b));
-  const hubIds = useMemo(
-    () => new Set(topHubs(payload.nodes, payload.edges, 8).map((entry) => entry.node.id)),
-    [payload.nodes, payload.edges],
-  );
   const selected = payload.nodes.find((node) => node.id === selectedId) ?? null;
   const noteLinks: NoteLink[] = selected
     ? payload.edges.flatMap((edge) => {
@@ -416,6 +331,14 @@ function GraphReady({
     }
     setSelectedId(id);
     setFrameMode("node");
+  }
+
+  function commandZoom(kind: ZoomKind) {
+    if (kind === "fit") {
+      setFrameMode("fit");
+      setHomeToken((token) => token + 1);
+    }
+    setZoomCommand((current) => ({ token: current.token + 1, kind }));
   }
 
   function onSearch(value: string) {
@@ -445,8 +368,18 @@ function GraphReady({
         matchCount={searching ? matches.length : null}
         onSearch={onSearch}
       />
+      <div className="graph-tools" role="group" aria-label="Zoom">
+        <button type="button" onClick={() => commandZoom("fit")}>
+          FIT
+        </button>
+        <button type="button" onClick={() => commandZoom("in")} aria-label="Zoom in">
+          +
+        </button>
+        <button type="button" onClick={() => commandZoom("out")} aria-label="Zoom out">
+          −
+        </button>
+      </div>
       <div className="graph-canvas">
-        <JarvisBadge mode={mode} brainTag={brainTag} />
         <GalaxyScene
           nodes={payload.nodes}
           edges={payload.edges}
@@ -460,18 +393,10 @@ function GraphReady({
           searching={searching}
           matchIds={matchIds}
           frameToken={frameToken}
-          hubIds={hubIds}
+          zoomCommand={zoomCommand}
           onSelect={openNote}
           onClear={clearFocus}
         />
-        <ul className="graph-legend" aria-label="Note colors">
-          {clusters.slice(0, 8).map((key) => (
-            <li key={key}>
-              <span className="graph-swatch" style={{ background: swatchFor(key) }} />
-              {clusterLabel(key)}
-            </li>
-          ))}
-        </ul>
         <p className="graph-pan-hint">Drag to turn · Scroll to zoom · Click a dot to read</p>
       </div>
       {selected ? <NoteReader node={selected} links={noteLinks} onBack={clearFocus} onOpen={openNote} /> : null}
@@ -509,36 +434,34 @@ function stableFrame(points: LayoutPoint[]): Frame {
   };
 }
 
-function wirePath(from: LayoutPoint, to: LayoutPoint, _reason: GraphEdge["reason"], camera: Camera): string {
+function wirePath(from: LayoutPoint, to: LayoutPoint, arc: boolean, camera: Camera): string {
   const origin = layoutOrigin(WIDTH, HEIGHT);
   const unit = cageRadius(WIDTH, HEIGHT);
   const start = projectSpace(from, camera, origin, unit);
   const end = projectSpace(to, camera, origin, unit);
-  return `M ${start.x.toFixed(1)} ${start.y.toFixed(1)} L ${end.x.toFixed(1)} ${end.y.toFixed(1)}`;
+  const line = `M ${start.x.toFixed(1)} ${start.y.toFixed(1)} L ${end.x.toFixed(1)} ${end.y.toFixed(1)}`;
+  if (!arc) return line;
+  const mid = {
+    x: (from.x + to.x) / 2 + (origin.x - (from.x + to.x) / 2) * 0.4,
+    y: (from.y + to.y) / 2 + (origin.y - (from.y + to.y) / 2) * 0.4,
+    z: ((from.z + to.z) / 2) * 0.6,
+  };
+  const control = projectSpace(mid, camera, origin, unit);
+  return `M ${start.x.toFixed(1)} ${start.y.toFixed(1)} Q ${control.x.toFixed(1)} ${control.y.toFixed(1)} ${end.x.toFixed(1)} ${end.y.toFixed(1)}`;
 }
 
-function SpaceBackdrop({ camera }: { camera: Camera }) {
-  const origin = layoutOrigin(WIDTH, HEIGHT);
-  return (
-    <g aria-hidden="true">
-      {STARS.map((star, index) => {
-        const projected = projectUnit(star, camera, WIDTH, HEIGHT);
-        return (
-          <circle
-            key={`star-${index}`}
-            cx={projected.x}
-            cy={projected.y}
-            r={0.7 + projected.depth * 1.1}
-            fill={`rgba(186, 236, 255, ${0.14 + projected.depth * 0.32})`}
-          />
-        );
-      })}
-      <line x1={origin.x - 14} y1={origin.y} x2={origin.x - 5} y2={origin.y} stroke="rgba(215, 246, 255, 0.22)" />
-      <line x1={origin.x + 5} y1={origin.y} x2={origin.x + 14} y2={origin.y} stroke="rgba(215, 246, 255, 0.22)" />
-      <line x1={origin.x} y1={origin.y - 14} x2={origin.x} y2={origin.y - 5} stroke="rgba(215, 246, 255, 0.22)" />
-      <line x1={origin.x} y1={origin.y + 5} x2={origin.x} y2={origin.y + 14} stroke="rgba(215, 246, 255, 0.22)" />
-    </g>
-  );
+function sameCluster(edge: GraphEdge, nodes: Map<string, GraphNode>): boolean {
+  if (edge.reason === "tag" || edge.reason === "folder") return true;
+  const from = nodes.get(edge.from);
+  const to = nodes.get(edge.to);
+  if (!from || !to) return false;
+  if (from.kind === "folder" || to.kind === "folder") return true;
+  return from.hubs.some((hub) => to.hubs.includes(hub));
+}
+
+function meetScale(svg: SVGSVGElement | null, frame: Frame): number {
+  if (!svg || svg.clientWidth <= 0 || svg.clientHeight <= 0) return 0.8;
+  return Math.min(svg.clientWidth / Math.max(frame.w, 1), svg.clientHeight / Math.max(frame.h, 1));
 }
 
 function GalaxyScene({
@@ -554,7 +477,7 @@ function GalaxyScene({
   searching,
   matchIds,
   frameToken,
-  hubIds,
+  zoomCommand,
   onSelect,
   onClear,
 }: {
@@ -570,7 +493,7 @@ function GalaxyScene({
   searching: boolean;
   matchIds: Set<string>;
   frameToken: string;
-  hubIds: Set<string>;
+  zoomCommand: ZoomCommand;
   onSelect: (id: string) => void;
   onClear: () => void;
 }) {
@@ -585,6 +508,18 @@ function GalaxyScene({
   if (zoomToken !== frameToken) {
     setZoomToken(frameToken);
     setZoom(1);
+  }
+  const zoomSeen = useRef(zoomCommand.token);
+  if (zoomCommand.token !== zoomSeen.current) {
+    zoomSeen.current = zoomCommand.token;
+    if (zoomCommand.kind === "fit") {
+      setZoom(1);
+      setSpin({ yaw: 0, pitch: 0 });
+    } else if (zoomCommand.kind === "in") {
+      setZoom((current) => nextZoom(current, -120));
+    } else {
+      setZoom((current) => nextZoom(current, 120));
+    }
   }
   const camera = turnedCamera(restCamera(), spin);
   const [pxPerUnit, setPxPerUnit] = useState(0.8);
@@ -603,14 +538,14 @@ function GalaxyScene({
     const svg = svgRef.current;
     if (!svg) return;
     const measure = () => {
-      const width = svg.clientWidth;
-      if (width > 0) setPxPerUnit(width / Math.max(frameWidthRef.current, 1));
+      const next = meetScale(svg, stableFrame(points));
+      if (next > 0) setPxPerUnit(next);
     };
     measure();
     const observer = new ResizeObserver(measure);
     observer.observe(svg);
     return () => observer.disconnect();
-  }, []);
+  }, [points]);
   const origin = layoutOrigin(WIDTH, HEIGHT);
   const unit = cageRadius(WIDTH, HEIGHT);
   const pointById = new Map(points.map((point) => [point.id, point]));
@@ -663,10 +598,12 @@ function GalaxyScene({
 
   const shifted = frameAtZoom(frame, zoom);
   frameWidthRef.current = shifted.w;
-  const showAllLabels = nodes.length <= 24;
-  const liveWidth = svgRef.current?.clientWidth ?? 0;
-  const labelScale = liveWidth > 0 ? liveWidth / Math.max(shifted.w, 1) : pxPerUnit;
-  const fontUser = 12 / Math.max(labelScale, 0.12);
+  const showAllLabels = false;
+  const fitScale = Math.max(pxPerUnit, 0.05);
+  const currentScale = Math.max(meetScale(svgRef.current, shifted) || fitScale * zoom, 0.05);
+  const fontUser = 12 / currentScale;
+  const linkWidth = 2 / fitScale;
+  const nodeById = new Map(nodes.map((node) => [node.id, node]));
   const labelBoxes: LabelCandidate[] = [];
   for (const node of nodes) {
     const point = projected.get(node.id);
@@ -680,10 +617,11 @@ function GalaxyScene({
     const flags = {
       selected: node.id === selectedId,
       hover: node.id === hoverId,
-      hub: hubIds.has(node.id),
+      hub: node.kind === "folder" || node.nodeType === "hub",
+      ssot: node.ssot,
       onPath: routeIds?.has(node.id) ?? false,
       neighbor,
-      folder: node.kind === "folder",
+      folder: false,
       match: matchIds.has(node.id),
       depth: point.depth,
     };
@@ -707,14 +645,6 @@ function GalaxyScene({
   const hoverPoint = hover ? projected.get(hover.id) : undefined;
   const drawnEdges = edges
     .filter((edge) => visibleIds.has(edge.from) && visibleIds.has(edge.to))
-    .filter((edge) => {
-      if (edge.reason === "folder") return true;
-      return (
-        (routeOn && onRoute(edge, route)) ||
-        (selectedId !== null && (edge.from === selectedId || edge.to === selectedId)) ||
-        (searching && (matchIds.has(edge.from) || matchIds.has(edge.to)))
-      );
-    })
     .map((edge) => {
       const from = projected.get(edge.from);
       const to = projected.get(edge.to);
@@ -790,33 +720,22 @@ function GalaxyScene({
           onClear();
         }}
       />
-      <SpaceBackdrop camera={camera} />
-      {drawnEdges.map(({ edge, depth }) => {
+      {drawnEdges.map(({ edge }) => {
         const from = pointById.get(edge.from);
         const to = pointById.get(edge.to);
         if (!from || !to) return null;
-        const hot =
-          routeOn ? onRoute(edge, route) : selectedId !== null && (edge.from === selectedId || edge.to === selectedId);
+        const hot = routeOn
+          ? onRoute(edge, route)
+          : selectedId !== null && (edge.from === selectedId || edge.to === selectedId);
         const dim = (searching && !matchIds.has(edge.from) && !matchIds.has(edge.to)) || (routeOn && !hot);
-        const linked = edge.reason === "wikilink";
-        const folder = edge.reason === "folder";
-        const width = (folder ? 1.4 : linked ? 1.05 : 0.7) * (0.75 + depth * 0.45);
-        const tone = hot
-          ? "#f4fdff"
-          : folder
-            ? "rgba(126, 231, 255, 0.55)"
-            : linked
-              ? "rgba(186, 236, 255, 0.7)"
-              : "rgba(100, 190, 230, 0.35)";
         return (
           <path
             key={edge.id}
-            d={wirePath(from, to, edge.reason, camera)}
+            d={wirePath(from, to, !sameCluster(edge, nodeById), camera)}
             fill="none"
-            stroke={tone}
-            strokeWidth={hot ? width + 0.9 : width}
-            strokeDasharray={dashFor(edge.reason)}
-            opacity={dim ? 0.06 : hot ? 0.98 : folder ? 0.7 + depth * 0.25 : 0.45 + depth * 0.35}
+            stroke={hot ? LINK_HOT : LINK_COLOR}
+            strokeWidth={hot ? linkWidth * 1.4 : linkWidth}
+            opacity={dim ? 0.14 : 1}
           />
         );
       })}
@@ -824,25 +743,28 @@ function GalaxyScene({
         const point = projected.get(node.id);
         if (!point) return null;
         const active = node.id === selectedId;
-        const color = colorFor(node);
+        const color = nodeColor(node.nodeType);
         const degree = degreeOf(node.id, edges);
         const onPath = routeIds?.has(node.id) ?? false;
         const label = placedLabels.get(node.id);
         const plate = labelWidth.get(node.id) ?? fontUser * 4;
-        const radius = ((node.kind === "folder" ? 11 : 7.2) + Math.min(degree, 8) * 0.55) * (0.62 + point.depth * 0.85);
+        const onScreen = (nodeDiameterPx(node) / fitScale) * currentScale;
+        const radius = (onScreen < 10 ? 10 : nodeDiameterPx(node)) / 2 / (onScreen < 10 ? currentScale : fitScale);
         const dim = (searching && !matchIds.has(node.id)) || (routeOn && !onPath && !active);
+        const labelY = label?.y ?? point.y;
         const labelLeft = point.x > shifted.x + shifted.w * 0.68;
-        const plateX = labelLeft ? point.x - radius - 10 - plate : point.x + radius + 8;
-        const plateY = point.y - fontUser * 0.95;
+        const plateX = labelLeft ? point.x - radius - 8 - plate : point.x + radius + 8;
+        const plateY = labelY - fontUser * 0.72;
+        const ring = 3 / currentScale;
         return (
           <g
             key={node.id}
             className="graph-node"
-            opacity={label && label.opacity === 1 ? 1 : dim ? 0.14 : 0.55 + point.depth * 0.45}
+            opacity={dim ? 0.16 : 1}
             tabIndex={0}
             role="button"
             aria-pressed={active}
-            aria-label={`${node.kind === "folder" ? `${node.title} folder` : node.title}, ${degree} connections`}
+            aria-label={`${node.title}, ${degree} connections`}
             onPointerEnter={() => setHoverId(node.id)}
             onPointerLeave={() => setHoverId((current) => (current === node.id ? null : current))}
             onClick={() => onSelect(node.id)}
@@ -853,21 +775,18 @@ function GalaxyScene({
               }
             }}
           >
-            <circle cx={point.x} cy={point.y} r={radius + 16} fill="transparent" />
-            <circle cx={point.x} cy={point.y} r={radius + 11} fill={color} opacity={active || onPath ? 0.42 : 0.28} />
-            <circle cx={point.x} cy={point.y} r={radius + 5.5} fill={color} opacity={0.22} />
-            <circle
-              cx={point.x}
-              cy={point.y}
-              r={radius}
-              fill={node.kind === "folder" ? "rgba(12, 36, 48, 0.72)" : color}
-              fillOpacity={node.kind === "folder" ? 1 : active ? 0.95 : 0.72}
-              stroke={active ? "#f4fdff" : color}
-              strokeWidth={active ? 3 : 2.3}
-            />
-            <circle cx={point.x} cy={point.y} r={Math.max(2.2, radius * 0.28)} fill="#f4fdff" opacity={0.85} />
-            {node.kind === "folder" ? (
-              <circle cx={point.x} cy={point.y} r={radius + 4} fill="none" stroke={color} strokeWidth="1.2" />
+            <circle cx={point.x} cy={point.y} r={radius + 14} fill="transparent" />
+            <circle cx={point.x} cy={point.y} r={radius * 2.2} fill={color} opacity={0.18} />
+            <circle cx={point.x} cy={point.y} r={radius} fill={color} />
+            {active || onPath ? (
+              <circle
+                cx={point.x}
+                cy={point.y}
+                r={radius + ring}
+                fill="none"
+                stroke={LINK_HOT}
+                strokeWidth={Math.max(ring * 0.7, 1 / currentScale)}
+              />
             ) : null}
             {label ? (
               <g className="graph-label" opacity={label.opacity}>
@@ -882,7 +801,7 @@ function GalaxyScene({
                 <text
                   className="graph-label-text"
                   x={plateX + fontUser * 0.4}
-                  y={point.y + fontUser * 0.22}
+                  y={labelY + fontUser * 0.32}
                   fontSize={fontUser}
                 >
                   {displayTitle(node)}

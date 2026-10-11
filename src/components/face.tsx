@@ -7,8 +7,7 @@ import { NoteGraph, type GraphCue } from "@/components/note-graph";
 import { PlanCard } from "@/components/plan-card";
 import { ReceiptCard } from "@/components/receipt-card";
 import { OrbStage } from "@/components/orb-stage";
-import { type OrbMode } from "@/components/reactor";
-import { resolveOrbMode } from "@/lib/orb-mode";
+import { resolveOrbMode, type OrbMode } from "@/lib/orb-mode";
 import { useVoice } from "@/components/use-voice";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -66,6 +65,7 @@ export function Face() {
   const [speaking, setSpeaking] = useState(false);
   const [ackOn, setAckOn] = useState(false);
   const [working, setWorking] = useState(false);
+  const [skill, setSkill] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<FaceView>("graph");
   const [cue, setCue] = useState<GraphCue | null>(null);
   const cueToken = useRef(0);
@@ -167,18 +167,21 @@ export function Face() {
     }, 900);
   }
 
-  function startHands() {
+  function startHands(tool?: string) {
     pendingRef.current = true;
     setPending(true);
     clearAckTimer();
     setAckOn(false);
     setWorking(true);
+    const name = tool?.trim().replace(/\./g, "-").toUpperCase();
+    setSkill(name || null);
   }
 
   function finishJob() {
     pendingRef.current = false;
     setPending(false);
     setWorking(false);
+    setSkill(null);
   }
 
   async function send(text: string) {
@@ -335,7 +338,7 @@ export function Face() {
 
   async function decide(itemId: string, plan: HandPlan, decision: "yes" | "no") {
     if (plan.state !== "waiting" || plan.gate !== "confirm" || pendingRef.current) return;
-    startHands();
+    startHands(plan.tool);
     try {
       const response = await fetch("/api/hands", {
         method: "POST",
@@ -382,8 +385,8 @@ export function Face() {
           </div>
         </dl>
       </header>
-      <div className="hud-stage">
-        <OpticStage view={viewMode} orb={orb} cue={cue} brainTag={brainLabel} levelRef={voice.levelRef} />
+      <div className="hud-stage" data-orb={orbPlace(viewMode, orb)}>
+        <OpticStage view={viewMode} orb={orb} cue={cue} levelRef={voice.levelRef} skill={skill} />
         <div className="mode-rail" role="group" aria-label="View">
           {FACE_VIEWS.map((view) => (
             <button
@@ -561,29 +564,30 @@ function voiceLamp(mouth: MouthKind | "unknown"): string {
   }
 }
 
+function orbPlace(view: FaceView, mode: OrbMode): "center" | "dock" {
+  if (mode === "listening" || mode === "speaking" || view === "orb") return "center";
+  return "dock";
+}
+
 function OpticStage({
   view,
   orb,
   cue,
-  brainTag,
   levelRef,
+  skill,
 }: {
   view: FaceView;
   orb: OrbMode;
   cue: GraphCue | null;
-  brainTag: string;
   levelRef: RefObject<number>;
+  skill: string | null;
 }) {
-  switch (view) {
-    case "orb":
-      return <OrbStage mode={orb} brainTag={brainTag} levelRef={levelRef} />;
-    case "graph":
-      return <NoteGraph cue={cue} brainTag={brainTag} mode={orb} />;
-    default: {
-      const neverView: never = view;
-      return neverView;
-    }
-  }
+  return (
+    <>
+      <NoteGraph cue={cue} />
+      <OrbStage mode={orb} levelRef={levelRef} skill={skill} place={orbPlace(view, orb)} />
+    </>
+  );
 }
 
 function LogItemView({

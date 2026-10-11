@@ -14,15 +14,12 @@ export function JarvisBadge({
     <div
       className={size === "hero" ? "jarvis-badge jarvis-badge-hero" : "jarvis-badge"}
       data-mode={mode}
-      aria-label="Jarvis online"
+      aria-label="Jarvis"
     >
       <div className="jarvis-badge-core">
         <Reactor mode={mode} />
         <p className="jarvis-badge-title">J.A.R.V.I.S.</p>
       </div>
-      <p className="jarvis-badge-online">
-        <span className="jarvis-badge-dot" /> Online
-      </p>
       <p className="jarvis-badge-model">{brainTag}</p>
     </div>
   );

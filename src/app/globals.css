@@ -7,8 +7,8 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
-  --font-mono: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  --font-sans: var(--font-jetbrains), ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  --font-mono: var(--font-jetbrains), ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
   --font-heading: var(--font-sans);
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
@@ -49,7 +49,7 @@
 }
 
 :root {
-  --background: #030508;
+  --background: #03070F;
   --foreground: #e5f3fb;
   --card: #071018;
   --card-foreground: #e5f3fb;
@@ -84,7 +84,7 @@
 }
 
 .dark {
-  --background: #030508;
+  --background: #03070F;
   --foreground: #e5f3fb;
   --card: #071018;
   --card-foreground: #e5f3fb;
@@ -119,15 +119,15 @@
   html {
     @apply font-sans;
     color-scheme: dark;
-    background: #030508;
+    background: #03070f;
   }
   body {
     @apply bg-background text-foreground;
     min-height: 100vh;
     min-height: 100dvh;
     overflow: hidden;
-    background-color: #010204;
-    background-image: radial-gradient(ellipse 70% 42% at 50% 18%, rgba(12, 52, 78, 0.28), transparent 64%);
+    background-color: #03070f;
+    background-image: radial-gradient(ellipse 62% 54% at 50% 48%, rgba(7, 20, 38, 0.95), transparent 70%);
   }
   ::selection {
     background: rgba(73, 212, 255, 0.28);
@@ -251,10 +251,13 @@ html[data-boot="done"] .boot-screen {
 }
 
 .stage-orb {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
+  z-index: 5;
+  pointer-events: none;
+}
+
+.hud-stage[data-orb="center"] .graph-canvas {
+  opacity: 0.38;
+  transition-duration: 600ms;
 }
 
 .orb-rig {
@@ -297,13 +300,124 @@ html[data-boot="done"] .boot-screen {
   align-items: center;
 }
 
+.orb-dial {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  transition:
+    top 700ms cubic-bezier(0.22, 1, 0.36, 1),
+    left 700ms cubic-bezier(0.22, 1, 0.36, 1),
+    width 700ms cubic-bezier(0.22, 1, 0.36, 1),
+    transform 700ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.orb-dial[data-place="dock"] {
+  top: 50%;
+  left: calc(100% - 188px);
+  width: 160px;
+  transform: translateY(-50%);
+}
+
+.orb-dial[data-place="center"] {
+  top: 46%;
+  left: 50%;
+  width: min(72vmin, 680px);
+  transform: translate(-50%, -50%);
+  transition-duration: 600ms;
+}
+
+.orb-dial-ring {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1;
+}
+
 .orb-canvas {
   position: absolute;
   inset: 0;
+  z-index: 0;
   display: block;
   width: 100%;
   height: 100%;
   pointer-events: none;
+}
+
+.orb-ticks {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.orb-ticks line {
+  stroke: #1c6f8c;
+  stroke-width: 1px;
+  vector-effect: non-scaling-stroke;
+}
+
+.orb-ticks[data-listening="true"] line {
+  stroke: #49d4ff;
+}
+
+.orb-listen-arc {
+  fill: none;
+  stroke: #49d4ff;
+  stroke-width: 1.5px;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+  stroke-dasharray: 298;
+  stroke-dashoffset: calc(298 * (1 - var(--level, 0)));
+  opacity: 0;
+  transform-box: fill-box;
+  transform-origin: center;
+  transform: rotate(-90deg);
+  transition: opacity 150ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.orb-ticks[data-listening="true"] .orb-listen-arc {
+  opacity: 1;
+}
+
+.orb-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 10px 0 0;
+  color: #49d4ff;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  letter-spacing: 0.08em;
+  line-height: 1;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.orb-status-dot {
+  width: 6px;
+  height: 6px;
+  flex: none;
+  border-radius: 50%;
+  background: #49d4ff;
+  box-shadow: 0 0 6px #49d4ff;
+}
+
+.orb-gl-error {
+  position: absolute;
+  inset: 18%;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  margin: 0;
+  color: #ff7a45;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  line-height: 1.35;
+  text-align: center;
 }
 
 .orb-heart-still {
@@ -416,20 +530,56 @@ html[data-boot="done"] .boot-screen {
 }
 
 .graph-stage {
-  display: grid;
+  display: block;
   width: 100%;
   height: 100%;
-  grid-template-columns: minmax(11rem, 13.5rem) minmax(0, 1fr);
-  grid-template-rows: minmax(0, 1fr);
 }
 
 .galaxy-bay {
+  position: absolute;
+  z-index: 3;
+  top: 12px;
+  left: max(12px, env(safe-area-inset-left));
+  width: min(280px, 36vw);
   min-height: 0;
-  overflow: auto;
-  border-right: 1px solid rgba(73, 212, 255, 0.14);
-  background: rgba(2, 6, 10, 0.78);
+  overflow: visible;
+  border: 1px solid rgba(73, 212, 255, 0.35);
+  border-radius: 2px;
+  background: rgba(5, 14, 28, 0.55);
   backdrop-filter: blur(10px);
-  padding: 0.7rem 0.7rem 0.9rem;
+  padding: 8px 10px 10px;
+}
+
+.graph-tools {
+  position: absolute;
+  z-index: 4;
+  top: 10px;
+  left: 50%;
+  display: flex;
+  gap: 14px;
+  margin: 0;
+  transform: translateX(-50%);
+}
+
+.graph-tools button {
+  margin: 0;
+  padding: 0 0 2px;
+  border: 0;
+  border-bottom: 1px solid transparent;
+  background: transparent;
+  color: #6fa9bf;
+  cursor: pointer;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  line-height: 1.2;
+}
+
+.graph-tools button:hover,
+.graph-tools button:focus-visible {
+  color: #49d4ff;
+  border-bottom-color: #49d4ff;
+  outline: none;
 }
 
 .graph-stage-empty {
@@ -442,11 +592,14 @@ html[data-boot="done"] .boot-screen {
 }
 
 .graph-canvas {
-  position: relative;
+  position: absolute;
+  inset: 0;
   min-width: 0;
   min-height: 0;
   touch-action: none;
-  background: radial-gradient(ellipse 62% 54% at 50% 48%, rgba(8, 40, 62, 0.22), transparent 70%);
+  opacity: 1;
+  background: radial-gradient(ellipse 62% 54% at 50% 48%, rgba(7, 20, 38, 0.9), transparent 70%);
+  transition: opacity 700ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .graph-svg text {
@@ -495,7 +648,7 @@ html[data-boot="done"] .boot-screen {
 .graph-pan-hint {
   position: absolute;
   z-index: 1;
-  right: 0.9rem;
+  right: 210px;
   bottom: 0.7rem;
   margin: 0;
   color: rgba(215, 246, 255, 0.72);
@@ -561,14 +714,21 @@ html[data-boot="done"] .boot-screen {
 }
 
 .graph-inspector {
+  position: absolute;
+  z-index: 3;
+  top: 52px;
+  right: 200px;
+  width: 300px;
+  max-height: calc(100% - 7.5rem);
   min-height: 0;
   overflow: auto;
-  border-left: 1px solid rgba(73, 212, 255, 0.18);
-  background: rgba(2, 6, 10, 0.78);
+  border: 1px solid rgba(73, 212, 255, 0.35);
+  border-radius: 2px;
+  background: rgba(5, 14, 28, 0.55);
   backdrop-filter: blur(10px);
   padding: 0.75rem 0.8rem 0.95rem;
   text-align: left;
-  color: #e7f8ff;
+  color: #cfefff;
 }
 
 .galaxy-head {
@@ -720,12 +880,22 @@ html[data-boot="done"] .boot-screen {
 }
 
 .inspector-kicker {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
   margin: 0;
-  color: #7ee7ff;
+  color: #6fa9bf;
   font-family: var(--font-mono);
-  font-size: 0.68rem;
-  letter-spacing: 0.22em;
+  font-size: 12px;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
+}
+
+.inspector-type-dot {
+  width: 8px;
+  height: 8px;
+  flex: none;
+  border-radius: 50%;
 }
 
 .inspector-badge {
@@ -829,9 +999,10 @@ html[data-boot="done"] .boot-screen {
   display: -webkit-box;
   overflow: hidden;
   -webkit-box-orient: vertical;
-  -webkit-line-clamp: 5;
-  line-clamp: 5;
-  color: #d7f6ff;
+  -webkit-line-clamp: 6;
+  line-clamp: 6;
+  white-space: normal;
+  color: #cfefff;
 }
 
 .inspector-links {
@@ -1772,15 +1943,17 @@ html[data-boot="done"] .boot-screen {
   }
 
   .graph-stage {
-    grid-template-columns: 1fr;
-    grid-template-rows: auto minmax(12rem, 1fr);
+    display: block;
     overflow: hidden;
   }
 
-  .galaxy-bay {
-    max-height: 7.5rem;
-    border-right: none;
-    border-bottom: 1px solid rgba(73, 212, 255, 0.28);
+  .graph-inspector {
+    top: auto;
+    right: 12px;
+    bottom: 4.5rem;
+    left: 12px;
+    width: auto;
+    max-height: 38%;
   }
 
   .graph-canvas {

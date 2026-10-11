@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Geist } from "next/font/google";
+import { Geist, JetBrains_Mono } from "next/font/google";
 import Script from "next/script";
 import type { ReactNode } from "react";
 
@@ -9,6 +9,12 @@ import "./mark.css";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
+  subsets: ["latin"],
+  display: "swap",
+});
+
+const jetbrains = JetBrains_Mono({
+  variable: "--font-jetbrains",
   subsets: ["latin"],
   display: "swap",
 });
@@ -34,7 +40,7 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="en" className={`${geistSans.variable} dark h-full antialiased`}>
+    <html lang="en" className={`${geistSans.variable} ${jetbrains.variable} dark h-full antialiased`}>
       <body className="min-h-full">
         <Script id="jarvis-boot" strategy="beforeInteractive">
           {`try{if(sessionStorage.getItem("jarvis-boot")==="1"){document.documentElement.dataset.boot="done"}}catch(e){}`}

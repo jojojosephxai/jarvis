@@ -1,6 +1,8 @@
 export type LayoutNode = {
   id: string;
   kind: "note" | "folder";
+  /** When set, the settled layout parks this note beside that hub. */
+  anchorId?: string;
 };
 
 export type LayoutEdge = {
@@ -161,7 +163,39 @@ export function layoutGalaxy(
     point.y = Math.min(height - pad, Math.max(pad, point.y));
     point.z = clamp(point.z, -zLimit, zLimit);
   }
+  pinAnchors(points, nodes, pad, width, height);
   return points;
+}
+
+const SSOT_GAP = 48;
+
+function hashAngle(id: string): number {
+  let hash = 0;
+  for (let index = 0; index < id.length; index += 1) hash = (hash * 33 + id.charCodeAt(index)) >>> 0;
+  return ((hash % 360) * Math.PI) / 180;
+}
+
+/** Source-of-truth notes sit beside their hub, on the side that stays inside the frame. */
+function pinAnchors(points: LayoutPoint[], nodes: LayoutNode[], pad: number, width: number, height: number) {
+  const index = new Map(points.map((point) => [point.id, point]));
+  for (const node of nodes) {
+    if (!node.anchorId) continue;
+    const hub = index.get(node.anchorId);
+    const point = index.get(node.id);
+    if (!hub || !point) continue;
+    const angle = hashAngle(node.id);
+    const dx = Math.cos(angle) * SSOT_GAP;
+    const dy = Math.sin(angle) * SSOT_GAP;
+    let x = hub.x + dx;
+    let y = hub.y + dy;
+    if (x < pad || x > width - pad || y < pad || y > height - pad) {
+      x = hub.x - dx;
+      y = hub.y - dy;
+    }
+    point.x = x;
+    point.y = y;
+    point.z = hub.z;
+  }
 }
 
 export function frameAroundPoints(points: { x: number; y: number }[], padX: number, padY: number): Frame {
@@ -273,12 +307,14 @@ export type LabelCandidate = {
 export type PlacedLabel = {
   id: string;
   opacity: number;
+  y: number;
 };
 
 export function labelRank(flags: {
   selected: boolean;
   hover: boolean;
   hub: boolean;
+  ssot?: boolean;
   onPath: boolean;
   neighbor: boolean;
   folder: boolean;
@@ -287,6 +323,7 @@ export function labelRank(flags: {
   if (flags.selected) return { priority: 100, protected: true };
   if (flags.hover) return { priority: 90, protected: true };
   if (flags.hub) return { priority: 80, protected: true };
+  if (flags.ssot) return { priority: 75, protected: true };
   if (flags.onPath) return { priority: 60, protected: false };
   if (flags.neighbor) return { priority: 55, protected: false };
   if (flags.folder) return { priority: 50, protected: false };
@@ -299,6 +336,7 @@ export function labelEligible(
     selected: boolean;
     hover: boolean;
     hub: boolean;
+    ssot?: boolean;
     onPath: boolean;
     neighbor: boolean;
     folder: boolean;
@@ -308,7 +346,8 @@ export function labelEligible(
   zoom: number,
   showAll: boolean,
 ): boolean {
-  if (flags.hub || flags.selected || flags.hover || flags.folder || flags.neighbor || flags.onPath || flags.match) {
+  if (flags.depth < 0.4 && !flags.selected && !flags.hover) return false;
+  if (flags.hub || flags.ssot || flags.selected || flags.hover || flags.folder || flags.neighbor || flags.onPath || flags.match) {
     return true;
   }
   if (showAll) return true;
@@ -334,14 +373,25 @@ export function pickLabels(candidates: LabelCandidate[]): PlacedLabel[] {
   const placed: LabelCandidate[] = [];
   const out: PlacedLabel[] = [];
   for (const label of ordered) {
-    const hits = placed.some((other) => labelBoxesOverlap(label, other));
-    if (!label.protected && hits) continue;
-    if (!label.protected && label.depth < 0.32 && label.priority < 50) continue;
-    const opacity = label.protected ? 1 : label.depth < 0.32 ? 0.45 : Math.min(1, 0.55 + label.depth * 0.45);
-    placed.push(label);
-    out.push({ id: label.id, opacity });
+    const parked = label.protected ? nudgeLabel(label, placed) : label;
+    const hits = placed.some((other) => labelBoxesOverlap(parked, other));
+    if (!parked.protected && hits) continue;
+    if (!parked.protected && parked.depth < 0.32 && parked.priority < 50) continue;
+    const opacity = parked.protected ? 1 : parked.depth < 0.32 ? 0.45 : Math.min(1, 0.55 + parked.depth * 0.45);
+    placed.push(parked);
+    out.push({ id: parked.id, opacity, y: parked.y });
   }
   return out;
+}
+
+function nudgeLabel(label: LabelCandidate, placed: LabelCandidate[]): LabelCandidate {
+  let y = label.y;
+  for (let step = 0; step < 6; step += 1) {
+    const trial = { ...label, y };
+    if (!placed.some((other) => labelBoxesOverlap(trial, other))) return trial;
+    y += label.h + 8;
+  }
+  return label;
 }
 
 export function projectSpace(

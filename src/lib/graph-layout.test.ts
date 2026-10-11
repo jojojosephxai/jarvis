@@ -131,7 +131,35 @@ describe("graph labels", () => {
     };
     assert.equal(labelEligible(quiet, 1, false), false);
     assert.equal(labelEligible(quiet, 1.4, false), true);
-    assert.equal(labelEligible({ ...quiet, hub: true, depth: 0.1 }, 1, false), true);
+    assert.equal(labelEligible({ ...quiet, hub: true, depth: 0.1 }, 1, false), false);
+    assert.equal(labelEligible({ ...quiet, hub: true, depth: 0.8 }, 1, false), true);
+    assert.equal(labelEligible({ ...quiet, ssot: true, depth: 0.8 }, 1, false), true);
+  });
+});
+
+describe("source of truth placement", () => {
+  it("parks an ssot note beside its hub", () => {
+    const placed = layoutGalaxy(
+      [
+        { id: "tag:school", kind: "folder" },
+        { id: "School-schedule.md", kind: "note", anchorId: "tag:school" },
+        { id: "Goals.md", kind: "note" },
+      ],
+      [
+        { from: "School-schedule.md", to: "tag:school" },
+        { from: "Goals.md", to: "tag:school" },
+      ],
+      { repel: 140, link: 180, width: 1400, height: 900 },
+    );
+    const byId = new Map(placed.map((point) => [point.id, point]));
+    const hub = byId.get("tag:school");
+    const ssot = byId.get("School-schedule.md");
+    const other = byId.get("Goals.md");
+    assert.ok(hub && ssot && other);
+    const distance = (a: { x: number; y: number; z: number }, b: { x: number; y: number; z: number }) =>
+      Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z);
+    assert.equal(distance(ssot, hub) < 60, true);
+    assert.equal(distance(ssot, hub) < distance(other, hub), true);
   });
 });
 

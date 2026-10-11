@@ -4,7 +4,13 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, it } from "node:test";
 
-import { buildNoteGraph, loadVaultGraph, MAX_GRAPH_NODES, resolveVaultPath } from "./note-graph";
+import {
+  buildNoteGraph,
+  loadVaultGraph,
+  MAX_GRAPH_NODES,
+  nodeDiameterPx,
+  resolveVaultPath,
+} from "./note-graph";
 
 describe("buildNoteGraph", () => {
   it("connects wikilinks, shared tags, and a folder parent", () => {
@@ -20,10 +26,13 @@ describe("buildNoteGraph", () => {
     ]);
     assert.equal(graph.status, "ready");
     assert.equal(graph.noteCount, 2);
-    assert.deepEqual(
-      graph.edges.map((edge) => edge.reason).sort(),
-      ["folder", "tag", "wikilink"],
+    assert.equal(graph.edges.some((edge) => edge.reason === "folder"), true);
+    assert.equal(graph.edges.some((edge) => edge.reason === "wikilink"), true);
+    assert.equal(
+      graph.edges.some((edge) => edge.reason === "tag" && (edge.from === "tag:school" || edge.to === "tag:school")),
+      true,
     );
+    assert.equal(graph.nodes.some((node) => node.id === "tag:school" && node.nodeType === "hub"), true);
     assert.equal(
       graph.nodes.find((note) => note.id === "school/fair.md")?.excerpt.includes("[[School|the board]]"),
       true,
@@ -65,6 +74,37 @@ describe("buildNoteGraph", () => {
       false,
     );
     assert.equal(graph.edges.filter((edge) => edge.reason === "folder").length, 1);
+  });
+
+  it("marks ssot notes and counts only types that are on the graph", () => {
+    const graph = buildNoteGraph([
+      { path: "People.md", text: "---\ntags:\n  - people\n---\n# People\n\nMom.\n" },
+      { path: "Decisions.md", text: "---\ntags:\n  - decisions\n---\n# Decisions\n\nLocked.\n" },
+      { path: "Journal/2026-10-04.md", text: "---\ntags:\n  - journal\n---\n# Day\n\nRest.\n" },
+      { path: "School.md", text: "---\nssot: false\ntags:\n  - school\n---\n# School\n\nClass.\n" },
+      {
+        path: "School-schedule.md",
+        text: "---\nssot: true\ntags:\n  - school\n---\n# School schedule\n\nBells.\n",
+      },
+      { path: "Links.md", text: "---\ntype: url\ntags:\n  - school\n---\n# Link\n\nhttps://example.com\n" },
+    ]);
+    assert.equal(graph.nodes.find((node) => node.id === "People.md")?.nodeType, "person");
+    assert.equal(graph.nodes.find((node) => node.id === "Decisions.md")?.nodeType, "decision");
+    assert.equal(graph.nodes.find((node) => node.id === "Journal/2026-10-04.md")?.nodeType, "journal");
+    assert.equal(graph.nodes.find((node) => node.id === "School.md")?.ssot, false);
+    assert.equal(graph.nodes.find((node) => node.id === "School.md")?.nodeType, "note");
+    const schedule = graph.nodes.find((node) => node.id === "School-schedule.md");
+    assert.equal(schedule?.ssot, true);
+    assert.equal(schedule?.hubs[0], "tag:school");
+    assert.equal(graph.nodes.find((node) => node.id === "Links.md")?.nodeType, "link");
+    assert.equal(graph.legend.some((entry) => entry.type === "file"), false);
+    assert.equal(graph.legend.find((entry) => entry.type === "person")?.count, 1);
+    assert.equal(graph.legend.find((entry) => entry.type === "person")?.color, "#F5C451");
+    assert.equal(graph.legend.some((entry) => entry.type === "hub" && entry.count > 0), true);
+    assert.equal(nodeDiameterPx({ kind: "folder", nodeType: "hub", ssot: false, title: "School" }), 22);
+    assert.equal(nodeDiameterPx({ kind: "folder", nodeType: "hub", ssot: false, title: "Conestoga" }), 16);
+    assert.equal(nodeDiameterPx({ kind: "note", nodeType: "note", ssot: true, title: "School schedule" }), 14);
+    assert.equal(nodeDiameterPx({ kind: "note", nodeType: "note", ssot: false, title: "About" }), 12);
   });
 
   it("returns no nodes for an empty list", () => {
