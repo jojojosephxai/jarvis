@@ -86,7 +86,7 @@ The graph **is** the orb. Jarvis is one glowing sphere: thousands of tiny cyan p
   - Background: `#03070F` (near-black navy) with a faint radial lift to `#071426` center.
   - Cyan `#49D4FF`, dim cyan `#1C6F8C`, line `rgba(73,212,255,.35)`.
   - Text `#CFEFFF`, muted `#6FA9BF`.
-  - Rainbow **only** on note-type dots and the filter legend.
+  - Rainbow **only** on note-type dots and the filter legend. Node colors are a real legend, never decoration: each color = one real thing in the vault — e.g. note (markdown), hub/tag, person, school item, swim item, link/URL, file/attachment, journal entry, decision — and every color shown must appear in the Filter legend with a real count.
 - Font: `JetBrains Mono` (self-hosted with `next/font`), one family everywhere.
 - Glass: `rgba(5,14,28,.55)`, `backdrop-filter: blur(10px)`, 1px line border, radius 2px, 8px corner tick marks. No fills, shadows or thick borders.
 - Text sizes:
@@ -170,7 +170,7 @@ The graph **is** the orb. Jarvis is one glowing sphere: thousands of tiny cyan p
 **Pass 0 (Joseph, no Cursor):** commit the vault notes and keepers to a branch on `mr-potato/jarvis` and push. Discard the ogl files.
 
 **Pass 0.5 — `DESIGN.md` design system (first Cursor deliverable, docs only, no visual build).** Approved by Joseph 2026-10-10 (via Reel Review; source: @yanis.himself reel, "no design system = AI breaks the look every few prompts"). `mr-potato/jarvis` has none today (top level is only NORTH_STAR, README, AGENTS, VAULT, WRITEBACK), so every agent guesses the look. Add `DESIGN.md` at repo root, link it from `AGENTS.md` as **must read before any UI change**, and make Passes 1–3 cite it. It locks:
-- **Colors:** the §4 tokens (near-black navy `#03070F`, cyan `#49D4FF` + dim/line/text/muted), glow levels (e.g. 3 named steps: faint / ring / peak, with blur radius + opacity each), rainbow allowed **only** for graph note-types.
+- **Colors:** the §4 tokens (near-black navy `#03070F`, cyan `#49D4FF` + dim/line/text/muted), glow levels (e.g. 3 named steps: faint / ring / peak, with blur radius + opacity each), rainbow allowed **only** for graph note-types. Node colors are a real legend, never decoration: each color = one real thing in the vault — e.g. note (markdown), hub/tag, person, school item, swim item, link/URL, file/attachment, journal entry, decision — and every color shown must appear in the Filter legend with a real count.
 - **Type:** one mono family (JetBrains Mono). HUD caps 11–12px, uppercase, light tracking ~.08em (never ultra-spaced, tiny or squished); body 12px; **node titles never below 11px** (12px phone) and always legible over the sphere.
 - **Lines:** 1px cyan borders, rings with tick marks; **banned:** chunky filled buttons, pills, drop shadows, thick borders.
 - **Status line:** one small line under the orb showing what Jarvis is doing / which skill it is using (no capability toggles).
@@ -229,3 +229,14 @@ Each pass lands on `main`, reports its SHA, and archives its prompt to `cursor-p
 1. **Clusters = tags.** Notes can belong to several hubs even when they're in different folders. Notes with no tag fall back to their folder (or `Unsorted`). DESIGN.md defines the hub colors.
 2. **One home screen = graph + orb dock (Zubair layout, corrected 2026-10-10).** Home is the Zubair-style clustered graph (search, Top Hubs, filters, Inspector, path trace, forces) with the Jarvis orb docked off to the side like Zubair's dial. When Jarvis is talking or listening, the orb grows big and the graph steps back. When Joseph explores, the graph takes the space and the orb shrinks and slides back to the side. Log or terminal panels follow the same rule. The resizing and moving are always eased, never jump cuts. Space goes to whatever is in use. NORTH_STAR ("graph as home / orb is a mode") already matches this.
 3. **Phone is out of scope** for this redesign. Ignore all the phone items in §4, §5 and §7.
+
+---
+
+## 9. Locked visual reference (Joseph, 2026-10-10, Superdesign "Jarvis Face")
+
+Files: `design/superdesign/` (A-home-speaking.png, A-working.png, C-graph-function-ref.png). Live drafts: https://superdesign.dev/share/b02766614cf0a3c806bcf4aba3e829fc2d75aa2cf67b1255892dce9f0593b6f5
+
+- **Base = Layout A.** Left column (hint, Top Hubs with counts, Forces, Display, note/link totals), top-center Fit/zoom toolbar plus status pill, top-right Filter with counts, orb dial on the right with status line under it, Chat/Tasks/Log card at bottom right, big live caption above the ask bar, round tool buttons under it.
+- **Loved frames = targets:** "Joseph Speaking" (live caption, LISTENING pill, SKILL status line) and "Working" (center task-execution panel with real steps, timings, context loaded, model activity and progress, orb docked bottom-right, STOP button).
+- **Fix A's weak spot with C's graph:** A's graph is mostly unlabeled dots. Use C's graph behaviour inside A's layout: visible edges between real notes, readable labels on hubs and key notes (≥11–12px), clickable notes with Inspector and focus, and colors that are a real legend with counts (markdown note, tag/hub, person, link/URL, file/attachment, journal entry, decision). Every dot is a real vault item; no filler dots.
+- Motion stays per §5 and DESIGN.md (eased, voice morph, no idle spin, smooth dock).
