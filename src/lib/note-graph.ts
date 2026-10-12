@@ -1,11 +1,5 @@
-import { promises as fs } from "node:fs";
-import path from "node:path";
-
 export const MAX_GRAPH_NODES = 600;
 const MAX_GRAPH_EDGES = 2500;
-const MAX_SCAN = 800;
-const MAX_DEPTH = 5;
-const MAX_BYTES = 300_000;
 const EXCERPT_LIMIT = 320;
 const TEXT_LIMIT = 12_000;
 
@@ -74,9 +68,6 @@ export type NoteSourceFile = {
   path: string;
   text: string;
 };
-
-const NOT_WIRED =
-  "Vault notes are not wired yet. This graph is empty. No notes were invented.";
 
 function blank(status: GraphStatus, detail: string): NoteGraphPayload {
   return {
@@ -177,10 +168,39 @@ function norm(value: string): string {
   return value.trim().toLowerCase().replace(/\\/g, "/").replace(/\.md$/i, "");
 }
 
+// Vault ids are posix. String helpers keep this file free of node:path so the client graph can import it.
+function posixDirname(value: string): string {
+  let end = value.length;
+  while (end > 1 && value.charCodeAt(end - 1) === 47) end -= 1;
+  const slash = value.lastIndexOf("/", end - 1);
+  if (slash < 0) return ".";
+  if (slash === 0) return "/";
+  return value.slice(0, slash);
+}
+
+function posixBasename(value: string, suffix = ""): string {
+  let end = value.length;
+  while (end > 0 && value.charCodeAt(end - 1) === 47) end -= 1;
+  const slash = value.lastIndexOf("/", end - 1);
+  const start = slash === -1 ? 0 : slash + 1;
+  if (suffix.length > 0 && end - start > suffix.length && value.slice(end - suffix.length, end) === suffix) {
+    end -= suffix.length;
+  }
+  return value.slice(start, end);
+}
+
+function posixExtname(value: string): string {
+  const base = posixBasename(value);
+  if (base === "." || base === ".." || !base.includes(".")) return "";
+  const dot = base.lastIndexOf(".");
+  if (dot <= 0) return "";
+  return base.slice(dot);
+}
+
 function titleFrom(filePath: string, body: string): string {
   const heading = body.match(/^#\s+(.+)$/m);
   if (heading?.[1]) return heading[1].trim();
-  return path.posix.basename(filePath, path.extname(filePath)).replace(/[-_]/g, " ");
+  return posixBasename(filePath, posixExtname(filePath)).replace(/[-_]/g, " ");
 }
 
 function splitFrontmatter(text: string): { front: string; body: string } {
@@ -261,7 +281,7 @@ function findNote(target: string, notes: GraphNode[]): GraphNode | undefined {
   const key = norm(target);
   return (
     notes.find((note) => norm(note.id) === key) ??
-    notes.find((note) => norm(path.posix.basename(note.id, ".md")) === key) ??
+    notes.find((note) => norm(posixBasename(note.id, ".md")) === key) ??
     notes.find((note) => norm(note.title) === key)
   );
 }
@@ -273,7 +293,7 @@ export function buildNoteGraph(files: NoteSourceFile[]): NoteGraphPayload {
   const nodes: GraphNode[] = kept.map((file) => {
     const posix = file.path.replace(/\\/g, "/");
     const { front, body } = splitFrontmatter(file.text);
-    const folder = path.posix.dirname(posix);
+    const folder = posixDirname(posix);
     const cleanFolder = folder === "." ? "" : folder;
     const tags = unique([...tagsFromFrontmatter(front), ...tagsFromBody(body)]);
     return {
@@ -342,7 +362,7 @@ export function buildNoteGraph(files: NoteSourceFile[]): NoteGraphPayload {
     const candidates = [
       `${note.folder}.md`,
       `${note.folder}/index.md`,
-      `${note.folder}/${path.posix.basename(note.folder)}.md`,
+      `${note.folder}/${posixBasename(note.folder)}.md`,
     ];
     for (const candidate of candidates) {
       const parent = byId.get(norm(candidate));
@@ -444,13 +464,13 @@ function linkLooseFolderNotes(
 }
 
 function folderHub(folder: string): GraphNode {
-  const parent = folder.includes("/") ? path.posix.dirname(folder) : "";
+  const parent = folder.includes("/") ? posixDirname(folder) : "";
   const excerpt = folder
     ? `Folder ${folder}. Notes inside it use this as their parent. It is not a note.`
     : "Top of the vault. Notes in this folder connect here. It is not a note.";
   return {
     id: folderHubId(folder),
-    title: folder ? path.posix.basename(folder) : "Unsorted",
+    title: folder ? posixBasename(folder) : "Unsorted",
     folder: folder ? parent : "",
     tags: [],
     excerpt,
@@ -460,86 +480,4 @@ function folderHub(folder: string): GraphNode {
     ssot: false,
     hubs: [],
   };
-}
-
-async function walkMarkdown(dir: string, rootReal: string, depth: number, acc: string[]): Promise<void> {
-  if (depth > MAX_DEPTH || acc.length >= MAX_SCAN) return;
-  let entries;
-  try {
-    entries = await fs.readdir(dir, { withFileTypes: true });
-  } catch {
-    return;
-  }
-  for (const entry of entries) {
-    if (acc.length >= MAX_SCAN) return;
-    if (entry.name.startsWith(".") || entry.name === "node_modules" || entry.name.startsWith("_sync-backups")) {
-      continue;
-    }
-    const full = path.join(dir, entry.name);
-    let real: string;
-    try {
-      real = await fs.realpath(full);
-    } catch {
-      continue;
-    }
-    if (real !== rootReal && !real.startsWith(rootReal + path.sep)) continue;
-    if (entry.isDirectory()) {
-      await walkMarkdown(full, rootReal, depth + 1, acc);
-    } else if (entry.isFile() && entry.name.endsWith(".md")) {
-      acc.push(real);
-    }
-  }
-}
-
-export function resolveVaultPath(
-  explicit: string | null | undefined,
-  envValue: string | undefined,
-  cwd: string,
-): string {
-  if (explicit !== undefined && explicit !== null) return explicit.trim();
-  const fromEnv = envValue?.trim();
-  if (fromEnv) return fromEnv;
-  return path.join(cwd, "vault");
-}
-
-export async function loadVaultGraph(vaultPath?: string | null): Promise<NoteGraphPayload> {
-  const trimmed = resolveVaultPath(vaultPath, process.env.OBSIDIAN_VAULT_PATH, process.cwd());
-  if (!trimmed) return blank("not-wired", NOT_WIRED);
-
-  let rootStat;
-  try {
-    rootStat = await fs.stat(trimmed);
-  } catch {
-    return blank("missing", "A vault folder is set, but it could not be opened. Nothing was drawn.");
-  }
-  if (!rootStat.isDirectory()) {
-    return blank("missing", "A vault folder is set, but it is not a folder. Nothing was drawn.");
-  }
-
-  let rootReal: string;
-  try {
-    rootReal = await fs.realpath(trimmed);
-  } catch {
-    return blank("missing", "A vault folder is set, but it could not be opened. Nothing was drawn.");
-  }
-
-  const files: string[] = [];
-  await walkMarkdown(trimmed, rootReal, 0, files);
-  const sources: NoteSourceFile[] = [];
-  for (const filePath of files) {
-    try {
-      const stat = await fs.stat(filePath);
-      if (!stat.isFile() || stat.size > MAX_BYTES) continue;
-      const text = await fs.readFile(filePath, "utf8");
-      const relative = path.relative(rootReal, filePath).split(path.sep).join("/");
-      sources.push({ path: relative, text });
-    } catch {
-      continue;
-    }
-  }
-
-  if (sources.length === 0) {
-    return blank("empty", "The vault folder has no notes yet. Nothing was invented.");
-  }
-  return buildNoteGraph(sources);
 }

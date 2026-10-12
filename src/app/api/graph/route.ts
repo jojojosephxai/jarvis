@@ -1,4 +1,4 @@
-import { loadVaultGraph } from "@/lib/note-graph";
+import { loadVaultGraph } from "@/lib/note-graph.server";
 
 export const dynamic = "force-dynamic";
 

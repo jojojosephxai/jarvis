@@ -4,13 +4,8 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, it } from "node:test";
 
-import {
-  buildNoteGraph,
-  loadVaultGraph,
-  MAX_GRAPH_NODES,
-  nodeDiameterPx,
-  resolveVaultPath,
-} from "./note-graph";
+import { loadVaultGraph, resolveVaultPath } from "./note-graph.server";
+import { buildNoteGraph, MAX_GRAPH_NODES, nodeDiameterPx } from "./note-graph";
 
 describe("buildNoteGraph", () => {
   it("connects wikilinks, shared tags, and a folder parent", () => {
