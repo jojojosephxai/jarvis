@@ -3,7 +3,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { NoteReader, type NoteLink } from "@/components/note-reader";
-import { Input } from "@/components/ui/input";
 import {
   cageRadius,
   frameAroundPoint,
@@ -23,6 +22,7 @@ import {
 import { frameAtZoom, nextZoom, spinCamera, turnedCamera } from "@/lib/graph-turn";
 import { degreeOf, matchGraphNode, matchingNodes, shortestPath } from "@/lib/graph-nav";
 import {
+  hubLabelColor,
   nodeColor,
   nodeDiameterPx,
   type GraphEdge,
@@ -52,7 +52,7 @@ const LAYOUT_LINK = 230;
 const LINK_COLOR = "rgba(73, 212, 255, 0.85)";
 const LINK_HOT = "#49D4FF";
 
-type FrameMode = "fit" | "node" | "path" | "matches";
+type FrameMode = "fit" | "node" | "path" | "matches" | "cluster";
 type ZoomKind = "in" | "out" | "fit";
 
 type ZoomCommand = {
@@ -63,8 +63,10 @@ type ZoomCommand = {
 export type GraphCue = {
   token: number;
   focusQuery?: string;
+  focusHub?: string;
   pathFrom?: string;
   pathTo?: string;
+  fit?: boolean;
 };
 
 function isKind(value: unknown): value is GraphNode["kind"] {
@@ -152,7 +154,13 @@ function displayTitle(node: GraphNode): string {
   return `${title.slice(0, 35)}...`;
 }
 
-export function NoteGraph({ cue = null }: { cue?: GraphCue | null }) {
+export function NoteGraph({
+  cue = null,
+  suspendEscape = false,
+}: {
+  cue?: GraphCue | null;
+  suspendEscape?: boolean;
+}) {
   const [payload, setPayload] = useState<NoteGraphPayload | null>(null);
   const [failed, setFailed] = useState(false);
 
@@ -193,17 +201,25 @@ export function NoteGraph({ cue = null }: { cue?: GraphCue | null }) {
     );
   }
 
-  return <GraphBody payload={payload} cue={cue} />;
+  return <GraphBody payload={payload} cue={cue} suspendEscape={suspendEscape} />;
 }
 
-function GraphBody({ payload, cue }: { payload: NoteGraphPayload; cue: GraphCue | null }) {
+function GraphBody({
+  payload,
+  cue,
+  suspendEscape,
+}: {
+  payload: NoteGraphPayload;
+  cue: GraphCue | null;
+  suspendEscape: boolean;
+}) {
   switch (payload.status) {
     case "not-wired":
     case "missing":
     case "empty":
       return <GraphEmpty payload={payload} />;
     case "ready":
-      return <GraphReady payload={payload} cue={cue} />;
+      return <GraphReady payload={payload} cue={cue} suspendEscape={suspendEscape} />;
     default: {
       const neverStatus: never = payload.status;
       return neverStatus;
@@ -222,31 +238,75 @@ function GraphEmpty({ payload }: { payload: NoteGraphPayload }) {
   );
 }
 
-function GraphReady({ payload, cue }: { payload: NoteGraphPayload; cue: GraphCue | null }) {
+function GraphReady({
+  payload,
+  cue,
+  suspendEscape,
+}: {
+  payload: NoteGraphPayload;
+  cue: GraphCue | null;
+  suspendEscape: boolean;
+}) {
   const [query, setQuery] = useState("");
   const [pathFromId, setPathFromId] = useState("");
   const [pathToId, setPathToId] = useState("");
   const [frameMode, setFrameMode] = useState<FrameMode>("fit");
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [clusterId, setClusterId] = useState<string | null>(null);
   const [seenCue, setSeenCue] = useState(0);
   const [homeToken, setHomeToken] = useState(0);
   const [zoomCommand, setZoomCommand] = useState<ZoomCommand>({ token: 0, kind: "fit" });
-  const frameToken = `${frameMode}|${selectedId ?? ""}|${pathFromId}|${pathToId}|${query}|${homeToken}`;
+  const [repel, setRepel] = useState(LAYOUT_REPEL);
+  const [linkLength, setLinkLength] = useState(LAYOUT_LINK);
+  const [showHubs, setShowHubs] = useState(true);
+  const [showLabels, setShowLabels] = useState(true);
+  const [showEdges, setShowEdges] = useState(true);
+  const [hiddenTypes, setHiddenTypes] = useState<GraphNodeType[]>([]);
+  const frameToken = `${frameMode}|${selectedId ?? ""}|${clusterId ?? ""}|${pathFromId}|${pathToId}|${query}|${homeToken}`;
 
   if (cue && cue.token !== seenCue) {
     setSeenCue(cue.token);
-    if (cue.pathFrom && cue.pathTo) {
+    if (cue.fit) {
+      setQuery("");
+      setPathFromId("");
+      setPathToId("");
+      setSelectedId(null);
+      setClusterId(null);
+      setFrameMode("fit");
+      setHomeToken((token) => token + 1);
+    } else if (cue.focusHub) {
+      const wanted = cue.focusHub.trim().toLowerCase();
+      const hub = payload.nodes.find(
+        (node) =>
+          (node.kind === "folder" || node.nodeType === "hub") &&
+          (node.id.toLowerCase() === wanted || node.title.toLowerCase() === wanted),
+      );
+      setQuery("");
+      setPathFromId("");
+      setPathToId("");
+      if (!hub) {
+        setClusterId(null);
+        setFrameMode("fit");
+      } else {
+        setClusterId(hub.id);
+        setSelectedId(hub.id);
+        setFrameMode("cluster");
+        setHomeToken((token) => token + 1);
+      }
+    } else if (cue.pathFrom && cue.pathTo) {
       const from = matchGraphNode(payload.nodes, cue.pathFrom);
       const to = matchGraphNode(payload.nodes, cue.pathTo);
       if (!from || !to) {
         setPathFromId("");
         setPathToId("");
+        setClusterId(null);
         setFrameMode("fit");
       } else {
         setQuery("");
         setPathFromId(from.id);
         setPathToId(to.id);
         setSelectedId(from.id);
+        setClusterId(null);
         setFrameMode("path");
       }
     } else if (cue.focusQuery) {
@@ -256,27 +316,40 @@ function GraphReady({ payload, cue }: { payload: NoteGraphPayload; cue: GraphCue
       setPathToId("");
       const first = found[0];
       if (!first) {
+        setClusterId(null);
         setFrameMode("fit");
+      } else if (first.kind === "folder" || first.nodeType === "hub") {
+        setClusterId(first.id);
+        setSelectedId(first.id);
+        setFrameMode("cluster");
       } else {
         setSelectedId(first.id);
+        setClusterId(null);
         setFrameMode(found.length === 1 ? "node" : "matches");
       }
     } else {
       setSelectedId(null);
+      setClusterId(null);
       setFrameMode("fit");
     }
   }
 
   useEffect(() => {
+    if (suspendEscape) return;
     function onKey(event: KeyboardEvent) {
       if (event.key !== "Escape") return;
+      const target = event.target;
+      if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) return;
       setSelectedId(null);
+      setClusterId(null);
+      setPathFromId("");
+      setPathToId("");
       setFrameMode("fit");
       setHomeToken((token) => token + 1);
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, []);
+  }, [suspendEscape]);
 
   const layoutNodes = useMemo(
     () =>
@@ -284,18 +357,19 @@ function GraphReady({ payload, cue }: { payload: NoteGraphPayload; cue: GraphCue
         id: node.id,
         kind: node.kind,
         anchorId: node.ssot ? node.hubs[0] : undefined,
+        hubId: node.kind === "folder" ? node.id : node.hubs[0],
       })),
     [payload.nodes],
   );
   const points = useMemo(
     () =>
       layoutGalaxy(layoutNodes, payload.edges, {
-        repel: LAYOUT_REPEL,
-        link: LAYOUT_LINK,
+        repel,
+        link: linkLength,
         width: WIDTH,
         height: HEIGHT,
       }),
-    [layoutNodes, payload.edges],
+    [layoutNodes, payload.edges, repel, linkLength],
   );
   const matches = useMemo(() => matchingNodes(payload.nodes, query), [payload.nodes, query]);
   const matchIds = useMemo(() => new Set(matches.map((node) => node.id)), [matches]);
@@ -304,7 +378,16 @@ function GraphReady({ payload, cue }: { payload: NoteGraphPayload; cue: GraphCue
     return shortestPath(payload.edges, pathFromId, pathToId);
   }, [payload.edges, pathFromId, pathToId]);
   const routeIds = useMemo(() => (route ? new Set(route) : null), [route]);
-  const visibleIds = useMemo(() => new Set(payload.nodes.map((node) => node.id)), [payload.nodes]);
+  const visibleIds = useMemo(() => {
+    const hidden = new Set(hiddenTypes);
+    const ids = new Set<string>();
+    for (const node of payload.nodes) {
+      if (hidden.has(node.nodeType)) continue;
+      if (!showHubs && (node.kind === "folder" || node.nodeType === "hub")) continue;
+      ids.add(node.id);
+    }
+    return ids;
+  }, [payload.nodes, hiddenTypes, showHubs]);
   const searching = query.trim().length > 0;
   const routeOn = Boolean(route && route.length > 1);
   const selected = payload.nodes.find((node) => node.id === selectedId) ?? null;
@@ -320,21 +403,51 @@ function GraphReady({ payload, cue }: { payload: NoteGraphPayload; cue: GraphCue
 
   function clearFocus() {
     setSelectedId(null);
+    setClusterId(null);
+    setPathFromId("");
+    setPathToId("");
     setFrameMode("fit");
     setHomeToken((token) => token + 1);
   }
 
-  function openNote(id: string) {
-    if (id === selectedId) {
-      clearFocus();
+  function focusHub(id: string) {
+    setClusterId(id);
+    setSelectedId(id);
+    setPathFromId("");
+    setPathToId("");
+    setFrameMode("cluster");
+    setHomeToken((token) => token + 1);
+  }
+
+  function openNote(id: string, shift = false) {
+    const node = payload.nodes.find((item) => item.id === id);
+    if (!node) return;
+    if (shift && selectedId && selectedId !== id) {
+      setPathFromId(selectedId);
+      setPathToId(id);
+      setClusterId(null);
+      setFrameMode("path");
+      setHomeToken((token) => token + 1);
       return;
     }
+    if (node.kind === "folder" || node.nodeType === "hub") {
+      focusHub(node.id);
+      return;
+    }
+    setClusterId(null);
+    setPathFromId("");
+    setPathToId("");
     setSelectedId(id);
     setFrameMode("node");
+    setHomeToken((token) => token + 1);
   }
 
   function commandZoom(kind: ZoomKind) {
     if (kind === "fit") {
+      setClusterId(null);
+      setSelectedId(null);
+      setPathFromId("");
+      setPathToId("");
       setFrameMode("fit");
       setHomeToken((token) => token + 1);
     }
@@ -345,29 +458,139 @@ function GraphReady({ payload, cue }: { payload: NoteGraphPayload; cue: GraphCue
     setQuery(value);
     const found = matchingNodes(payload.nodes, value);
     if (!value.trim()) {
+      setClusterId(null);
+      setPathFromId("");
+      setPathToId("");
       setFrameMode("fit");
       setHomeToken((token) => token + 1);
       return;
     }
     const first = found[0];
     if (!first) {
+      setClusterId(null);
+      setPathFromId("");
+      setPathToId("");
       setFrameMode("fit");
       return;
     }
-    setSelectedId(first.id);
-    setFrameMode(found.length === 1 ? "node" : "matches");
+    setPathFromId("");
+    setPathToId("");
+    if (first.kind === "folder" || first.nodeType === "hub") {
+      setClusterId(first.id);
+      setSelectedId(first.id);
+      setFrameMode("cluster");
+    } else {
+      setClusterId(null);
+      setSelectedId(first.id);
+      setFrameMode(found.length === 1 ? "node" : "matches");
+    }
     setHomeToken((token) => token + 1);
   }
 
+  const hubNodes = payload.nodes.filter((node) => node.kind === "folder" || node.nodeType === "hub");
+  const hubTitles = hubNodes.map((node) => node.title);
+  const hubRows = hubNodes
+    .map((hub) => ({
+      hub,
+      count: payload.nodes.filter((node) => node.hubs.includes(hub.id)).length,
+      color: hubLabelColor(hub.title, hubTitles),
+    }))
+    .sort((a, b) => b.count - a.count || a.hub.title.localeCompare(b.hub.title));
+  const clusterName = payload.nodes.find((node) => node.id === clusterId)?.title ?? "";
+  const pathNodes = (route ?? [])
+    .map((id, index) => {
+      const node = payload.nodes.find((item) => item.id === id);
+      return node ? { id, index, title: node.title } : null;
+    })
+    .filter((item): item is { id: string; index: number; title: string } => Boolean(item));
+
   return (
     <div className={selected ? "graph-stage has-note" : "graph-stage"}>
-      <GalaxyBay
-        noteCount={payload.noteCount}
-        connectionCount={payload.connectionCount}
-        query={query}
-        matchCount={searching ? matches.length : null}
-        onSearch={onSearch}
-      />
+      <aside className="face-column glass" aria-label="Graph">
+        <label className="face-search" htmlFor="graph-search">
+          <span className="sr-only">Search notes</span>
+          <input
+            id="graph-search"
+            value={query}
+            autoComplete="off"
+            placeholder="Search notes, people, links"
+            onChange={(event) => onSearch(event.target.value)}
+          />
+        </label>
+        <p className="face-hint">Click a node to focus it. Shift-click a second node to trace the path.</p>
+        <div className="face-block">
+          <div className="face-block-head">
+            <p>Top Hubs</p>
+            <p>Nodes</p>
+          </div>
+          <ul className="hub-list">
+            {hubRows.map((row) => (
+              <li key={row.hub.id}>
+                <button
+                  type="button"
+                  data-active={clusterId === row.hub.id ? "true" : "false"}
+                  onClick={() => focusHub(row.hub.id)}
+                >
+                  <span className="hub-swatch" style={{ background: row.color }} />
+                  <span className="hub-name" style={{ color: row.color }}>
+                    {row.hub.title}
+                  </span>
+                  <span className="hub-count">{row.count}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+        <div className="face-block">
+          <p className="face-block-label">Forces</p>
+          <label className="face-slider">
+            <span>Repel</span>
+            <span>{repel}</span>
+            <input
+              type="range"
+              min={40}
+              max={360}
+              value={repel}
+              aria-label="Repel"
+              onChange={(event) => setRepel(Number(event.target.value))}
+            />
+          </label>
+          <label className="face-slider">
+            <span>Link length</span>
+            <span>{linkLength}</span>
+            <input
+              type="range"
+              min={40}
+              max={420}
+              value={linkLength}
+              aria-label="Link length"
+              onChange={(event) => setLinkLength(Number(event.target.value))}
+            />
+          </label>
+        </div>
+        <div className="face-block">
+          <p className="face-block-label">Display</p>
+          <label className="face-check">
+            <input type="checkbox" checked={showHubs} onChange={(event) => setShowHubs(event.target.checked)} />
+            Hubs
+          </label>
+          <label className="face-check">
+            <input type="checkbox" checked={showLabels} onChange={(event) => setShowLabels(event.target.checked)} />
+            Labels
+          </label>
+          <label className="face-check">
+            <input type="checkbox" checked={showEdges} onChange={(event) => setShowEdges(event.target.checked)} />
+            Edges
+          </label>
+        </div>
+        <p className="face-totals">
+          <span>{payload.noteCount} notes</span>
+          <span>{payload.connectionCount} links</span>
+        </p>
+        {searching ? (
+          <p className="face-hint">{matches.length === 0 ? "No matches." : `${matches.length} match${matches.length === 1 ? "" : "es"}`}</p>
+        ) : null}
+      </aside>
       <div className="graph-tools" role="group" aria-label="Zoom">
         <button type="button" onClick={() => commandZoom("fit")}>
           FIT
@@ -379,6 +602,20 @@ function GraphReady({ payload, cue }: { payload: NoteGraphPayload; cue: GraphCue
           −
         </button>
       </div>
+      {clusterId ? (
+        <button type="button" className="graph-crumb" onClick={clearFocus}>
+          GRAPH / {clusterName.toUpperCase()}
+        </button>
+      ) : null}
+      <FilterLegend
+        legend={payload.legend}
+        hiddenTypes={hiddenTypes}
+        onToggle={(type) =>
+          setHiddenTypes((current) =>
+            current.includes(type) ? current.filter((item) => item !== type) : [...current, type],
+          )
+        }
+      />
       <div className="graph-canvas">
         <GalaxyScene
           nodes={payload.nodes}
@@ -386,20 +623,30 @@ function GraphReady({ payload, cue }: { payload: NoteGraphPayload; cue: GraphCue
           points={points}
           visibleIds={visibleIds}
           selectedId={selectedId}
+          clusterId={clusterId}
           frameMode={frameMode}
           route={route}
           routeIds={routeIds}
           routeOn={routeOn}
           searching={searching}
           matchIds={matchIds}
+          showLabels={showLabels}
+          showEdges={showEdges}
           frameToken={frameToken}
           zoomCommand={zoomCommand}
           onSelect={openNote}
           onClear={clearFocus}
         />
-        <p className="graph-pan-hint">Drag to turn · Scroll to zoom · Click a dot to read</p>
       </div>
-      {selected ? <NoteReader node={selected} links={noteLinks} onBack={clearFocus} onOpen={openNote} /> : null}
+      {selected ? (
+        <NoteReader
+          node={selected}
+          links={noteLinks}
+          path={pathNodes}
+          onBack={clearFocus}
+          onOpen={(id) => openNote(id)}
+        />
+      ) : null}
     </div>
   );
 }
@@ -470,12 +717,15 @@ function GalaxyScene({
   points,
   visibleIds,
   selectedId,
+  clusterId,
   frameMode,
   route,
   routeIds,
   routeOn,
   searching,
   matchIds,
+  showLabels,
+  showEdges,
   frameToken,
   zoomCommand,
   onSelect,
@@ -486,20 +736,24 @@ function GalaxyScene({
   points: LayoutPoint[];
   visibleIds: Set<string>;
   selectedId: string | null;
+  clusterId: string | null;
   frameMode: FrameMode;
   route: string[] | null;
   routeIds: Set<string> | null;
   routeOn: boolean;
   searching: boolean;
   matchIds: Set<string>;
+  showLabels: boolean;
+  showEdges: boolean;
   frameToken: string;
   zoomCommand: ZoomCommand;
-  onSelect: (id: string) => void;
+  onSelect: (id: string, shift: boolean) => void;
   onClear: () => void;
 }) {
   const [grabbing, setGrabbing] = useState(false);
   const [spin, setSpin] = useState<Camera>({ yaw: 0, pitch: 0 });
   const [zoom, setZoom] = useState(1);
+  const [clearTick, setClearTick] = useState(0);
   const [zoomToken, setZoomToken] = useState(frameToken);
   const svgRef = useRef<SVGSVGElement | null>(null);
   const frameWidthRef = useRef(1);
@@ -509,6 +763,12 @@ function GalaxyScene({
     setZoomToken(frameToken);
     setZoom(1);
   }
+  const clearRef = useRef(onClear);
+  const frameModeRef = useRef(frameMode);
+  const zoomRef = useRef(zoom);
+  clearRef.current = onClear;
+  frameModeRef.current = frameMode;
+  zoomRef.current = zoom;
   const zoomSeen = useRef(zoomCommand.token);
   if (zoomCommand.token !== zoomSeen.current) {
     zoomSeen.current = zoomCommand.token;
@@ -518,7 +778,9 @@ function GalaxyScene({
     } else if (zoomCommand.kind === "in") {
       setZoom((current) => nextZoom(current, -120));
     } else {
-      setZoom((current) => nextZoom(current, 120));
+      const next = nextZoom(zoom, 120);
+      setZoom(next);
+      if (frameMode !== "fit" && next < 0.72) setClearTick((tick) => tick + 1);
     }
   }
   const camera = turnedCamera(restCamera(), spin);
@@ -529,11 +791,18 @@ function GalaxyScene({
     if (!svg) return;
     function onWheel(event: WheelEvent) {
       event.preventDefault();
-      setZoom((current) => nextZoom(current, event.deltaY));
+      const next = nextZoom(zoomRef.current, event.deltaY);
+      zoomRef.current = next;
+      setZoom(next);
+      if (frameModeRef.current !== "fit" && next < 0.72) setClearTick((tick) => tick + 1);
     }
     svg.addEventListener("wheel", onWheel, { passive: false });
     return () => svg.removeEventListener("wheel", onWheel);
   }, []);
+  useEffect(() => {
+    if (clearTick === 0) return;
+    clearRef.current();
+  }, [clearTick]);
   useEffect(() => {
     const svg = svgRef.current;
     if (!svg) return;
@@ -587,6 +856,14 @@ function GalaxyScene({
       frame = frameAroundPoints(matched.length > 0 ? matched : visibleProjected, 140, 110);
       break;
     }
+    case "cluster": {
+      const members = nodes
+        .filter((node) => node.id === clusterId || (clusterId !== null && node.hubs.includes(clusterId)))
+        .map((node) => projected.get(node.id))
+        .filter((point): point is NonNullable<typeof point> => Boolean(point));
+      frame = frameAroundPoints(members.length > 0 ? members : visibleProjected, 140, 110);
+      break;
+    }
     case "fit":
       frame = stableFrame(points.filter((point) => visibleIds.has(point.id)));
       break;
@@ -625,7 +902,8 @@ function GalaxyScene({
       match: matchIds.has(node.id),
       depth: point.depth,
     };
-    if (!labelEligible(flags, zoom, showAllLabels)) continue;
+    const inCluster = clusterId !== null && (node.id === clusterId || node.hubs.includes(clusterId));
+    if (!showLabels || !labelEligible(flags, zoom, showAllLabels || inCluster)) continue;
     const rank = labelRank(flags);
     const text = displayTitle(node);
     labelBoxes.push({
@@ -643,7 +921,7 @@ function GalaxyScene({
   const labelWidth = new Map(labelBoxes.map((label) => [label.id, label.w]));
   const hover = nodes.find((node) => node.id === hoverId) ?? null;
   const hoverPoint = hover ? projected.get(hover.id) : undefined;
-  const drawnEdges = edges
+  const drawnEdges = (showEdges ? edges : [])
     .filter((edge) => visibleIds.has(edge.from) && visibleIds.has(edge.to))
     .map((edge) => {
       const from = projected.get(edge.from);
@@ -651,7 +929,10 @@ function GalaxyScene({
       return { edge, depth: ((from?.depth ?? 0) + (to?.depth ?? 0)) / 2 };
     })
     .sort((a, b) => a.depth - b.depth);
-  const drawnNodes = [...nodes].sort((a, b) => (projected.get(a.id)?.depth ?? 0) - (projected.get(b.id)?.depth ?? 0));
+  const hubTitles = nodes.filter((node) => node.kind === "folder" || node.nodeType === "hub").map((node) => node.title);
+  const drawnNodes = [...nodes]
+    .filter((node) => visibleIds.has(node.id))
+    .sort((a, b) => (projected.get(a.id)?.depth ?? 0) - (projected.get(b.id)?.depth ?? 0));
 
   function onSpacePointerDown(event: React.PointerEvent<SVGSVGElement>) {
     if (event.button !== 0) return;
@@ -692,7 +973,7 @@ function GalaxyScene({
       className={grabbing ? "graph-svg is-grabbing" : "graph-svg"}
       viewBox={viewBox(shifted)}
       role="group"
-      aria-label="Vault notes. Drag to turn. Scroll to zoom. Click a note to read it."
+      aria-label="Vault notes. Drag to turn. Scroll to zoom. Click a note to open it."
       onPointerDown={onSpacePointerDown}
       onPointerMove={onSpacePointerMove}
       onPointerUp={onSpacePointerEnd}
@@ -724,10 +1005,11 @@ function GalaxyScene({
         const from = pointById.get(edge.from);
         const to = pointById.get(edge.to);
         if (!from || !to) return null;
-        const hot = routeOn
+        const tracing = frameMode === "path" && routeOn;
+        const hot = tracing
           ? onRoute(edge, route)
           : selectedId !== null && (edge.from === selectedId || edge.to === selectedId);
-        const dim = (searching && !matchIds.has(edge.from) && !matchIds.has(edge.to)) || (routeOn && !hot);
+        const dim = (searching && !matchIds.has(edge.from) && !matchIds.has(edge.to)) || (tracing && !hot);
         return (
           <path
             key={edge.id}
@@ -745,12 +1027,17 @@ function GalaxyScene({
         const active = node.id === selectedId;
         const color = nodeColor(node.nodeType);
         const degree = degreeOf(node.id, edges);
-        const onPath = routeIds?.has(node.id) ?? false;
+        const onPath = frameMode === "path" && (routeIds?.has(node.id) ?? false);
         const label = placedLabels.get(node.id);
         const plate = labelWidth.get(node.id) ?? fontUser * 4;
         const onScreen = (nodeDiameterPx(node) / fitScale) * currentScale;
         const radius = (onScreen < 10 ? 10 : nodeDiameterPx(node)) / 2 / (onScreen < 10 ? currentScale : fitScale);
-        const dim = (searching && !matchIds.has(node.id)) || (routeOn && !onPath && !active);
+        const inCluster = clusterId !== null && (node.id === clusterId || node.hubs.includes(clusterId));
+        const clusterDim = frameMode === "cluster" && !inCluster && !onPath;
+        const pathDim = frameMode === "path" && routeOn && !onPath && !active;
+        const searchDim = searching && !matchIds.has(node.id) && !onPath;
+        const dim = clusterDim || pathDim || searchDim;
+        const pathStep = frameMode === "path" && route ? route.indexOf(node.id) : -1;
         const labelY = label?.y ?? point.y;
         const labelLeft = point.x > shifted.x + shifted.w * 0.68;
         const plateX = labelLeft ? point.x - radius - 8 - plate : point.x + radius + 8;
@@ -760,18 +1047,18 @@ function GalaxyScene({
           <g
             key={node.id}
             className="graph-node"
-            opacity={dim ? 0.16 : 1}
+            opacity={dim ? 0.15 : 1}
             tabIndex={0}
             role="button"
             aria-pressed={active}
             aria-label={`${node.title}, ${degree} connections`}
             onPointerEnter={() => setHoverId(node.id)}
             onPointerLeave={() => setHoverId((current) => (current === node.id ? null : current))}
-            onClick={() => onSelect(node.id)}
+            onClick={(event) => onSelect(node.id, event.shiftKey)}
             onKeyDown={(event) => {
               if (event.key === "Enter" || event.key === " ") {
                 event.preventDefault();
-                onSelect(node.id);
+                onSelect(node.id, event.shiftKey);
               }
             }}
           >
@@ -788,6 +1075,11 @@ function GalaxyScene({
                 strokeWidth={Math.max(ring * 0.7, 1 / currentScale)}
               />
             ) : null}
+            {pathStep >= 0 ? (
+              <text className="graph-path-index" x={point.x} y={point.y - radius - 4 / currentScale} fontSize={11 / currentScale}>
+                {pathStep + 1}
+              </text>
+            ) : null}
             {label ? (
               <g className="graph-label" opacity={label.opacity}>
                 <rect
@@ -802,7 +1094,10 @@ function GalaxyScene({
                   className="graph-label-text"
                   x={plateX + fontUser * 0.4}
                   y={labelY + fontUser * 0.32}
-                  fontSize={fontUser}
+                  fontSize={Math.max(fontUser, 11 / currentScale)}
+                  style={{
+                    fill: node.kind === "folder" || node.nodeType === "hub" ? hubLabelColor(node.title, hubTitles) : "#CFEFFF",
+                  }}
                 >
                   {displayTitle(node)}
                 </text>
@@ -855,41 +1150,36 @@ function HoverTip({
   );
 }
 
-function GalaxyBay({
-  noteCount,
-  connectionCount,
-  query,
-  matchCount,
-  onSearch,
+function FilterLegend({
+  legend,
+  hiddenTypes,
+  onToggle,
 }: {
-  noteCount: number;
-  connectionCount: number;
-  query: string;
-  matchCount: number | null;
-  onSearch: (value: string) => void;
+  legend: GraphLegendEntry[];
+  hiddenTypes: GraphNodeType[];
+  onToggle: (type: GraphNodeType) => void;
 }) {
+  const total = legend.reduce((sum, entry) => sum + entry.count, 0);
   return (
-    <aside className="galaxy-bay" aria-label="Search">
-      <header className="galaxy-head">
-        <p className="galaxy-title">Jarvis OS</p>
-        <p className="galaxy-stats-line">
-          {noteCount} notes · {connectionCount} connections
-        </p>
-      </header>
-      <label className="galaxy-field" htmlFor="graph-search">
-        <span className="line-label">Search</span>
-        <Input
-          id="graph-search"
-          value={query}
-          autoComplete="off"
-          placeholder="Search the brain..."
-          className="h-9 rounded-none border-border/60 bg-transparent px-2 text-sm md:text-sm"
-          onChange={(event) => onSearch(event.target.value)}
-        />
-      </label>
-      {matchCount !== null ? (
-        <p className="galaxy-note">{matchCount === 0 ? "No matches." : `${matchCount} match${matchCount === 1 ? "" : "es"}`}</p>
-      ) : null}
+    <aside className="face-filter glass" aria-label="Filter">
+      <div className="face-block-head">
+        <p>Filter</p>
+        <p>{total}</p>
+      </div>
+      <ul className="filter-list">
+        {legend.map((entry) => {
+          const hidden = hiddenTypes.includes(entry.type);
+          return (
+            <li key={entry.type}>
+              <button type="button" data-hidden={hidden ? "true" : "false"} onClick={() => onToggle(entry.type)}>
+                <span className="hub-swatch" style={{ background: entry.color }} />
+                <span>{entry.label}</span>
+                <span className="hub-count">{entry.count}</span>
+              </button>
+            </li>
+          );
+        })}
+      </ul>
     </aside>
   );
 }

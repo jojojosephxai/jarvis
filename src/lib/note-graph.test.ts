@@ -59,6 +59,24 @@ describe("buildNoteGraph", () => {
     );
   });
 
+  it("uses a folder hub only for notes that have no tag", () => {
+    const graph = buildNoteGraph([
+      { path: "About.md", text: "---\ntags:\n  - joseph\n---\n# About\n\nJoseph.\n" },
+      { path: "Journal/day.md", text: "---\ntags:\n  - journal\n---\n# Day\n\nRest.\n" },
+      { path: "Journal/plain.md", text: "# Plain\n\nNo tag in the folder.\n" },
+      { path: "Loose.md", text: "# Loose\n\nNo tag.\n" },
+    ]);
+    const onFolder = (id: string) =>
+      graph.edges.some((edge) => edge.reason === "folder" && (edge.from === id || edge.to === id));
+    assert.equal(onFolder("About.md"), false);
+    assert.equal(onFolder("Journal/day.md"), false);
+    assert.equal(graph.nodes.some((node) => node.id === "folder:Journal"), true);
+    assert.equal(graph.nodes.find((node) => node.id === "Journal/plain.md")?.hubs[0], "folder:Journal");
+    assert.equal(graph.nodes.filter((node) => node.hubs.includes("folder:Journal")).length, 1);
+    assert.equal(graph.nodes.find((node) => node.id === "Loose.md")?.hubs[0], "folder:");
+    assert.equal(graph.nodes.filter((node) => node.hubs.includes("folder:")).length, 1);
+  });
+
   it("keeps a real parent note instead of adding a folder hub", () => {
     const graph = buildNoteGraph([
       { path: "school/index.md", text: "# School\n\nHome.\n" },
@@ -143,10 +161,22 @@ describe("loadVaultGraph", () => {
       assert.equal(graph.nodes.some((note) => note.title === "School"), true);
       assert.equal(graph.noteCount <= MAX_GRAPH_NODES, true);
       assert.equal(graph.connectionCount > 0, true);
-      assert.equal(
-        graph.edges.some((edge) => edge.reason === "folder"),
-        true,
+      const notes = graph.nodes.filter((node) => node.kind === "note");
+      const untagged = notes.filter((note) => note.tags.length === 0);
+      const folderHubEdges = graph.edges.filter(
+        (edge) => edge.reason === "folder" && (edge.from.startsWith("folder:") || edge.to.startsWith("folder:")),
       );
+      for (const edge of folderHubEdges) {
+        const noteId = edge.from.startsWith("folder:") ? edge.to : edge.from;
+        assert.equal(notes.find((note) => note.id === noteId)?.tags.length ?? 0, 0);
+      }
+      assert.equal(folderHubEdges.length > 0, untagged.length > 0);
+      const schedule = graph.nodes.find((node) => node.id === "School-schedule.md");
+      assert.equal(schedule?.ssot, true);
+      assert.equal(schedule?.hubs[0], "tag:school");
+      const swim = graph.nodes.find((node) => node.id === "Swim.md");
+      assert.equal(swim?.ssot, true);
+      assert.equal(swim?.hubs[0], "tag:swim");
       assert.equal(
         graph.edges.some((edge) => edge.reason === "wikilink"),
         true,

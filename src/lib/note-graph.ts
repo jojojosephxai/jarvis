@@ -95,6 +95,31 @@ export function nodeColor(type: GraphNodeType): string {
   return GRAPH_NODE_TYPES.find((entry) => entry.type === type)?.color ?? "#3DDC97";
 }
 
+const HUB_LABEL_COLORS: Record<string, string> = {
+  school: "#49D4FF",
+  swim: "#6AA6FF",
+  jarvis: "#8EE7FF",
+  people: "#F5C451",
+  journal: "#FF6BB5",
+  decisions: "#FF7A45",
+  unsorted: "#6FA9BF",
+};
+
+const HUB_EXTRA_COLORS = ["#C6E05A", "#C084FC", "#3DDC97"];
+
+/** Stable color for a Top Hubs row and its label. Not a Filter swatch. */
+export function hubLabelColor(title: string, allTitles: readonly string[]): string {
+  const key = title.trim().toLowerCase();
+  const named = HUB_LABEL_COLORS[key];
+  if (named) return named;
+  const extras = allTitles
+    .map((item) => item.trim().toLowerCase())
+    .filter((item) => item && !HUB_LABEL_COLORS[item])
+    .sort();
+  const index = Math.max(0, extras.indexOf(key));
+  return HUB_EXTRA_COLORS[index % HUB_EXTRA_COLORS.length] ?? "#C6E05A";
+}
+
 export function nodeTypeLabel(type: GraphNodeType): string {
   return GRAPH_NODE_TYPES.find((entry) => entry.type === type)?.label ?? "Markdown note";
 }
@@ -432,7 +457,7 @@ function linkLooseFolderNotes(
   const folderHubs = new Map<string, GraphNode>();
   const pendingByFolder = new Map<string, GraphNode[]>();
   for (const note of nodes) {
-    if (note.kind !== "note" || folderTouch.has(note.id)) continue;
+    if (note.kind !== "note" || folderTouch.has(note.id) || note.tags.length > 0) continue;
     const group = pendingByFolder.get(note.folder) ?? [];
     group.push(note);
     pendingByFolder.set(note.folder, group);

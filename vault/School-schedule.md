@@ -1,6 +1,9 @@
 ---
 title: School schedule
 type: schedule
+ssot: true
+tags:
+  - school
 school: Conestoga High School
 district: Tredyffrin/Easttown (TESD)
 year: 2026-27

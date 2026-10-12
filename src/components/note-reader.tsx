@@ -8,85 +8,94 @@ export type NoteLink = {
   reason: GraphEdge["reason"];
 };
 
-function reasonLabel(reason: GraphEdge["reason"]): string {
-  switch (reason) {
-    case "wikilink":
-      return "Link";
-    case "tag":
-      return "Tag";
-    case "folder":
-      return "Folder";
-    default: {
-      const neverReason: never = reason;
-      return neverReason;
+export type PathStep = {
+  id: string;
+  index: number;
+  title: string;
+};
+
+function excerptLines(node: GraphNode): string {
+  const raw = node.text || "";
+  const withoutFront = raw.replace(/^\s*---\r?\n[\s\S]*?\r?\n---\s*/, "");
+  const kept: string[] = [];
+  let skippedTitle = false;
+  for (const rawLine of withoutFront.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line || line === "---") continue;
+    if (!skippedTitle && /^#{1,6}\s+/.test(line)) {
+      skippedTitle = true;
+      continue;
     }
+    kept.push(line);
+    if (kept.length === 6) break;
   }
+  return kept.join("\n");
 }
 
 export function NoteReader({
   node,
   links,
+  path,
   onBack,
   onOpen,
 }: {
   node: GraphNode;
   links: NoteLink[];
+  path: PathStep[];
   onBack: () => void;
   onOpen: (id: string) => void;
 }) {
-  const body = (node.text || node.excerpt).trim();
   const color = nodeColor(node.nodeType);
+  const excerpt = excerptLines(node);
+  const tracing = path.length > 1;
   return (
-    <aside className="graph-inspector" aria-label="Note">
+    <aside className="graph-inspector glass" aria-label="Inspector">
       <div className="inspector-head">
-        <p className="inspector-kicker inspector-type">
-          <span className="inspector-type-dot" style={{ background: color }} />
-          {nodeTypeLabel(node.nodeType)}
-        </p>
+        <p className="inspector-kicker">Inspector</p>
         <button type="button" className="inspector-back" onClick={onBack}>
-          Back
+          Close
         </button>
       </div>
-      <div className="inspector-stack">
-        <h3 className="inspector-title">{node.title}</h3>
-        {node.tags.length > 0 ? (
-          <div className="inspector-chips">
-            {node.tags.map((tag) => (
-              <span key={tag} className="inspector-chip">
-                {tag}
-              </span>
-            ))}
-          </div>
-        ) : null}
+      <p className="inspector-type">
+        <span className="inspector-type-dot" style={{ background: color }} />
+        {nodeTypeLabel(node.nodeType)}
+      </p>
+      <h3 className="inspector-title">{node.title}</h3>
+      <p className="inspector-path">{node.id}</p>
+      {excerpt ? <p className="inspector-body">{excerpt}</p> : null}
+      {tracing ? (
         <div className="inspector-block">
           <h4>Path</h4>
-          <p className="inspector-path">{node.id}</p>
+          <ol className="inspector-links">
+            {path.map((step) => (
+              <li key={step.id}>
+                <button type="button" onClick={() => onOpen(step.id)}>
+                  <span>
+                    {step.index + 1}. {step.title}
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ol>
         </div>
+      ) : null}
+      {links.length > 0 ? (
         <div className="inspector-block">
-          <h4>Inside</h4>
-          <p className="inspector-body">{body || "This dot has no written text."}</p>
+          <h4>
+            Connections <span>{links.length}</span>
+          </h4>
+          <ul className="inspector-links">
+            {links.map((link) => (
+              <li key={`${link.reason}:${link.id}`}>
+                <button type="button" onClick={() => onOpen(link.id)}>
+                  <span>{link.title}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
         </div>
-        {links.length > 0 ? (
-          <div className="inspector-block">
-            <h4>
-              Connections <span>{links.length}</span>
-            </h4>
-            <ul className="inspector-links">
-              {links.map((link) => (
-                <li key={`${link.reason}:${link.id}`}>
-                  <button type="button" onClick={() => onOpen(link.id)}>
-                    <span>{link.title}</span>
-                    <span className="inspector-reason" data-reason={link.reason}>
-                      {reasonLabel(link.reason)}
-                    </span>
-                  </button>
-                </li>
-              ))}
-            </ul>
-          </div>
-        ) : null}
-        <p className="inspector-foot">Click empty space or press Escape to leave this note.</p>
-      </div>
+      ) : null}
+      <p className="inspector-foot">Shift-click another note to trace the path.</p>
     </aside>
   );
 }

@@ -8,6 +8,7 @@ import { orbModeIndex, type OrbMode } from "@/lib/orb-mode";
 const PARTICLE_COUNT = 6400;
 
 const VERT = `
+precision mediump float;
 attribute vec3 position;
 attribute float aSeed;
 attribute float aRadial;
@@ -43,7 +44,7 @@ void main() {
 `;
 
 const FRAG = `
-precision highp float;
+precision mediump float;
 varying float vBright;
 void main() {
   vec2 uv = gl_PointCoord - vec2(0.5);
@@ -86,6 +87,11 @@ function particleGeometry(gl: OGLRenderingContext): Geometry {
   });
 }
 
+function shaderLog(gl: OGLRenderingContext, shader: WebGLShader, label: string): string {
+  const log = gl.getShaderInfoLog(shader) ?? "";
+  return log.trim() ? `${label}: ${log.trim()}` : "";
+}
+
 export function OrbCanvas({
   mode,
   levelRef,
@@ -93,7 +99,7 @@ export function OrbCanvas({
 }: {
   mode: OrbMode;
   levelRef: RefObject<number>;
-  onFail: () => void;
+  onFail: (reason: string) => void;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const modeRef = useRef(mode);
@@ -104,7 +110,9 @@ export function OrbCanvas({
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) {
-      failRef.current();
+      const reason = "Orb canvas was not in the document.";
+      console.error(reason);
+      failRef.current(reason);
       return;
     }
 
@@ -113,11 +121,12 @@ export function OrbCanvas({
     let dead = false;
     let renderer: Renderer | null = null;
 
-    const fail = () => {
+    const fail = (reason: string) => {
       if (dead) return;
       dead = true;
       cancelAnimationFrame(frame);
-      failRef.current();
+      console.error(reason);
+      failRef.current(reason);
     };
 
     try {
@@ -126,13 +135,17 @@ export function OrbCanvas({
         canvas,
         alpha: true,
         depth: false,
+        stencil: false,
         antialias: false,
+        premultipliedAlpha: false,
+        preserveDrawingBuffer: false,
+        powerPreference: "default",
         dpr,
-        webgl: 1,
+        webgl: 2,
       });
       const gl = renderer.gl;
-      if (!gl) {
-        fail();
+      if (!gl || gl.isContextLost()) {
+        fail("WebGL context was missing or already lost after Renderer setup.");
         return;
       }
       gl.clearColor(0, 0, 0, 0);
@@ -154,14 +167,18 @@ export function OrbCanvas({
         },
       });
       program.setBlendFunc(gl.SRC_ALPHA, gl.ONE);
-      if (!gl.getProgramParameter(program.program, gl.LINK_STATUS)) {
-        fail();
+      const linked = gl.getProgramParameter(program.program, gl.LINK_STATUS);
+      if (!linked) {
+        const vert = program.vertexShader ? shaderLog(gl, program.vertexShader, "vertex") : "";
+        const frag = program.fragmentShader ? shaderLog(gl, program.fragmentShader, "fragment") : "";
+        const link = (gl.getProgramInfoLog(program.program) ?? "").trim();
+        fail(["Particle program did not link.", vert, frag, link].filter(Boolean).join(" "));
         return;
       }
       const mesh = new Mesh(gl, { geometry: particleGeometry(gl), program, mode: gl.POINTS });
 
       const resize = () => {
-        if (!renderer) return;
+        if (!renderer || dead) return;
         const parent = canvas.parentElement;
         const width = Math.max(parent?.clientWidth || canvas.clientWidth || 1, 1);
         const height = Math.max(parent?.clientHeight || canvas.clientHeight || 1, 1);
@@ -181,7 +198,7 @@ export function OrbCanvas({
         if (dead || !renderer) return;
         frame = requestAnimationFrame(tick);
         if (gl.isContextLost()) {
-          fail();
+          fail("WebGL context lost.");
           return;
         }
         const modeNow = modeRef.current;
@@ -200,9 +217,8 @@ export function OrbCanvas({
       };
       frame = requestAnimationFrame(tick);
 
-      const onLost = (event: Event) => {
-        event.preventDefault();
-        fail();
+      const onLost = () => {
+        fail("WebGL context lost.");
       };
       canvas.addEventListener("webglcontextlost", onLost);
 
@@ -211,12 +227,10 @@ export function OrbCanvas({
         cancelAnimationFrame(frame);
         observer.disconnect();
         canvas.removeEventListener("webglcontextlost", onLost);
-        const lose = gl.getExtension("WEBGL_lose_context");
-        lose?.loseContext();
       };
-    } catch {
-      fail();
-      return;
+    } catch (error) {
+      const reason = error instanceof Error ? error.stack ?? error.message : String(error);
+      fail(`Orb renderer threw. ${reason}`);
     }
   }, [levelRef]);
 

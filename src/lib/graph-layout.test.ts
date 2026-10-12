@@ -51,6 +51,41 @@ describe("layoutGalaxy", () => {
     const long = layoutGalaxy(pair, link, { repel: 50, link: 280, ...CANVAS });
     assert.equal(meanDistance(long) > meanDistance(short), true);
   });
+
+  it("spreads hubs across the frame", () => {
+    const width = 1400;
+    const height = 900;
+    const placed = layoutGalaxy(
+      [
+        { id: "tag:school", kind: "folder" },
+        { id: "tag:swim", kind: "folder" },
+        { id: "tag:people", kind: "folder" },
+        { id: "School.md", kind: "note", hubId: "tag:school" },
+        { id: "Swim.md", kind: "note", hubId: "tag:swim" },
+      ],
+      [
+        { from: "School.md", to: "tag:school" },
+        { from: "Swim.md", to: "tag:swim" },
+      ],
+      { repel: 160, link: 180, width, height },
+    );
+    const byId = new Map(placed.map((point) => [point.id, point]));
+    const hubs = ["tag:school", "tag:swim", "tag:people"].map((id) => byId.get(id));
+    assert.equal(hubs.every(Boolean), true);
+    let total = 0;
+    let count = 0;
+    for (let i = 0; i < hubs.length; i += 1) {
+      for (let j = i + 1; j < hubs.length; j += 1) {
+        const a = hubs[i];
+        const b = hubs[j];
+        if (!a || !b) continue;
+        total += Math.hypot(a.x - b.x, a.y - b.y);
+        count += 1;
+      }
+    }
+    const mean = total / count;
+    assert.equal(mean > Math.min(width, height) * 0.28, true);
+  });
 });
 
 describe("depth", () => {

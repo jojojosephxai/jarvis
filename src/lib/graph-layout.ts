@@ -3,6 +3,8 @@ export type LayoutNode = {
   kind: "note" | "folder";
   /** When set, the settled layout parks this note beside that hub. */
   anchorId?: string;
+  /** Cluster this note is pulled toward. Folder nodes are their own hub. */
+  hubId?: string;
 };
 
 export type LayoutEdge = {
@@ -68,6 +70,42 @@ function shellPoint(index: number, count: number): SpacePoint {
   return { x: Math.cos(theta) * ring, y, z: Math.sin(theta) * ring };
 }
 
+function clusterId(node: LayoutNode, edges: LayoutEdge[], folderIds: Set<string>): string | undefined {
+  if (node.kind === "folder") return node.id;
+  if (node.hubId && folderIds.has(node.hubId)) return node.hubId;
+  for (const edge of edges) {
+    if (edge.from === node.id && folderIds.has(edge.to)) return edge.to;
+    if (edge.to === node.id && folderIds.has(edge.from)) return edge.from;
+  }
+  return node.hubId;
+}
+
+/** Hubs sit on a Fibonacci disk so clusters fill the frame instead of one clump. */
+function hubHomes(hubs: LayoutNode[], width: number, height: number): Map<string, SpacePoint> {
+  const homes = new Map<string, SpacePoint>();
+  const cx = width / 2;
+  const cy = height / 2;
+  const count = hubs.length;
+  if (count === 0) return homes;
+  const rx = width * 0.36;
+  const ry = height * 0.34;
+  const golden = Math.PI * (3 - Math.sqrt(5));
+  hubs.forEach((hub, index) => {
+    if (count === 1) {
+      homes.set(hub.id, { x: cx, y: cy, z: 0 });
+      return;
+    }
+    const radius = Math.sqrt((index + 0.5) / count);
+    const theta = index * golden;
+    homes.set(hub.id, {
+      x: cx + Math.cos(theta) * rx * radius,
+      y: cy + Math.sin(theta) * ry * radius,
+      z: Math.sin(theta * 0.5) * Math.min(width, height) * 0.06,
+    });
+  });
+  return homes;
+}
+
 export function layoutGalaxy(
   nodes: LayoutNode[],
   edges: LayoutEdge[],
@@ -83,21 +121,29 @@ export function layoutGalaxy(
   const link = clamp(options.link, 24, 480);
   const density = edges.length / Math.max(nodes.length, 1);
   const crowd = clamp(density / 4, 1, 2.4);
-  const shellScale = 1.15 + Math.min(nodes.length, 28) * 0.012;
+  const folders = nodes.filter((node) => node.kind === "folder");
+  const folderIds = new Set(folders.map((node) => node.id));
+  const homes = hubHomes(folders, width, height);
+  const membership = new Map(nodes.map((node) => [node.id, clusterId(node, edges, folderIds)]));
+
   const points: LayoutPoint[] = nodes.map((node, index) => {
-    const shell = shellPoint(index, nodes.length);
-    const radius =
-      (node.kind === "folder" ? link * 0.12 : link * (0.92 + (index % 5) * 0.06)) * shellScale;
+    const homeId = membership.get(node.id);
+    const home = homeId ? homes.get(homeId) : undefined;
+    const shell = shellPoint(index, Math.max(nodes.length, 2));
+    if (node.kind === "folder" && home) {
+      return { id: node.id, x: home.x, y: home.y, z: home.z };
+    }
+    const base = home ?? { x: cx, y: cy, z: 0 };
+    const spread = link * (0.28 + (index % 5) * 0.04);
     return {
       id: node.id,
-      x: cx + shell.x * radius,
-      y: cy + shell.y * radius * 0.88,
-      z: shell.z * radius,
+      x: base.x + shell.x * spread,
+      y: base.y + shell.y * spread * 0.86,
+      z: base.z + shell.z * Math.max(36, link * 0.22),
     };
   });
   const index = new Map(points.map((point) => [point.id, point]));
-  const kinds = new Map(nodes.map((node) => [node.id, node.kind]));
-  const steps = 110;
+  const steps = 90;
 
   for (let step = 0; step < steps; step += 1) {
     const cooling = 1 - step / steps;
@@ -116,8 +162,9 @@ export function layoutGalaxy(
           dz = 0.3;
           dist = Math.hypot(dx, dy, dz);
         }
-        const push = (repel * repel * crowd) / dist;
-        const scale = (push / dist) * 0.014 * (0.45 + cooling);
+        const same = membership.get(a.id) && membership.get(a.id) === membership.get(b.id);
+        const push = (repel * repel * (same ? 0.55 : 1) * crowd) / dist;
+        const scale = (push / dist) * 0.012 * (0.4 + cooling);
         a.x += dx * scale;
         a.y += dy * scale;
         a.z += dz * scale;
@@ -135,8 +182,9 @@ export function layoutGalaxy(
       const dy = b.y - a.y;
       const dz = b.z - a.z;
       const dist = Math.hypot(dx, dy, dz) || 0.8;
-      const target = link * (0.85 + Math.min(crowd, 1.6) * 0.12);
-      const delta = (dist - target) * 0.032 * (0.4 + cooling);
+      const same = membership.get(a.id) && membership.get(a.id) === membership.get(b.id);
+      const target = link * (same ? 0.42 : 0.95);
+      const delta = (dist - target) * 0.028 * (0.35 + cooling);
       const ux = dx / dist;
       const uy = dy / dist;
       const uz = dz / dist;
@@ -149,14 +197,17 @@ export function layoutGalaxy(
     }
 
     for (const point of points) {
-      const hold = kinds.get(point.id) === "folder" ? 0.028 : 0.006;
-      point.x += (cx - point.x) * hold;
-      point.y += (cy - point.y) * hold;
-      point.z += (0 - point.z) * (kinds.get(point.id) === "folder" ? 0.022 : 0.003);
+      const homeId = membership.get(point.id);
+      const home = homeId ? homes.get(homeId) : undefined;
+      if (!home) continue;
+      const hold = folderIds.has(point.id) ? 0.22 : 0.05;
+      point.x += (home.x - point.x) * hold;
+      point.y += (home.y - point.y) * hold;
+      point.z += (home.z - point.z) * (folderIds.has(point.id) ? 0.12 : 0.02);
     }
   }
 
-  const pad = 40;
+  const pad = 36;
   const zLimit = Math.min(width, height) * 0.48;
   for (const point of points) {
     point.x = Math.min(width - pad, Math.max(pad, point.x));
@@ -359,10 +410,6 @@ function labelBoxesOverlap(a: LabelCandidate, b: LabelCandidate): boolean {
   return Math.abs(a.x - b.x) < (a.w + b.w) / 2 + pad && Math.abs(a.y - b.y) < (a.h + b.h) / 2 + pad;
 }
 
-/**
- * Hubs, the hovered note, and the selected note are protected: a collision
- * never hides them. Other titles drop when they overlap a label already kept.
- */
 export function pickLabels(candidates: LabelCandidate[]): PlacedLabel[] {
   const ordered = [...candidates].sort((a, b) => {
     if (b.priority !== a.priority) return b.priority - a.priority;

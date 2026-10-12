@@ -1,5 +1,6 @@
 ---
 title: Swim
+ssot: true
 tags:
   - swim
   - umly

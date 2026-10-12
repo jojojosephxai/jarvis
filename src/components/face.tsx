@@ -1,18 +1,12 @@
 "use client";
 
-import { useEffect, useRef, useState, type RefObject } from "react";
+import { useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 
-import { BootScreen } from "@/components/boot-screen";
 import { NoteGraph, type GraphCue } from "@/components/note-graph";
-import { PlanCard } from "@/components/plan-card";
-import { ReceiptCard } from "@/components/receipt-card";
-import { OrbStage } from "@/components/orb-stage";
-import { resolveOrbMode, type OrbMode } from "@/lib/orb-mode";
+import { OrbStage, type OrbPlace } from "@/components/orb-stage";
 import { useVoice } from "@/components/use-voice";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { VoiceButtons, VoiceStatus } from "@/components/voice-controls";
 import { makeId } from "@/lib/ids";
+import { resolveOrbMode, type OrbMode } from "@/lib/orb-mode";
 import {
   isHandPlan,
   isMorningBrief,
@@ -20,43 +14,74 @@ import {
   type CalendarEvent,
   type ChatResponse,
   type HandPlan,
-  type MorningBrief,
   type Receipt,
 } from "@/lib/types";
 import type { MouthKind } from "@/lib/voice/types";
-import { FACE_VIEWS, decideFaceMode, viewLabel, type FaceView } from "@/lib/view-intent";
+import { decideFaceMode } from "@/lib/view-intent";
 
 const BOOT_KEY = "jarvis-boot";
+const EXAMPLES = ["remind me…", "good morning", "show swim times"] as const;
 
-type BrainLabel = "Vault" | "grok-4.7" | "Brain wiring";
+let greetedThisLoad = false;
+
+type LogItem =
+  | { kind: "you"; id: string; text: string; at: string }
+  | { kind: "jarvis"; id: string; text: string; at: string; sources?: string[]; failed?: boolean }
+  | { kind: "hand"; id: string; at: string; reply: string; plan?: HandPlan; receipts: Receipt[]; cancelled?: boolean };
+
+type Job = {
+  objective: string;
+  steps: string[];
+  abort: AbortController;
+};
+
+type LogTab = "chat" | "tasks" | "log";
 
 function markBootDone() {
   try {
     sessionStorage.setItem(BOOT_KEY, "1");
     document.documentElement.dataset.boot = "done";
   } catch {
-    // Session storage can be blocked. The boot still ends.
+    // Session storage can be blocked. The intro still ends.
   }
 }
 
-type LogItem =
-  | { kind: "you"; id: string; text: string; at: string }
-  | { kind: "stub"; id: string; heard: string; at: string; view: FaceView }
-  | { kind: "answer"; id: string; text: string; notice?: string; at: string; failed?: boolean }
-  | { kind: "hand"; id: string; at: string; reply: string; plan?: HandPlan; receipts: Receipt[] }
-  | { kind: "brief"; id: string; at: string; brief: MorningBrief };
-
-function stubOutcome(view: FaceView): string {
-  return `View is now ${viewLabel(view)}. That change stays on this screen.`;
+function greetingLine(now: Date): string {
+  const hour = now.getHours();
+  if (hour < 12) return "Good morning, Joseph.";
+  if (hour < 17) return "Good afternoon, Joseph.";
+  return "Good evening, Joseph.";
 }
 
 function formatStamp(iso: string): string {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return iso;
-  return new Intl.DateTimeFormat(undefined, {
-    hour: "numeric",
-    minute: "2-digit",
-  }).format(date);
+  return new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" }).format(date);
+}
+
+function voiceName(mouth: MouthKind | "unknown"): string {
+  switch (mouth) {
+    case "grok":
+      return "Altair";
+    case "azure":
+      return "British";
+    case "browser":
+      return "This computer";
+    case "unknown":
+      return "Checking";
+    case "not-live":
+      return "Not live";
+    default: {
+      const neverMouth: never = mouth;
+      return neverMouth;
+    }
+  }
+}
+
+function orbPlace(working: boolean, mode: OrbMode): OrbPlace {
+  if (working) return "corner";
+  if (mode === "listening" || mode === "speaking") return "center";
+  return "dock";
 }
 
 export function Face() {
@@ -66,16 +91,18 @@ export function Face() {
   const [ackOn, setAckOn] = useState(false);
   const [working, setWorking] = useState(false);
   const [skill, setSkill] = useState<string | null>(null);
-  const [viewMode, setViewMode] = useState<FaceView>("graph");
   const [cue, setCue] = useState<GraphCue | null>(null);
-  const cueToken = useRef(0);
-  const [talkOpen, setTalkOpen] = useState(false);
-  const [booting, setBooting] = useState(true);
-  const [pending, setPending] = useState(false);
-  const [brainLabel, setBrainLabel] = useState<BrainLabel>("Vault");
+  const [job, setJob] = useState<Job | null>(null);
+  const [tab, setTab] = useState<LogTab>("chat");
   const [events, setEvents] = useState<CalendarEvent[]>([]);
-  const endRef = useRef<HTMLDivElement>(null);
+  const [intro, setIntro] = useState<"in" | "out">("in");
+  const [wake, setWake] = useState(false);
+  const [liveLine, setLiveLine] = useState("");
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [pending, setPending] = useState(false);
+  const cueToken = useRef(0);
   const inputRef = useRef<HTMLInputElement>(null);
+  const chatRef = useRef<HTMLDivElement>(null);
   const bootTimer = useRef<number | null>(null);
   const ackTimer = useRef<number | null>(null);
   const pendingRef = useRef(false);
@@ -84,97 +111,98 @@ export function Face() {
     speakingRef.current = active;
     setSpeaking(active);
   });
+  const speakRef = useRef(voice.speak);
+  speakRef.current = voice.speak;
   const orb = resolveOrbMode({
     speaking,
     working,
     listening: voice.listening,
     ack: ackOn,
   });
+  const place = orbPlace(working, orb);
 
   useEffect(() => {
     const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    const seen = document.documentElement.dataset.boot === "done";
-    const delay = seen ? 0 : reduce ? 400 : 2200;
+    const frame = window.requestAnimationFrame(() => setIntro("out"));
     bootTimer.current = window.setTimeout(() => {
       markBootDone();
-      setBooting(false);
-    }, delay);
+      void greet();
+    }, reduce ? 200 : 1600);
     void loadCalendar(setEvents);
     return () => {
+      window.cancelAnimationFrame(frame);
       if (bootTimer.current !== null) window.clearTimeout(bootTimer.current);
       if (ackTimer.current !== null) window.clearTimeout(ackTimer.current);
     };
   }, []);
 
   useEffect(() => {
-    let cancelled = false;
-    fetch("/api/status")
-      .then((response) => response.json())
-      .then((payload: unknown) => {
-        if (cancelled) return;
-        if (!payload || typeof payload !== "object") {
-          setBrainLabel("Brain wiring");
-          return;
-        }
-        const mode = (payload as { mode?: unknown }).mode;
-        if (mode === "grok") setBrainLabel("grok-4.7");
-        else if (mode === "demo") setBrainLabel("Vault");
-        else setBrainLabel("Brain wiring");
-      })
-      .catch(() => {
-        if (!cancelled) setBrainLabel("Brain wiring");
+    if (!wake) return;
+    let stopped = false;
+    let busy = false;
+    const start = () => {
+      if (stopped || busy) return;
+      busy = true;
+      const line = greetingLine(new Date());
+      setLiveLine(line);
+      void speakRef.current(line).then((result) => {
+        busy = false;
+        if (stopped) return;
+        setWake(result.blocked);
       });
-    return () => {
-      cancelled = true;
     };
-  }, []);
-
-  function endBoot() {
-    if (bootTimer.current !== null) {
-      window.clearTimeout(bootTimer.current);
-      bootTimer.current = null;
-    }
-    markBootDone();
-    setBooting(false);
-  }
+    window.addEventListener("pointerdown", start);
+    window.addEventListener("keydown", start);
+    return () => {
+      stopped = true;
+      window.removeEventListener("pointerdown", start);
+      window.removeEventListener("keydown", start);
+    };
+  }, [wake]);
 
   useEffect(() => {
-    endRef.current?.scrollIntoView({ block: "end" });
-  }, [items]);
+    chatRef.current?.scrollTo({ top: chatRef.current.scrollHeight });
+  }, [items, tab]);
+
+  useEffect(() => {
+    if (!working) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      event.stopPropagation();
+      stopWork();
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [working, job]);
+
+  async function greet() {
+    if (greetedThisLoad) return;
+    greetedThisLoad = true;
+    const line = greetingLine(new Date());
+    setLiveLine(line);
+    const result = await speakRef.current(line);
+    if (result.blocked) setWake(true);
+  }
 
   function clearAckTimer() {
     if (ackTimer.current !== null) window.clearTimeout(ackTimer.current);
     ackTimer.current = null;
   }
 
-  function pulseOrb() {
-    if (speakingRef.current || pendingRef.current) return;
-    setAckOn(true);
-    clearAckTimer();
-    ackTimer.current = window.setTimeout(() => setAckOn(false), 900);
-    if (window.matchMedia("(pointer: fine)").matches) inputRef.current?.focus();
-  }
-
-  function startJob() {
+  function beginWork(objective: string, steps: string[] = [], skillName: string | null = null) {
+    const abort = new AbortController();
     pendingRef.current = true;
     setPending(true);
-    setWorking(false);
+    setJob({ objective, steps, abort });
+    setSkill(skillName);
     setAckOn(true);
     clearAckTimer();
     ackTimer.current = window.setTimeout(() => {
       setAckOn(false);
       if (pendingRef.current) setWorking(true);
-    }, 900);
-  }
-
-  function startHands(tool?: string) {
-    pendingRef.current = true;
-    setPending(true);
-    clearAckTimer();
-    setAckOn(false);
-    setWorking(true);
-    const name = tool?.trim().replace(/\./g, "-").toUpperCase();
-    setSkill(name || null);
+    }, 300);
+    return abort;
   }
 
   function finishJob() {
@@ -182,6 +210,19 @@ export function Face() {
     setPending(false);
     setWorking(false);
     setSkill(null);
+    setJob(null);
+    setAckOn(false);
+    clearAckTimer();
+  }
+
+  function stopWork() {
+    job?.abort.abort();
+    finishJob();
+  }
+
+  function pushCue(next: Omit<GraphCue, "token">) {
+    cueToken.current += 1;
+    setCue({ token: cueToken.current, ...next });
   }
 
   async function send(text: string) {
@@ -190,49 +231,55 @@ export function Face() {
     voice.stop();
     const decision = decideFaceMode(trimmed);
     const at = new Date().toISOString();
-    setTalkOpen(true);
-    setViewMode(decision.view);
     if (decision.exclusive) {
       if (decision.view === "graph") {
-        cueToken.current += 1;
-        setCue({
-          token: cueToken.current,
+        pushCue({
           focusQuery: decision.focusQuery,
           pathFrom: decision.pathFrom,
           pathTo: decision.pathTo,
+          fit: !decision.focusQuery && !decision.pathFrom,
         });
+        setDraft("");
+        return;
       }
+      const reply = "The orb is already on the graph.";
       setItems((current) =>
         [
           ...current,
           { kind: "you" as const, id: makeId("you"), text: trimmed, at },
-          { kind: "stub" as const, id: makeId("stub"), heard: trimmed, at, view: decision.view },
+          { kind: "jarvis" as const, id: makeId("ans"), text: reply, at },
         ].slice(-40),
       );
       setDraft("");
-      pulseOrb();
+      setTab("chat");
+      setLiveLine(reply);
       return;
     }
 
     setItems((current) => [...current, { kind: "you" as const, id: makeId("you"), text: trimmed, at }].slice(-40));
     setDraft("");
-    startJob();
+    setTab("chat");
+    const abort = beginWork(trimmed);
+    let reply = "";
     try {
       const response = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ messages: [{ role: "user", content: trimmed }] }),
+        signal: abort.signal,
       });
       const payload: unknown = await response.json();
       if (!response.ok || !isChatResponse(payload)) {
-        const error =
-          payload && typeof payload === "object" && typeof (payload as { error?: unknown }).error === "string"
-            ? (payload as { error: string }).error
-            : "Brain wiring: the brain did not answer. Nothing was invented.";
         setItems((current) =>
           [
             ...current,
-            { kind: "answer" as const, id: makeId("ans"), text: error, at, failed: true },
+            {
+              kind: "jarvis" as const,
+              id: makeId("ans"),
+              text: "Jarvis did not answer. Nothing was invented.",
+              at,
+              failed: true,
+            },
           ].slice(-40),
         );
         return;
@@ -251,14 +298,53 @@ export function Face() {
             },
           ].slice(-40),
         );
+        if (payload.plan?.state === "waiting") setTab("tasks");
         if (touchesCalendar(payload.plan?.tool, payload.receipts)) void loadCalendar(setEvents);
-        await voice.speak(payload.reply);
+        reply = payload.reply;
         return;
       }
       const brief = payload.brief;
       if (brief && isMorningBrief(brief)) {
         setItems((current) =>
-          [...current, { kind: "brief" as const, id: makeId("brief"), at, brief }].slice(-40),
+          [
+            ...current,
+            {
+              kind: "jarvis" as const,
+              id: makeId("brief"),
+              text: brief.reply,
+              sources: brief.sources,
+              at,
+            },
+          ].slice(-40),
+        );
+        reply = brief.reply;
+        return;
+      }
+      setItems((current) =>
+        [
+          ...current,
+          {
+            kind: "jarvis" as const,
+            id: makeId("ans"),
+            text: payload.reply,
+            sources: payload.sources,
+            at,
+          },
+        ].slice(-40),
+      );
+      reply = payload.reply;
+    } catch (error) {
+      if (abort.signal.aborted || (error instanceof DOMException && error.name === "AbortError")) {
+        setItems((current) =>
+          [
+            ...current,
+            {
+              kind: "jarvis" as const,
+              id: makeId("ans"),
+              text: "Stopped. I do not know if that finished.",
+              at,
+            },
+          ].slice(-40),
         );
         return;
       }
@@ -266,23 +352,9 @@ export function Face() {
         [
           ...current,
           {
-            kind: "answer" as const,
+            kind: "jarvis" as const,
             id: makeId("ans"),
-            text: payload.reply,
-            notice: payload.notice,
-            at,
-          },
-        ].slice(-40),
-      );
-      await voice.speak(payload.reply);
-    } catch {
-      setItems((current) =>
-        [
-          ...current,
-          {
-            kind: "answer" as const,
-            id: makeId("ans"),
-            text: "Brain wiring: I couldn't reach the brain. Check that the server is running, then try again.",
+            text: "I couldn't reach Jarvis. Try again.",
             at,
             failed: true,
           },
@@ -291,59 +363,23 @@ export function Face() {
     } finally {
       finishJob();
     }
-  }
-
-  async function runBrief() {
-    if (pendingRef.current) return;
-    setViewMode("orb");
-    setTalkOpen(true);
-    const at = new Date().toISOString();
-    setItems((current) =>
-      [...current, { kind: "you" as const, id: makeId("you"), text: "Morning brief", at }].slice(-40),
-    );
-    startJob();
-    try {
-      const response = await fetch("/api/brief");
-      const payload: unknown = await response.json();
-      if (!response.ok || !isMorningBrief(payload)) {
-        const error =
-          payload && typeof payload === "object" && typeof (payload as { error?: unknown }).error === "string"
-            ? (payload as { error: string }).error
-            : "The morning brief did not load. Nothing was invented from the calendar or the vault.";
-        setItems((current) =>
-          [...current, { kind: "answer" as const, id: makeId("ans"), text: error, at, failed: true }].slice(-40),
-        );
-        return;
-      }
-      setItems((current) =>
-        [...current, { kind: "brief" as const, id: makeId("brief"), at, brief: payload }].slice(-40),
-      );
-    } catch {
-      setItems((current) =>
-        [
-          ...current,
-          {
-            kind: "answer" as const,
-            id: makeId("ans"),
-            text: "The morning brief did not load. Check that the server is running, then try again. Nothing was invented.",
-            at,
-            failed: true,
-          },
-        ].slice(-40),
-      );
-    } finally {
-      finishJob();
+    if (reply.trim()) {
+      setLiveLine(reply);
+      await voice.speak(reply);
     }
   }
 
   async function decide(itemId: string, plan: HandPlan, decision: "yes" | "no") {
     if (plan.state !== "waiting" || plan.gate !== "confirm" || pendingRef.current) return;
-    startHands(plan.tool);
+    const name = plan.tool.trim().replace(/\./g, "-").toUpperCase();
+    const abort = beginWork(plan.title || plan.tool, plan.steps, name);
+    let reply = "";
     try {
       const response = await fetch("/api/hands", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ tool: plan.tool, input: plan.input, decision }),
+        signal: abort.signal,
       });
       const payload: unknown = await response.json();
       if (!response.ok || !isHandResponse(payload)) return;
@@ -355,365 +391,395 @@ export function Face() {
         ),
       );
       if (touchesCalendar(payload.plan.tool, payload.receipts)) void loadCalendar(setEvents);
-      await voice.speak(payload.reply);
-    } catch {
-      // The plan stays waiting so it can be tried again.
+      reply = payload.reply;
+    } catch (error) {
+      if (abort.signal.aborted || (error instanceof DOMException && error.name === "AbortError")) {
+        setItems((current) =>
+          current.map((item) =>
+            item.kind === "hand" && item.id === itemId
+              ? {
+                  ...item,
+                  cancelled: true,
+                  reply:
+                    "Stopped. Check the calendar or the note before you confirm this again. I do not know if it already ran.",
+                }
+              : item,
+          ),
+        );
+        if (touchesCalendar(plan.tool, [])) void loadCalendar(setEvents);
+        return;
+      }
     } finally {
       finishJob();
     }
+    if (reply.trim()) {
+      setLiveLine(reply);
+      await voice.speak(reply);
+    }
   }
 
+  function showCalendar() {
+    const at = new Date().toISOString();
+    const text =
+      events.length === 0
+        ? "Nothing is saved on the calendar."
+        : events.map((event) => `${event.title} — ${event.when}`).join("\n");
+    setTab("chat");
+    setItems((current) => [...current, { kind: "jarvis" as const, id: makeId("cal"), text, at }].slice(-40));
+    setLiveLine(events[0] ? `${events[0].title}, ${events[0].when}` : "Nothing is saved on the calendar.");
+  }
+
+  const micHint = voice.notice && /microphone/i.test(voice.notice) ? voice.notice : "";
+  const caption = voice.listening ? draft : speaking ? liveLine : micHint;
+  const waitingHand = items.find(
+    (item) => item.kind === "hand" && !item.cancelled && item.plan?.state === "waiting" && item.plan.gate === "confirm",
+  );
+
   return (
-    <div className="hud">
-      {booting ? <BootScreen onSkip={endBoot} brainLabel={brainLabel} mouth={voice.mouth} /> : null}
-      <header className="hud-top">
-        <div>
-          <p className="hud-mark">J.A.R.V.I.S.</p>
-        </div>
-        <dl className="hud-status" aria-label="Status">
-          <div>
-            <dt>Face</dt>
-            <dd>Online</dd>
-          </div>
-          <div>
-            <dt>Brain</dt>
-            <dd>{brainLabel}</dd>
-          </div>
-          <div>
-            <dt>Voice</dt>
-            <dd>{voiceLamp(voice.mouth)}</dd>
-          </div>
-        </dl>
-      </header>
-      <div className="hud-stage" data-orb={orbPlace(viewMode, orb)}>
-        <OpticStage view={viewMode} orb={orb} cue={cue} levelRef={voice.levelRef} skill={skill} />
-        <div className="mode-rail" role="group" aria-label="View">
-          {FACE_VIEWS.map((view) => (
-            <button
-              key={view}
-              type="button"
-              className="mode-rail-item"
-              data-active={viewMode === view ? "true" : "false"}
-              aria-pressed={viewMode === view}
-              onClick={() => setViewMode(view)}
-            >
-              {viewLabel(view)}
-            </button>
-          ))}
-        </div>
+    <div className="face" data-intro={intro}>
+      <div className="face-stage" data-orb={place}>
+        <NoteGraph cue={cue} suspendEscape={working} />
+        <OrbStage mode={orb} levelRef={voice.levelRef} skill={skill} place={place} onCornerClick={stopWork} />
       </div>
-      <section className="talk-drawer" data-open={talkOpen ? "true" : "false"} aria-label="Talk">
-        {talkOpen ? (
-          <div className="talk-log">
-            <div className="comms-head">
-              <div className="comms-title">
-                <h2>Talk</h2>
-                <p>{pending ? "Reading" : "Vault"}</p>
-              </div>
-              <div className="comms-actions">
-                <Button
-                  type="button"
-                  variant="ghost"
-                  className="hud-chip h-9 rounded-none px-3"
-                  disabled={pending}
-                  onClick={() => void runBrief()}
-                >
-                  Morning brief
-                </Button>
-                {items.length > 0 ? (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    className="hud-chip h-9 rounded-none px-3"
-                    onClick={() => {
-                      voice.stop();
-                      setItems([]);
-                    }}
-                  >
-                    Clear
-                  </Button>
-                ) : null}
-              </div>
-            </div>
-            {events.length > 0 ? (
-              <div className="talk-calendar" aria-label="Demo calendar">
-                <p className="talk-calendar-label">Calendar · {events.length}</p>
-                <ul>
-                  {events.map((event) => (
-                    <li key={event.id}>
-                      <span>{event.title}</span>
-                      <span>{event.when}</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            ) : null}
-            {items.length === 0 ? (
-              <p className="empty-talk">Notes, or Morning brief.</p>
-            ) : (
-              <div className="talk-list" aria-live="polite">
-                {items.map((item) => (
-                  <LogItemView
-                    key={item.id}
-                    item={item}
-                    pending={pending}
-                    onDecide={(choice) => {
-                      if (item.kind === "hand" && item.plan) void decide(item.id, item.plan, choice);
-                    }}
-                  />
-                ))}
-              </div>
-            )}
-            <div ref={endRef} />
-          </div>
-        ) : null}
-        <div className="talk-bar">
-          <Button
-            type="button"
-            variant="ghost"
-            className="talk-toggle h-8 rounded-none px-2.5"
-            aria-expanded={talkOpen}
-            onClick={() => setTalkOpen((open) => !open)}
-          >
-            Talk
-            {items.length > 0 ? <span className="talk-count">{items.length}</span> : null}
-          </Button>
-          <form
-            className="composer"
-            onSubmit={(event) => {
-              event.preventDefault();
-              void send(draft);
-            }}
-          >
-            <label className="sr-only" htmlFor="talk">
-              Talk to Jarvis
-            </label>
-            <Input
-              id="talk"
-              ref={inputRef}
-              value={draft}
-              maxLength={2000}
-              autoComplete="off"
-              enterKeyHint="send"
-              placeholder="Type here"
-              className="h-8 min-w-0 flex-1 rounded-none border-border bg-card px-2.5 text-sm md:text-sm"
-              onChange={(event) => setDraft(event.target.value)}
-              onFocus={() => inputRef.current?.scrollIntoView({ block: "nearest" })}
-              disabled={pending}
-            />
-            <VoiceButtons
-              listening={voice.listening}
-              pending={pending}
-              onMic={() => {
-                voice.pressMic((text, isFinal) => {
-                  if (isFinal) {
-                    void send(text);
+      <header className="face-header face-chrome">
+        <p className="face-brand">JARVIS</p>
+        <p className="face-product">NEURAL OPERATING SYSTEM · v1</p>
+        <p className="face-meta">
+          Brain grok-4.7
+          <span aria-hidden="true">·</span>
+          Voice Altair
+          <span aria-hidden="true">·</span>
+          <span className="face-online" />
+          Online
+        </p>
+      </header>
+      {working && job ? (
+        <WorkingPanel job={job} onStop={stopWork} />
+      ) : (
+        <>
+          <div className="face-bottom face-chrome">
+            {wake ? <p className="wake-hint">click to wake Jarvis</p> : null}
+            {caption ? <p className="face-caption">{caption}</p> : null}
+            <form
+              className="face-ask glass"
+              onSubmit={(event) => {
+                event.preventDefault();
+                void send(draft);
+              }}
+            >
+              <span className="ask-label">ASK</span>
+              <label className="sr-only" htmlFor="talk">
+                Ask Jarvis
+              </label>
+              <input
+                id="talk"
+                ref={inputRef}
+                value={draft}
+                maxLength={2000}
+                autoComplete="off"
+                enterKeyHint="send"
+                placeholder={EXAMPLES.map((example) => `“${example}”`).join("   ")}
+                disabled={pending}
+                onChange={(event) => setDraft(event.target.value)}
+              />
+              <button type="submit" className="ask-go" aria-label="Send">
+                <ArrowIcon />
+              </button>
+            </form>
+            <div className="tool-row" role="group" aria-label="Tools">
+              <ToolButton
+                label="Hands"
+                onClick={() => {
+                  if (waitingHand) {
+                    setTab("tasks");
                     return;
                   }
-                  setDraft(text);
-                });
-              }}
-              onSpeak={() => {
-                void voice.speak(lastSpoken(items));
-              }}
-            />
-            <Button
-              type="submit"
-              className="h-8 shrink-0 rounded-none px-3 text-sm"
-              disabled={pending || draft.trim() === ""}
-            >
-              Send
-            </Button>
-          </form>
-        </div>
-        {voice.notice || voice.listening ? (
-          <div className="voice-line">
-            <VoiceStatus line={voice.line} notice={voice.notice} mouth={voice.mouth} />
+                  inputRef.current?.focus();
+                }}
+              >
+                <HandIcon />
+              </ToolButton>
+              <ToolButton label="Calendar" onClick={showCalendar}>
+                <CalendarIcon />
+              </ToolButton>
+              <ToolButton label="School" onClick={() => pushCue({ focusHub: "School" })}>
+                <SchoolIcon />
+              </ToolButton>
+              <ToolButton label="Vault" onClick={() => pushCue({ fit: true })}>
+                <VaultIcon />
+              </ToolButton>
+              <ToolButton
+                label="Voice"
+                on={voice.listening}
+                onClick={() => {
+                  voice.pressMic((text, isFinal) => {
+                    if (isFinal) {
+                      void send(text);
+                      return;
+                    }
+                    setDraft(text);
+                  });
+                }}
+              >
+                <MicIcon />
+              </ToolButton>
+              <ToolButton label="Settings" on={settingsOpen} onClick={() => setSettingsOpen((open) => !open)}>
+                <GearIcon />
+              </ToolButton>
+            </div>
           </div>
-        ) : null}
-      </section>
+          {settingsOpen ? (
+            <aside className="face-settings glass" aria-label="Settings">
+              <p>Voice</p>
+              <p>{voiceName(voice.mouth)}</p>
+            </aside>
+          ) : null}
+          <ChatCard
+            items={items}
+            tab={tab}
+            pending={pending}
+            chatRef={chatRef}
+            onTab={setTab}
+            onDecide={(id, plan, choice) => void decide(id, plan, choice)}
+          />
+        </>
+      )}
     </div>
   );
 }
 
-function lastSpoken(items: LogItem[]): string {
-  for (const item of [...items].reverse()) {
-    if (item.kind === "brief" && item.brief.reply.trim()) return item.brief.reply;
-    if (item.kind === "hand" && item.reply.trim()) return item.reply;
-    if (item.kind === "answer" && !item.failed && item.text.trim()) return item.text;
-  }
-  return "";
+function WorkingPanel({ job, onStop }: { job: Job; onStop: () => void }) {
+  return (
+    <section className="face-work glass" aria-label="Task">
+      <p className="work-kicker">Task</p>
+      <h2 className="work-title">{job.objective}</h2>
+      {job.steps.length > 0 ? (
+        <ul className="work-steps">
+          {job.steps.map((step) => (
+            <li key={step}>
+              <span>{step}</span>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      <div className="work-foot">
+        <p className="work-kicker">{job.steps.length > 0 ? `${job.steps.length} steps` : "Working"}</p>
+        <button type="button" className="work-stop" onClick={onStop}>
+          Stop
+        </button>
+      </div>
+    </section>
+  );
 }
 
-function voiceLamp(mouth: MouthKind | "unknown"): string {
-  switch (mouth) {
-    case "unknown":
-      return "Checking";
-    case "grok":
-      return "Altair";
-    case "azure":
-      return "British";
-    case "browser":
-      return "This computer";
-    case "not-live":
-      return "Not live";
-    default: {
-      const neverMouth: never = mouth;
-      return neverMouth;
-    }
-  }
-}
-
-function orbPlace(view: FaceView, mode: OrbMode): "center" | "dock" {
-  if (mode === "listening" || mode === "speaking" || view === "orb") return "center";
-  return "dock";
-}
-
-function OpticStage({
-  view,
-  orb,
-  cue,
-  levelRef,
-  skill,
+function ChatCard({
+  items,
+  tab,
+  pending,
+  chatRef,
+  onTab,
+  onDecide,
 }: {
-  view: FaceView;
-  orb: OrbMode;
-  cue: GraphCue | null;
-  levelRef: RefObject<number>;
-  skill: string | null;
+  items: LogItem[];
+  tab: LogTab;
+  pending: boolean;
+  chatRef: RefObject<HTMLDivElement | null>;
+  onTab: (tab: LogTab) => void;
+  onDecide: (id: string, plan: HandPlan, choice: "yes" | "no") => void;
 }) {
   return (
+    <section className="face-chat glass face-chrome" aria-label="Chat">
+      <div className="chat-tabs" role="tablist">
+        {(["chat", "tasks", "log"] as const).map((name) => (
+          <button key={name} type="button" role="tab" data-active={tab === name ? "true" : "false"} onClick={() => onTab(name)}>
+            {name}
+          </button>
+        ))}
+      </div>
+      <div className="chat-log" ref={chatRef}>
+        {tab === "chat" ? <ChatLines items={items} /> : null}
+        {tab === "tasks" ? <TaskLines items={items} pending={pending} onDecide={onDecide} /> : null}
+        {tab === "log" ? <LogLines items={items} /> : null}
+      </div>
+    </section>
+  );
+}
+
+function ChatLines({ items }: { items: LogItem[] }) {
+  const rows = items.filter((item) => item.kind === "you" || item.kind === "jarvis" || item.kind === "hand");
+  if (rows.length === 0) return <p className="face-hint">Ask when you are ready.</p>;
+  return (
     <>
-      <NoteGraph cue={cue} />
-      <OrbStage mode={orb} levelRef={levelRef} skill={skill} place={orbPlace(view, orb)} />
+      {rows.map((item) => {
+        if (item.kind === "you") {
+          return (
+            <article key={item.id} className="chat-line">
+              <p className="chat-meta">You · {formatStamp(item.at)}</p>
+              <p>{item.text}</p>
+            </article>
+          );
+        }
+        if (item.kind === "jarvis") {
+          return (
+            <article key={item.id} className="chat-line">
+              <p className="chat-meta">Jarvis · {formatStamp(item.at)}</p>
+              <p>{item.text}</p>
+              {item.sources && item.sources.length > 0 ? <p className="chat-sources">Sources: {item.sources.join(", ")}</p> : null}
+            </article>
+          );
+        }
+        return (
+          <article key={item.id} className="chat-line">
+            <p className="chat-meta">Jarvis · {formatStamp(item.at)}</p>
+            <p>{item.reply}</p>
+          </article>
+        );
+      })}
     </>
   );
 }
 
-function LogItemView({
-  item,
+function TaskLines({
+  items,
   pending,
   onDecide,
 }: {
-  item: LogItem;
+  items: LogItem[];
   pending: boolean;
-  onDecide: (decision: "yes" | "no") => void;
+  onDecide: (id: string, plan: HandPlan, choice: "yes" | "no") => void;
 }) {
-  switch (item.kind) {
-    case "you":
-      return (
-        <article className="you-line">
-          <p className="line-label">You</p>
-          <p className="line-text">{item.text}</p>
-          <time dateTime={item.at}>{formatStamp(item.at)}</time>
-        </article>
-      );
-    case "stub":
-      return (
-        <article className="stub-receipt">
-          <div className="stub-head">
-            <p>View</p>
-            <p>This screen</p>
-          </div>
-          <h3>face.view</h3>
-          <p className="stub-lead">View changed on this screen only.</p>
-          <dl>
-            <div>
-              <dt>You said</dt>
-              <dd>{item.heard}</dd>
-            </div>
-            <div>
-              <dt>View</dt>
-              <dd>{viewLabel(item.view)}</dd>
-            </div>
-          </dl>
-          <p className="stub-outcome">{stubOutcome(item.view)}</p>
-          <time dateTime={item.at}>{formatStamp(item.at)}</time>
-        </article>
-      );
-    case "answer":
-      return (
-        <div className="talk-list">
-          <p className="line-text">{item.text}</p>
-          {item.notice ? <p className="stub-lead">{item.notice}</p> : null}
-        </div>
-      );
-    case "brief":
-      return <BriefCard at={item.at} brief={item.brief} />;
-    case "hand":
-      return (
-        <div className="talk-list">
-          <p className="line-text">{item.reply}</p>
-          {item.plan ? (
-            <PlanCard
-              plan={item.plan}
-              pending={pending}
-              onDecide={item.plan.state === "waiting" && item.plan.gate === "confirm" ? onDecide : undefined}
-            />
-          ) : null}
-          {item.receipts.map((receipt) => (
-            <ReceiptCard key={receipt.id} receipt={receipt} />
-          ))}
-        </div>
-      );
-    default: {
-      const neverItem: never = item;
-      return neverItem;
-    }
-  }
+  const hands = items.filter((item) => item.kind === "hand");
+  if (hands.length === 0) return <p className="face-hint">No task is waiting.</p>;
+  return (
+    <>
+      {hands.map((item) =>
+        item.kind === "hand" ? (
+          <article key={item.id} className="chat-line">
+            <p className="chat-meta">{item.plan?.tool ?? "Task"} · {formatStamp(item.at)}</p>
+            <p>{item.cancelled ? item.reply : item.plan?.title || item.reply}</p>
+            {item.cancelled
+              ? null
+              : item.plan?.steps.map((step) => (
+                  <p key={step}>{step}</p>
+                ))}
+            {item.cancelled
+              ? null
+              : item.receipts.map((receipt) => (
+                  <p key={receipt.id}>{receipt.outcome}</p>
+                ))}
+            {!item.cancelled && item.plan && item.plan.state === "waiting" && item.plan.gate === "confirm" ? (
+              <p>
+                <button type="button" className="hand-yes" disabled={pending} onClick={() => onDecide(item.id, item.plan as HandPlan, "yes")}>
+                  Yes
+                </button>
+                {"  "}
+                <button type="button" className="hand-no" disabled={pending} onClick={() => onDecide(item.id, item.plan as HandPlan, "no")}>
+                  No
+                </button>
+              </p>
+            ) : null}
+          </article>
+        ) : null,
+      )}
+    </>
+  );
 }
 
-function BriefCard({ brief, at }: { brief: MorningBrief; at: string }) {
+function LogLines({ items }: { items: LogItem[] }) {
+  if (items.length === 0) return <p className="face-hint">Nothing yet.</p>;
   return (
-    <article className="stub-receipt brief-card">
-      <div className="stub-head">
-        <p>Morning brief</p>
-        <p>{brief.heading}</p>
-      </div>
-      <h3>daily.brief</h3>
-      <p className="stub-lead">Demo calendar</p>
-      <p className="stub-outcome">{brief.calendarNote}</p>
-      {brief.events.length > 0 ? (
-        <ul>
-          {brief.events.map((event, index) => (
-            <li key={`${event.title}-${event.when}-${index}`}>
-              {event.title} — {event.when}
-            </li>
-          ))}
-        </ul>
-      ) : (
-        <p className="stub-lead">No events are listed.</p>
-      )}
-      <p className="stub-lead">Vault priorities</p>
-      <p className="stub-outcome">{brief.vaultNote}</p>
-      {brief.priorities.length > 0 ? (
-        <ul>
-          {brief.priorities.map((item, index) => (
-            <li key={`${item.note}-${index}`}>
-              {item.note}: {item.line}
-            </li>
-          ))}
-        </ul>
-      ) : (
-        <p className="stub-lead">No priority lines are listed.</p>
-      )}
-      {brief.gaps.length > 0 ? (
-        <>
-          <p className="stub-lead">Not written down</p>
-          <ul>
-            {brief.gaps.map((gap, index) => (
-              <li key={`${gap.note}-${gap.field}-${index}`}>
-                {gap.note}: {gap.field}
-              </li>
-            ))}
-          </ul>
-        </>
-      ) : null}
-      <p className="stub-outcome">{brief.mail}</p>
-      {brief.checked.length > 0 ? <p className="stub-lead">Notes checked: {brief.checked.join(", ")}.</p> : null}
-      {brief.escalate ? <p className="stub-lead">{brief.escalate}</p> : null}
-      <time dateTime={at}>{formatStamp(at)}</time>
-    </article>
+    <>
+      {items.map((item) => {
+        const text = item.kind === "you" ? item.text : item.kind === "jarvis" ? item.text : item.reply;
+        const who = item.kind === "you" ? "You" : "Jarvis";
+        return (
+          <article key={item.id} className="chat-line">
+            <p className="chat-meta">
+              {formatStamp(item.at)} · {who}
+            </p>
+            <p>{text}</p>
+          </article>
+        );
+      })}
+    </>
+  );
+}
+
+function ToolButton({
+  label,
+  on,
+  onClick,
+  children,
+}: {
+  label: string;
+  on?: boolean;
+  onClick: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <button type="button" className="tool-btn" aria-label={label} title={label} data-on={on ? "true" : "false"} onClick={onClick}>
+      {children}
+    </button>
+  );
+}
+
+function ArrowIcon() {
+  return (
+    <svg viewBox="0 0 16 16" aria-hidden="true">
+      <path d="M3 8h10M9 4l4 4-4 4" />
+    </svg>
+  );
+}
+
+function HandIcon() {
+  return (
+    <svg viewBox="0 0 16 16" aria-hidden="true">
+      <path d="M6 7V3.5M8.5 7V3M11 7.5V4.5M6 7.5c-1.6.2-2.5 1.4-2.5 3.1 0 2 1.4 3.4 3.6 3.4h2.2c1.8 0 3.2-1.2 3.2-3V8" />
+    </svg>
+  );
+}
+
+function CalendarIcon() {
+  return (
+    <svg viewBox="0 0 16 16" aria-hidden="true">
+      <rect x="2.5" y="3.5" width="11" height="10" />
+      <path d="M2.5 6.5h11M5.5 2.5v2M10.5 2.5v2" />
+    </svg>
+  );
+}
+
+function SchoolIcon() {
+  return (
+    <svg viewBox="0 0 16 16" aria-hidden="true">
+      <path d="M2 6.5 8 3.5l6 3L8 9.5 2 6.5zM4.5 8v3.2c1 .8 2.2 1.2 3.5 1.2s2.5-.4 3.5-1.2V8" />
+    </svg>
+  );
+}
+
+function VaultIcon() {
+  return (
+    <svg viewBox="0 0 16 16" aria-hidden="true">
+      <rect x="3" y="2.5" width="10" height="11" />
+      <path d="M6 2.5v11M3 6h3M3 10h3" />
+    </svg>
+  );
+}
+
+function MicIcon() {
+  return (
+    <svg viewBox="0 0 16 16" aria-hidden="true">
+      <rect x="6" y="2" width="4" height="7" rx="2" />
+      <path d="M4.5 7.5a3.5 3.5 0 0 0 7 0M8 11v2.5" />
+    </svg>
+  );
+}
+
+function GearIcon() {
+  return (
+    <svg viewBox="0 0 16 16" aria-hidden="true">
+      <circle cx="8" cy="8" r="2" />
+      <path d="M8 2.2v1.6M8 12.2v1.6M2.2 8h1.6M12.2 8h1.6M4 4l1.1 1.1M10.9 10.9 12 12M12 4l-1.1 1.1M5.1 10.9 4 12" />
+    </svg>
   );
 }
 
@@ -763,6 +829,6 @@ async function loadCalendar(setEvents: (events: CalendarEvent[]) => void) {
     if (!Array.isArray(list)) return;
     setEvents(list.filter(isCalendarEvent));
   } catch {
-    // The talk log still shows the receipt if a later hand runs.
+    // The chat card still opens if the calendar cannot be read.
   }
 }

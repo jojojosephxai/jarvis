@@ -2,7 +2,6 @@ import type { OrbMode } from "@/lib/orb-mode";
 
 export type { OrbMode };
 
-/** Screen-facing heart for the ONLINE mark and the WebGL fallback. */
 export function ReactorHeart({ mode }: { mode: OrbMode }) {
   return (
     <div className="reactor-heart" data-mode={mode} aria-hidden="true">
@@ -14,7 +13,6 @@ export function ReactorHeart({ mode }: { mode: OrbMode }) {
   );
 }
 
-/** Still mark for boot and the graph badge. The center presence is the WebGL sphere. */
 export function Reactor({ mode }: { mode: OrbMode }) {
   return (
     <div className="reactor" data-mode={mode} aria-hidden="true">

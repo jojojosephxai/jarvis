@@ -81,7 +81,7 @@ export function useVoice(onSpeakingChange: (active: boolean) => void): {
   mouth: MouthKind | "unknown";
   ears: EarsKind | "unknown";
   notice: string | null;
-  speak: (text: string) => Promise<boolean>;
+  speak: (text: string) => Promise<{ played: boolean; blocked: boolean }>;
   pressMic: (onText: (text: string, isFinal: boolean) => void) => void;
   stop: () => void;
   levelRef: RefObject<number>;
@@ -175,7 +175,7 @@ export function useVoice(onSpeakingChange: (active: boolean) => void): {
     onSpeakingChangeRef.current(false);
   }, [disarmMeter]);
 
-  const speak = useCallback(async (text: string): Promise<boolean> => {
+  const speak = useCallback(async (text: string): Promise<{ played: boolean; blocked: boolean }> => {
     setNotice(null);
     try {
       const result = await speakAloud(text, {
@@ -191,7 +191,8 @@ export function useVoice(onSpeakingChange: (active: boolean) => void): {
           onSpeakingChangeRef.current(false);
         },
       });
-      if (result.notice) setNotice(result.notice);
+      const blocked = !result.played && /blocked the sound/i.test(result.notice ?? "");
+      if (result.notice && !blocked) setNotice(result.notice);
       if (!result.played && result.notice && /did not speak|can't speak|Speaker is not live/.test(result.notice)) {
         setSnapshot(
           voiceSnapshot({
@@ -205,12 +206,12 @@ export function useVoice(onSpeakingChange: (active: boolean) => void): {
           }),
         );
       }
-      return result.played;
+      return { played: result.played, blocked };
     } catch {
       setNotice("Speaking hit a problem. Nothing was played.");
       levelRef.current = 0;
       onSpeakingChangeRef.current(false);
-      return false;
+      return { played: false, blocked: false };
     }
   }, []);
 

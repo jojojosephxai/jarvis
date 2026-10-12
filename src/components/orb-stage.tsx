@@ -3,25 +3,29 @@
 import { useEffect, useRef, useState, type RefObject } from "react";
 
 import { OrbCanvas } from "@/components/orb-canvas";
+import { OrbFallback } from "@/components/orb-fallback";
 import { orbStatusWord, type OrbMode } from "@/lib/orb-mode";
 
 const TICKS = 72;
+
+export type OrbPlace = "center" | "dock" | "corner";
 
 export function OrbStage({
   mode,
   levelRef,
   skill,
   place,
+  onCornerClick,
 }: {
   mode: OrbMode;
   levelRef: RefObject<number>;
   skill: string | null;
-  place: "center" | "dock";
+  place: OrbPlace;
+  onCornerClick?: () => void;
 }) {
   const ringRef = useRef<SVGSVGElement>(null);
-  const [glFailed, setGlFailed] = useState(false);
+  const [flat, setFlat] = useState(false);
   const word = orbStatusWord(mode, skill);
-  const dev = process.env.NODE_ENV === "development";
 
   useEffect(() => {
     let frame = 0;
@@ -35,17 +39,37 @@ export function OrbStage({
 
   return (
     <div className="stage-orb" data-place={place}>
-      <div className="orb-dial" data-place={place} data-mode={mode}>
+      <div
+        className="orb-dial"
+        data-place={place}
+        data-mode={mode}
+        onClick={place === "corner" ? onCornerClick : undefined}
+        onKeyDown={
+          place === "corner"
+            ? (event) => {
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault();
+                  onCornerClick?.();
+                }
+              }
+            : undefined
+        }
+        role={place === "corner" ? "button" : undefined}
+        tabIndex={place === "corner" ? 0 : undefined}
+        aria-label={place === "corner" ? "Close the task panel" : undefined}
+      >
         <div className="orb-dial-ring">
-          <OrbTicks ringRef={ringRef} listening={mode === "listening"} />
-          {glFailed ? (
-            <p className="orb-gl-error" role="alert">
-              {dev
-                ? "WebGL failed. The particle orb did not start."
-                : "The orb did not start."}
-            </p>
+          <OrbTicks ringRef={ringRef} listening={mode === "listening"} speaking={mode === "speaking"} />
+          {flat ? (
+            <OrbFallback mode={mode} levelRef={levelRef} />
           ) : (
-            <OrbCanvas mode={mode} levelRef={levelRef} onFail={() => setGlFailed(true)} />
+            <OrbCanvas
+              mode={mode}
+              levelRef={levelRef}
+              onFail={() => {
+                setFlat(true);
+              }}
+            />
           )}
         </div>
         {word ? (
@@ -62,9 +86,11 @@ export function OrbStage({
 function OrbTicks({
   ringRef,
   listening,
+  speaking,
 }: {
   ringRef: RefObject<SVGSVGElement | null>;
   listening: boolean;
+  speaking: boolean;
 }) {
   const ticks = [];
   for (let index = 0; index < TICKS; index += 1) {
@@ -88,6 +114,7 @@ function OrbTicks({
       className="orb-ticks"
       viewBox="0 0 100 100"
       data-listening={listening ? "true" : "false"}
+      data-speaking={speaking ? "true" : "false"}
       aria-hidden="true"
     >
       {ticks}

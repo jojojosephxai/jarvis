@@ -20,6 +20,8 @@ let audio: HTMLAudioElement | null = null;
 let objectUrl: string | null = null;
 let cancelBrowser: (() => void) | null = null;
 let audioContext: AudioContext | null = null;
+let mediaSource: MediaElementAudioSourceNode | null = null;
+let levelAnalyser: AnalyserNode | null = null;
 let levelFrame = 0;
 let levelEmit: ((level: number) => void) | null = null;
 
@@ -28,6 +30,18 @@ function stopLevelMonitor() {
   levelFrame = 0;
   levelEmit?.(0);
   levelEmit = null;
+  try {
+    mediaSource?.disconnect();
+  } catch {
+    // The source may already be disconnected.
+  }
+  try {
+    levelAnalyser?.disconnect();
+  } catch {
+    // The analyser may already be disconnected.
+  }
+  mediaSource = null;
+  levelAnalyser = null;
 }
 
 function releaseAudio() {
@@ -51,7 +65,9 @@ async function wireAnalyser(element: HTMLAudioElement, emit: (level: number) => 
     if (audioContext.state === "suspended") await audioContext.resume();
     if (audioContext.state !== "running") return false;
     const source = audioContext.createMediaElementSource(element);
+    mediaSource = source;
     const analyser = audioContext.createAnalyser();
+    levelAnalyser = analyser;
     analyser.fftSize = 512;
     analyser.smoothingTimeConstant = 0.72;
     source.connect(analyser);
@@ -59,7 +75,8 @@ async function wireAnalyser(element: HTMLAudioElement, emit: (level: number) => 
     const bins = new Uint8Array(analyser.fftSize);
     levelEmit = emit;
     const tick = () => {
-      analyser.getByteTimeDomainData(bins);
+      if (!levelAnalyser) return;
+      levelAnalyser.getByteTimeDomainData(bins);
       let sum = 0;
       for (let index = 0; index < bins.length; index += 1) {
         const sample = ((bins[index] ?? 128) - 128) / 128;
@@ -72,7 +89,23 @@ async function wireAnalyser(element: HTMLAudioElement, emit: (level: number) => 
     levelFrame = requestAnimationFrame(tick);
     return true;
   } catch {
-    stopLevelMonitor();
+    if (mediaSource && audioContext) {
+      try {
+        mediaSource.disconnect();
+        mediaSource.connect(audioContext.destination);
+      } catch {
+        // The element stays owned by the source until release drops it.
+      }
+    }
+    if (levelFrame) cancelAnimationFrame(levelFrame);
+    levelFrame = 0;
+    levelEmit = null;
+    try {
+      levelAnalyser?.disconnect();
+    } catch {
+      // The analyser may already be disconnected.
+    }
+    levelAnalyser = null;
     return false;
   }
 }
