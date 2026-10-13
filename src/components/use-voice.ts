@@ -177,10 +177,10 @@ export function useVoice(onSpeakingChange: (active: boolean) => void): {
 
   const speak = useCallback(async (text: string): Promise<{ played: boolean; blocked: boolean }> => {
     setNotice(null);
+    levelRef.current = 0;
     try {
       const result = await speakAloud(text, {
         onStart: () => {
-          levelRef.current = 1;
           onSpeakingChangeRef.current(true);
         },
         onLevel: (level) => {

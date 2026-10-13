@@ -1,5 +1,5 @@
 import { assertNever } from "./assert";
-import { addCalendarEvent, listCalendarEvents, removeCalendarEventsByTitle } from "./calendar-store";
+import { addCalendarEvent, removeCalendarEventsByTitle } from "./calendar-store";
 import { gateFor } from "./hands-policy";
 import { safeHttpUrl } from "./http-url";
 import { makeId } from "./ids";
@@ -15,9 +15,9 @@ type ToolOutcome = {
 };
 
 const TOOL_TITLES: Record<ToolName, string> = {
-  "calendar.write": "Save on the demo calendar",
-  "calendar.list": "Read the demo calendar",
-  "calendar.delete": "Delete a demo calendar event",
+  "calendar.write": "Save an event on this computer",
+  "calendar.list": "Calendar",
+  "calendar.delete": "Delete a saved event",
   "notes.recall": "Search notes",
   "notes.keep": "Update a vault note",
   "browser.open": "Open a link",
@@ -66,25 +66,14 @@ async function runCalendarWrite(
   );
   return {
     status: "demo",
-    outcome: `Auto-approved. Saved “${event.title}” for ${event.when} on the demo calendar on this computer. Nothing was sent to Apple Calendar or Google Calendar.`,
+    outcome: `Auto-approved. Saved “${event.title}” for ${event.when} on this computer. No calendar is connected.`,
   };
 }
 
-async function runCalendarList(root: string): Promise<ToolOutcome> {
-  const events = await listCalendarEvents(root);
-  if (events.length === 0) {
-    return {
-      status: "demo",
-      outcome: "The demo calendar is empty. Nothing was read from a real calendar.",
-    };
-  }
-  const lines = events
-    .slice(0, 8)
-    .map((event) => `• ${event.title} — ${event.when}`)
-    .join("\n");
+async function runCalendarList(_root: string): Promise<ToolOutcome> {
   return {
     status: "demo",
-    outcome: `${events.length} event${events.length === 1 ? "" : "s"} on the demo calendar:\n${lines}`,
+    outcome: "Calendar not connected.",
   };
 }
 
@@ -123,19 +112,19 @@ async function runCalendarDelete(
 ): Promise<ToolOutcome> {
   const title = clip(input.title, 180);
   if (!title) {
-    return { status: "failed", outcome: "Tell me which demo calendar event to delete." };
+    return { status: "failed", outcome: "Tell me which saved event to delete." };
   }
   const removed = await removeCalendarEventsByTitle(title, root);
   if (removed.length === 0) {
     return {
       status: "failed",
-      outcome: `No demo calendar event is named “${title}”. I did not delete anything else.`,
+      outcome: `No saved event is named “${title}”. I did not delete anything else.`,
     };
   }
   const names = removed.map((event) => `“${event.title}” (${event.when})`).join(", ");
   return {
     status: "done",
-    outcome: `Deleted ${removed.length} demo calendar event${removed.length === 1 ? "" : "s"}: ${names}. Only the demo calendar on this computer changed.`,
+    outcome: `Deleted ${removed.length} saved event${removed.length === 1 ? "" : "s"}: ${names}. No calendar is connected. Only the copy on this computer changed.`,
   };
 }
 

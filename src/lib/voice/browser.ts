@@ -147,7 +147,7 @@ export function startBrowserListen(handlers: {
 export function startBrowserSpeak(
   text: string,
   voice: SpeechSynthesisVoice | null,
-  hooks: { onStart: () => void; onEnd: () => void },
+  hooks: { onStart: () => void; onEnd: () => void; onLevel?: (level: number) => void },
 ): { cancel: () => void; started: Promise<boolean> } {
   const synth = window.speechSynthesis;
   const utterance = new SpeechSynthesisUtterance(text);
@@ -162,6 +162,66 @@ export function startBrowserSpeak(
   const started = new Promise<boolean>((resolve) => {
     resolveStarted = resolve;
   });
+  let raf = 0;
+  let attackStart = 0;
+  let releasing = false;
+  let releaseStart = 0;
+  let releaseFrom = 0;
+  let level = 0;
+  let ended = false;
+
+  const emit = (next: number) => {
+    level = next;
+    hooks.onLevel?.(next);
+  };
+
+  const stopEnvelope = () => {
+    if (raf) cancelAnimationFrame(raf);
+    raf = 0;
+    emit(0);
+  };
+
+  const frame = (now: number) => {
+    if (releasing) {
+      const t = Math.min(1, (now - releaseStart) / 180);
+      emit(releaseFrom * (1 - t));
+      if (t < 1) {
+        raf = requestAnimationFrame(frame);
+        return;
+      }
+      emit(0);
+      raf = 0;
+      if (!ended) {
+        ended = true;
+        hooks.onEnd();
+      }
+      return;
+    }
+    const t = Math.min(1, (now - attackStart) / 180);
+    emit(0.55 * t);
+    raf = requestAnimationFrame(frame);
+  };
+
+  const beginEnvelope = () => {
+    if (!hooks.onLevel || raf || releasing) return;
+    attackStart = performance.now();
+    raf = requestAnimationFrame(frame);
+  };
+
+  const releaseEnvelope = () => {
+    if (!hooks.onLevel) {
+      if (!ended) {
+        ended = true;
+        hooks.onEnd();
+      }
+      return;
+    }
+    if (releasing) return;
+    releasing = true;
+    releaseFrom = level;
+    releaseStart = performance.now();
+    if (!raf) raf = requestAnimationFrame(frame);
+  };
 
   const settle = (played: boolean) => {
     if (settled) return;
@@ -175,6 +235,7 @@ export function startBrowserSpeak(
       if (!heardStart) {
         heardStart = true;
         hooks.onStart();
+        beginEnvelope();
       }
       settle(true);
       return;
@@ -186,6 +247,7 @@ export function startBrowserSpeak(
     if (heardStart) return;
     heardStart = true;
     hooks.onStart();
+    beginEnvelope();
     settle(true);
   };
 
@@ -194,12 +256,16 @@ export function startBrowserSpeak(
       settle(false);
       return;
     }
-    hooks.onEnd();
+    releaseEnvelope();
   };
 
   utterance.onerror = () => {
+    stopEnvelope();
     if (heardStart) {
-      hooks.onEnd();
+      if (!ended) {
+        ended = true;
+        hooks.onEnd();
+      }
       return;
     }
     settle(false);
@@ -217,6 +283,8 @@ export function startBrowserSpeak(
   return {
     started,
     cancel: () => {
+      stopEnvelope();
+      ended = true;
       try {
         synth.cancel();
       } catch {

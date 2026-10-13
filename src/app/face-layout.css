@@ -350,8 +350,8 @@
 
 .graph-inspector {
   top: 250px;
-  right: 16px;
-  z-index: 4;
+  right: 192px;
+  z-index: 6;
   width: 300px;
   max-height: calc(100% - 290px);
 }
@@ -570,6 +570,13 @@
   letter-spacing: 0.04em;
 }
 
+.work-context {
+  margin: 8px 0 0;
+  color: #6fa9bf;
+  font-size: 12px;
+  letter-spacing: 0.04em;
+}
+
 .work-foot {
   display: flex;
   align-items: center;
@@ -600,7 +607,7 @@
 
 .orb-dial[data-place="dock"] {
   top: 46%;
-  left: calc(100% - 108px);
+  left: calc(100% - 96px);
   width: 160px;
   transform: translate(-50%, -50%);
 }
@@ -615,7 +622,7 @@
 
 .orb-dial[data-place="corner"] {
   top: calc(100% - 120px);
-  left: calc(100% - 120px);
+  left: calc(100% - 96px);
   width: 160px;
   transform: translate(-50%, -50%);
   pointer-events: auto;

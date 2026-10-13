@@ -11,13 +11,13 @@ import {
   isHandPlan,
   isMorningBrief,
   isReceipt,
-  type CalendarEvent,
   type ChatResponse,
   type HandPlan,
   type Receipt,
 } from "@/lib/types";
 import type { MouthKind } from "@/lib/voice/types";
 import { decideFaceMode } from "@/lib/view-intent";
+import { butlerSpeech } from "@/lib/voice/policy";
 
 const BOOT_KEY = "jarvis-boot";
 const EXAMPLES = ["remind me…", "good morning", "show swim times"] as const;
@@ -29,11 +29,25 @@ type LogItem =
   | { kind: "jarvis"; id: string; text: string; at: string; sources?: string[]; failed?: boolean }
   | { kind: "hand"; id: string; at: string; reply: string; plan?: HandPlan; receipts: Receipt[]; cancelled?: boolean };
 
+type WorkStep = {
+  id: string;
+  label: string;
+  state: "running" | "done";
+  startedAt: number;
+  endedAt: number | null;
+};
+
 type Job = {
+  id: number;
   objective: string;
-  steps: string[];
+  steps: WorkStep[];
+  context: string[];
+  model: string | null;
+  progress: number | null;
   abort: AbortController;
 };
+
+const STUB_TASKS = new Set(["browser.open", "browser.task", "message.send", "money.spend", "item.delete"]);
 
 type LogTab = "chat" | "tasks" | "log";
 
@@ -94,7 +108,6 @@ export function Face() {
   const [cue, setCue] = useState<GraphCue | null>(null);
   const [job, setJob] = useState<Job | null>(null);
   const [tab, setTab] = useState<LogTab>("chat");
-  const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [intro, setIntro] = useState<"in" | "out">("in");
   const [wake, setWake] = useState(false);
   const [liveLine, setLiveLine] = useState("");
@@ -106,6 +119,7 @@ export function Face() {
   const bootTimer = useRef<number | null>(null);
   const ackTimer = useRef<number | null>(null);
   const pendingRef = useRef(false);
+  const jobGen = useRef(0);
   const speakingRef = useRef(false);
   const voice = useVoice((active) => {
     speakingRef.current = active;
@@ -128,7 +142,6 @@ export function Face() {
       markBootDone();
       void greet();
     }, reduce ? 200 : 1600);
-    void loadCalendar(setEvents);
     return () => {
       window.cancelAnimationFrame(frame);
       if (bootTimer.current !== null) window.clearTimeout(bootTimer.current);
@@ -190,11 +203,21 @@ export function Face() {
     ackTimer.current = null;
   }
 
-  function beginWork(objective: string, steps: string[] = [], skillName: string | null = null) {
+  function beginWork(objective: string, label: string, skillName: string | null = null) {
     const abort = new AbortController();
+    const id = jobGen.current + 1;
+    jobGen.current = id;
     pendingRef.current = true;
     setPending(true);
-    setJob({ objective, steps, abort });
+    setJob({
+      id,
+      objective,
+      steps: [{ id: "fetch", label, state: "running", startedAt: performance.now(), endedAt: null }],
+      context: [],
+      model: null,
+      progress: null,
+      abort,
+    });
     setSkill(skillName);
     setAckOn(true);
     clearAckTimer();
@@ -202,10 +225,25 @@ export function Face() {
       setAckOn(false);
       if (pendingRef.current) setWorking(true);
     }, 300);
-    return abort;
+    return { abort, id };
   }
 
-  function finishJob() {
+  function settleJob(id: number, context: string[], model: string | null) {
+    if (id !== jobGen.current) return;
+    const endedAt = performance.now();
+    setJob((current) => {
+      if (!current || current.id !== id) return current;
+      return {
+        ...current,
+        context,
+        model,
+        steps: current.steps.map((step) => (step.state === "running" ? { ...step, state: "done", endedAt } : step)),
+      };
+    });
+  }
+
+  function finishJob(id?: number) {
+    if (id !== undefined && id !== jobGen.current) return;
     pendingRef.current = false;
     setPending(false);
     setWorking(false);
@@ -216,8 +254,18 @@ export function Face() {
   }
 
   function stopWork() {
+    jobGen.current += 1;
     job?.abort.abort();
+    voice.stop();
     finishJob();
+  }
+
+  async function speakThenFinish(id: number, abort: AbortController, line: string) {
+    if (line.trim() && id === jobGen.current && !abort.signal.aborted) {
+      setLiveLine(line);
+      await voice.speak(line);
+    }
+    finishJob(id);
   }
 
   function pushCue(next: Omit<GraphCue, "token">) {
@@ -259,8 +307,8 @@ export function Face() {
     setItems((current) => [...current, { kind: "you" as const, id: makeId("you"), text: trimmed, at }].slice(-40));
     setDraft("");
     setTab("chat");
-    const abort = beginWork(trimmed);
-    let reply = "";
+    const { abort, id } = beginWork(trimmed, "Asking Brain");
+    let spoken = "";
     try {
       const response = await fetch("/api/chat", {
         method: "POST",
@@ -284,6 +332,7 @@ export function Face() {
         );
         return;
       }
+      settleJob(id, loadedContext(payload), payload.mode === "grok" ? "grok-4.7" : null);
       if (isHandsTurn(payload)) {
         setItems((current) =>
           [
@@ -298,9 +347,8 @@ export function Face() {
             },
           ].slice(-40),
         );
-        if (payload.plan?.state === "waiting") setTab("tasks");
-        if (touchesCalendar(payload.plan?.tool, payload.receipts)) void loadCalendar(setEvents);
-        reply = payload.reply;
+        if (payload.plan?.state === "waiting" && payload.plan.tool && !STUB_TASKS.has(payload.plan.tool)) setTab("tasks");
+        spoken = butlerSpeech(payload.reply);
         return;
       }
       const brief = payload.brief;
@@ -317,7 +365,7 @@ export function Face() {
             },
           ].slice(-40),
         );
-        reply = brief.reply;
+        spoken = brief.spoken;
         return;
       }
       setItems((current) =>
@@ -332,7 +380,7 @@ export function Face() {
           },
         ].slice(-40),
       );
-      reply = payload.reply;
+      spoken = butlerSpeech(payload.reply);
     } catch (error) {
       if (abort.signal.aborted || (error instanceof DOMException && error.name === "AbortError")) {
         setItems((current) =>
@@ -361,19 +409,15 @@ export function Face() {
         ].slice(-40),
       );
     } finally {
-      finishJob();
-    }
-    if (reply.trim()) {
-      setLiveLine(reply);
-      await voice.speak(reply);
+      await speakThenFinish(id, abort, spoken);
     }
   }
 
   async function decide(itemId: string, plan: HandPlan, decision: "yes" | "no") {
     if (plan.state !== "waiting" || plan.gate !== "confirm" || pendingRef.current) return;
     const name = plan.tool.trim().replace(/\./g, "-").toUpperCase();
-    const abort = beginWork(plan.title || plan.tool, plan.steps, name);
-    let reply = "";
+    const { abort, id } = beginWork(handObjective(plan), handStepLabel(plan), name);
+    let spoken = "";
     try {
       const response = await fetch("/api/hands", {
         method: "POST",
@@ -383,6 +427,7 @@ export function Face() {
       });
       const payload: unknown = await response.json();
       if (!response.ok || !isHandResponse(payload)) return;
+      settleJob(id, [], null);
       setItems((current) =>
         current.map((item) =>
           item.kind === "hand" && item.id === itemId
@@ -390,8 +435,7 @@ export function Face() {
             : item,
         ),
       );
-      if (touchesCalendar(payload.plan.tool, payload.receipts)) void loadCalendar(setEvents);
-      reply = payload.reply;
+      spoken = butlerSpeech(payload.reply);
     } catch (error) {
       if (abort.signal.aborted || (error instanceof DOMException && error.name === "AbortError")) {
         setItems((current) =>
@@ -406,27 +450,19 @@ export function Face() {
               : item,
           ),
         );
-        if (touchesCalendar(plan.tool, [])) void loadCalendar(setEvents);
         return;
       }
     } finally {
-      finishJob();
-    }
-    if (reply.trim()) {
-      setLiveLine(reply);
-      await voice.speak(reply);
+      await speakThenFinish(id, abort, spoken);
     }
   }
 
   function showCalendar() {
     const at = new Date().toISOString();
-    const text =
-      events.length === 0
-        ? "Nothing is saved on the calendar."
-        : events.map((event) => `${event.title} — ${event.when}`).join("\n");
+    const text = "Calendar not connected";
     setTab("chat");
     setItems((current) => [...current, { kind: "jarvis" as const, id: makeId("cal"), text, at }].slice(-40));
-    setLiveLine(events[0] ? `${events[0].title}, ${events[0].when}` : "Nothing is saved on the calendar.");
+    setLiveLine(text);
   }
 
   const micHint = voice.notice && /microphone/i.test(voice.notice) ? voice.notice : "";
@@ -549,21 +585,38 @@ export function Face() {
 }
 
 function WorkingPanel({ job, onStop }: { job: Job; onStop: () => void }) {
+  const [now, setNow] = useState(() => performance.now());
+  const running = job.steps.some((step) => step.state === "running");
+  useEffect(() => {
+    if (!running) return;
+    const timer = window.setInterval(() => setNow(performance.now()), 100);
+    return () => window.clearInterval(timer);
+  }, [running]);
+  const percent =
+    job.progress !== null && job.progress >= 0 && job.progress <= 1 ? `${Math.round(job.progress * 100)}%` : null;
+
   return (
     <section className="face-work glass" aria-label="Task">
       <p className="work-kicker">Task</p>
       <h2 className="work-title">{job.objective}</h2>
-      {job.steps.length > 0 ? (
-        <ul className="work-steps">
-          {job.steps.map((step) => (
-            <li key={step}>
-              <span>{step}</span>
+      <ul className="work-steps">
+        {job.steps.map((step) => {
+          const end = step.endedAt ?? now;
+          const seconds = Math.max(0, (end - step.startedAt) / 1000);
+          return (
+            <li key={step.id}>
+              <span>{step.label}</span>
+              <span>
+                {step.state === "running" ? "running" : "done"} {seconds.toFixed(1)}s
+              </span>
             </li>
-          ))}
-        </ul>
-      ) : null}
+          );
+        })}
+      </ul>
+      {job.context.length > 0 ? <p className="work-context">Context {job.context.join(", ")}</p> : null}
+      {job.model ? <p className="work-context">Model {job.model}</p> : null}
       <div className="work-foot">
-        <p className="work-kicker">{job.steps.length > 0 ? `${job.steps.length} steps` : "Working"}</p>
+        <p className="work-kicker">{percent ?? "Working"}</p>
         <button type="button" className="work-stop" onClick={onStop}>
           Stop
         </button>
@@ -648,7 +701,7 @@ function TaskLines({
   pending: boolean;
   onDecide: (id: string, plan: HandPlan, choice: "yes" | "no") => void;
 }) {
-  const hands = items.filter((item) => item.kind === "hand");
+  const hands = items.filter((item) => item.kind === "hand" && !isStubTask(item));
   if (hands.length === 0) return <p className="face-hint">No task is waiting.</p>;
   return (
     <>
@@ -810,25 +863,54 @@ function isHandsTurn(payload: ChatResponse): boolean {
   return Boolean(payload.plan) || payload.receipts.length > 0 || /phone call/i.test(payload.reply);
 }
 
-function touchesCalendar(tool: string | undefined, receipts: Receipt[]): boolean {
-  return tool?.startsWith("calendar.") === true || receipts.some((receipt) => receipt.tool.startsWith("calendar."));
+function loadedContext(payload: ChatResponse): string[] {
+  const brief = payload.brief;
+  if (brief && isMorningBrief(brief)) {
+    return brief.sources.length > 0 ? brief.sources : brief.checked;
+  }
+  return payload.sources ?? [];
 }
 
-function isCalendarEvent(value: unknown): value is CalendarEvent {
-  if (!value || typeof value !== "object") return false;
-  const event = value as Partial<CalendarEvent>;
-  return typeof event.id === "string" && typeof event.title === "string" && typeof event.when === "string";
+function isStubTask(item: LogItem): boolean {
+  if (item.kind !== "hand") return false;
+  if (item.plan && STUB_TASKS.has(item.plan.tool)) return true;
+  return item.receipts.length > 0 && item.receipts.every((receipt) => STUB_TASKS.has(receipt.tool));
 }
 
-async function loadCalendar(setEvents: (events: CalendarEvent[]) => void) {
-  try {
-    const response = await fetch("/api/calendar");
-    const payload: unknown = await response.json();
-    if (!payload || typeof payload !== "object") return;
-    const list = (payload as { events?: unknown }).events;
-    if (!Array.isArray(list)) return;
-    setEvents(list.filter(isCalendarEvent));
-  } catch {
-    // The chat card still opens if the calendar cannot be read.
+function handObjective(plan: HandPlan): string {
+  const title = (plan.input.title ?? "").trim();
+  const when = (plan.input.when ?? "").trim();
+  const file = (plan.input.file ?? "").trim();
+  switch (plan.tool) {
+    case "calendar.write":
+      if (title && when) return `Save ${title} for ${when}`;
+      return title ? `Save ${title}` : "Save the event";
+    case "calendar.delete":
+      return title ? `Delete ${title}` : "Delete the event";
+    case "calendar.list":
+      return "Check the calendar";
+    case "notes.recall":
+      return "Search notes";
+    case "notes.keep":
+      return file ? `Update ${file}` : "Update a note";
+    default:
+      return plan.title || "Ask";
+  }
+}
+
+function handStepLabel(plan: HandPlan): string {
+  switch (plan.tool) {
+    case "calendar.write":
+      return "Saving the event";
+    case "calendar.delete":
+      return "Deleting the event";
+    case "calendar.list":
+      return "Checking the calendar";
+    case "notes.keep":
+      return "Saving the note";
+    case "notes.recall":
+      return "Searching notes";
+    default:
+      return "Asking Brain";
   }
 }

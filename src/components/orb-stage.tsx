@@ -3,7 +3,6 @@
 import { useEffect, useRef, useState, type RefObject } from "react";
 
 import { OrbCanvas } from "@/components/orb-canvas";
-import { OrbFallback } from "@/components/orb-fallback";
 import { orbStatusWord, type OrbMode } from "@/lib/orb-mode";
 
 const TICKS = 72;
@@ -24,7 +23,7 @@ export function OrbStage({
   onCornerClick?: () => void;
 }) {
   const ringRef = useRef<SVGSVGElement>(null);
-  const [flat, setFlat] = useState(false);
+  const [glError, setGlError] = useState<string | null>(null);
   const word = orbStatusWord(mode, skill);
 
   useEffect(() => {
@@ -60,14 +59,16 @@ export function OrbStage({
       >
         <div className="orb-dial-ring">
           <OrbTicks ringRef={ringRef} listening={mode === "listening"} speaking={mode === "speaking"} />
-          {flat ? (
-            <OrbFallback mode={mode} levelRef={levelRef} />
+          {glError ? (
+            <p className="orb-gl-error">WebGL failed. The particle orb did not start.</p>
           ) : (
             <OrbCanvas
               mode={mode}
               levelRef={levelRef}
-              onFail={() => {
-                setFlat(true);
+              onFail={(reason) => {
+                const message = "WebGL failed. The particle orb did not start.";
+                console.error(message, reason);
+                setGlError(reason);
               }}
             />
           )}

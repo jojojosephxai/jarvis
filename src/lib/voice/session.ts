@@ -24,6 +24,7 @@ let mediaSource: MediaElementAudioSourceNode | null = null;
 let levelAnalyser: AnalyserNode | null = null;
 let levelFrame = 0;
 let levelEmit: ((level: number) => void) | null = null;
+let endAzure: (() => void) | null = null;
 
 function stopLevelMonitor() {
   if (levelFrame) cancelAnimationFrame(levelFrame);
@@ -62,7 +63,14 @@ async function wireAnalyser(element: HTMLAudioElement, emit: (level: number) => 
   if (!Ctx) return false;
   try {
     if (!audioContext) audioContext = new Ctx();
-    if (audioContext.state === "suspended") await audioContext.resume();
+    if (audioContext.state === "suspended") {
+      const pending = audioContext;
+      void pending.resume().then(() => {
+        if (audio !== element || pending.state !== "running" || mediaSource) return;
+        void wireAnalyser(element, emit);
+      });
+      return false;
+    }
     if (audioContext.state !== "running") return false;
     const source = audioContext.createMediaElementSource(element);
     mediaSource = source;
@@ -116,6 +124,8 @@ export function stopSpeaking() {
   speakAbort = null;
   cancelBrowser?.();
   cancelBrowser = null;
+  endAzure?.();
+  endAzure = null;
   releaseAudio();
   if (typeof window !== "undefined" && window.speechSynthesis) {
     window.speechSynthesis.cancel();
@@ -139,13 +149,6 @@ async function playAzure(blob: Blob, still: () => boolean, hooks: SpeakHooks): P
   objectUrl = url;
   const element = new Audio(url);
   audio = element;
-  if (hooks.onLevel && still()) {
-    await wireAnalyser(element, hooks.onLevel);
-    if (!still()) {
-      releaseAudio();
-      return "cancelled";
-    }
-  }
 
   return new Promise((resolve) => {
     let opened = false;
@@ -153,17 +156,27 @@ async function playAzure(blob: Blob, still: () => boolean, hooks: SpeakHooks): P
     const finish = (result: "played" | "blocked" | "cancelled") => {
       if (settled) return;
       settled = true;
+      endAzure = null;
       window.clearTimeout(timer);
+      if (result !== "played") releaseAudio();
       resolve(result);
     };
+    endAzure = () => finish("cancelled");
     const timer = window.setTimeout(() => {
       if (!opened) finish(still() ? "blocked" : "cancelled");
     }, 4000);
 
     element.onended = () => {
-      if (!still() || !opened) return;
+      if (settled) return;
+      const alive = still();
+      if (!opened && !alive) {
+        finish("cancelled");
+        return;
+      }
+      opened = true;
       releaseAudio();
-      hooks.onEnd();
+      if (alive) hooks.onEnd();
+      finish(alive ? "played" : "cancelled");
     };
 
     element.onerror = () => {
@@ -179,7 +192,7 @@ async function playAzure(blob: Blob, still: () => boolean, hooks: SpeakHooks): P
         }
         opened = true;
         hooks.onStart();
-        finish("played");
+        if (hooks.onLevel) void wireAnalyser(element, hooks.onLevel);
       })
       .catch(() => {
         finish(still() ? "blocked" : "cancelled");
@@ -191,18 +204,38 @@ async function playBrowser(text: string, still: () => boolean, hooks: SpeakHooks
   if (!browserMouthSupported()) return false;
   const voices = window.speechSynthesis.getVoices();
   const voice = preferredBrowserVoice(voices);
+  let markFinished = () => {};
+  const finished = new Promise<void>((resolve) => {
+    markFinished = () => {
+      markFinished = () => {};
+      resolve();
+    };
+  });
   const handle = startBrowserSpeak(text, voice, {
     onStart: () => {
       if (still()) hooks.onStart();
     },
     onEnd: () => {
       if (still()) hooks.onEnd();
+      markFinished();
     },
+    onLevel: hooks.onLevel
+      ? (level) => {
+          if (still()) hooks.onLevel?.(level);
+        }
+      : undefined,
   });
-  cancelBrowser = handle.cancel;
+  cancelBrowser = () => {
+    handle.cancel();
+    markFinished();
+  };
   const played = await handle.started;
-  if (!still()) return false;
-  return played;
+  if (!still() || !played) {
+    markFinished();
+    return false;
+  }
+  await finished;
+  return still();
 }
 
 export async function speakAloud(text: string, hooks: SpeakHooks): Promise<SpeakOutcome> {

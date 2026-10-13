@@ -39,7 +39,8 @@ describe("executeTool", () => {
     assert.equal(receipt.tool, "calendar.write");
     assert.equal(receipt.status, "demo");
     assert.equal(receipt.input.title, "Soccer practice");
-    assert.match(receipt.outcome, /demo calendar/);
+    assert.match(receipt.outcome, /No calendar is connected/);
+    assert.doesNotMatch(receipt.outcome, /demo calendar/);
     assert.match(receipt.outcome, /Auto-approved/);
     assert.match(receipt.id, /^rcp_/);
 
@@ -57,7 +58,8 @@ describe("executeTool", () => {
     );
     const receipt = await executeTool({ tool: "calendar.list", input: {} }, root);
     assert.equal(receipt.status, "demo");
-    assert.match(receipt.outcome, /Soccer practice/);
+    assert.equal(receipt.outcome, "Calendar not connected.");
+    assert.doesNotMatch(receipt.outcome, /Soccer practice/);
   });
 
   it("fails clearly when a calendar write is incomplete", async () => {
@@ -198,7 +200,8 @@ describe("executeTool", () => {
       root,
     );
     assert.equal(removed.receipts[0]?.status, "done");
-    assert.match(removed.receipts[0]?.outcome ?? "", /demo calendar/i);
+    assert.match(removed.receipts[0]?.outcome ?? "", /No calendar is connected/);
+    assert.doesNotMatch(removed.receipts[0]?.outcome ?? "", /demo calendar/i);
     const afterYes = JSON.parse(
       await readFile(path.join(root, "data", "calendar.json"), "utf8"),
     ) as Array<{ title: string }>;

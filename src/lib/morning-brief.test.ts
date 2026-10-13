@@ -76,7 +76,12 @@ describe("composeMorningBrief", () => {
     assert.equal(brief.calendarEmpty, true);
     assert.equal(brief.events.length, 0);
     assert.equal(brief.vaultThin, true);
-    assert.match(brief.reply, /demo calendar on this computer is empty/i);
+    assert.equal(brief.calendarNote, "Calendar not connected");
+    assert.match(brief.reply, /Calendar not connected/);
+    assert.doesNotMatch(brief.reply, /demo calendar|Notes checked:|did not call Grok/i);
+    assert.doesNotMatch(brief.reply, /^Not written down$/m);
+    assert.match(brief.spoken, /Good afternoon\. The calendar is not connected/i);
+    assert.doesNotMatch(brief.spoken, /Notes checked|Not written down|demo calendar|did not call Grok/i);
     assert.match(brief.reply, /library book is due Friday/i);
     assert.match(brief.reply, /science fair project/i);
     assert.match(brief.reply, /Soccer practice is usually after school/i);
@@ -87,7 +92,8 @@ describe("composeMorningBrief", () => {
     assert.ok(brief.gaps.some((gap) => gap.note === "Swim" && gap.field === "Practice time"));
     assert.equal(brief.mail, MAIL_LINE);
     assert.match(brief.reply, /No mail was read/);
-    assert.match(brief.reply, /did not call Grok/i);
+    assert.doesNotMatch(brief.reply, /did not call Grok/i);
+    assert.match(brief.reply, /Ask in the talk box/i);
     assert.doesNotMatch(brief.reply, /emailed you|email was sent|sent you an email|in your inbox/i);
     assert.equal(brief.sources.includes("README"), false);
     assert.equal(brief.checked.includes("README"), true);
@@ -108,13 +114,12 @@ describe("composeMorningBrief", () => {
       },
     });
 
-    assert.equal(brief.calendarEmpty, false);
+    assert.equal(brief.calendarEmpty, true);
+    assert.equal(brief.events.length, 0);
+    assert.equal(brief.calendarNote, "Calendar not connected");
     assert.equal(brief.vaultThin, false);
     assert.equal(brief.escalate, null);
-    assert.deepEqual(
-      brief.events.map((item) => `${item.title} — ${item.when}`),
-      ["Soccer practice — tomorrow at 4pm", "Library return — Friday at 3pm"],
-    );
+    assert.doesNotMatch(brief.reply, /Soccer practice|tomorrow at 4pm|Library return/);
     assert.match(brief.reply, /Finish the plant lab writeup/);
     assert.match(brief.reply, /Practice time: 6:30am/);
     assert.doesNotMatch(brief.reply, /Apple Calendar event|Google event|new meeting/i);
@@ -133,13 +138,14 @@ describe("composeMorningBrief", () => {
     assert.equal(brief.priorities.length, 0);
     assert.match(brief.vaultNote, /Brain wiring/);
     assert.match(brief.vaultNote, /not found/);
-    assert.match(brief.reply, /did not invent priorities/i);
+    assert.match(brief.reply, /Nothing was invented/i);
+    assert.doesNotMatch(brief.reply, /did not call Grok/i);
     assert.doesNotMatch(brief.reply, /library book|soccer|swim practice at/i);
   });
 });
 
 describe("loadMorningBrief", () => {
-  it("reads the demo calendar file and the vault folder", async () => {
+  it("does not treat the calendar file as the day", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "brief-"));
     await mkdir(path.join(root, "vault"), { recursive: true });
     await mkdir(path.join(root, "data"), { recursive: true });
@@ -153,9 +159,10 @@ describe("loadMorningBrief", () => {
     );
 
     const brief = await loadMorningBrief({ root, now: NOW, timeZone: "UTC" });
-    assert.equal(brief.calendarEmpty, false);
-    assert.equal(brief.events[0]?.title, "Soccer");
-    assert.equal(brief.events[0]?.when, "tomorrow at 4pm");
+    assert.equal(brief.calendarEmpty, true);
+    assert.equal(brief.events.length, 0);
+    assert.match(brief.reply, /Calendar not connected/);
+    assert.doesNotMatch(brief.reply, /Soccer/);
     assert.match(brief.reply, /Finish the plant lab writeup/);
     assert.match(brief.reply, /No mail was read/);
 
@@ -169,8 +176,10 @@ describe("loadMorningBrief", () => {
     assert.equal(response.mode, "demo");
     assert.equal(response.receipts.length, 0);
     assert.match(response.reply, /Morning brief —/);
-    assert.match(response.reply, /Soccer/);
-    assert.equal(response.brief?.events[0]?.title, "Soccer");
+    assert.match(response.reply, /Calendar not connected/);
+    assert.doesNotMatch(response.reply, /Soccer/);
+    assert.equal(response.brief?.events.length, 0);
+    assert.match(response.brief?.spoken ?? "", /calendar is not connected/i);
   });
 
   it("stays honest when this computer has no demo events", async () => {
@@ -182,7 +191,7 @@ describe("loadMorningBrief", () => {
     assert.equal(brief.calendarEmpty, true);
     assert.equal(brief.events.length, 0);
     assert.equal(brief.priorities.length, 0);
-    assert.match(brief.reply, /empty/i);
+    assert.match(brief.reply, /Calendar not connected/);
     assert.match(brief.reply, /vault is thin/i);
     assert.doesNotMatch(brief.reply, /tomorrow at 4pm|Soccer/);
   });

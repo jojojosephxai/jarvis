@@ -32,6 +32,20 @@ export type VoiceSnapshot = {
 const BRITISH_NEURAL = /^en-GB-[A-Za-z]+Neural$/;
 const REGION_NAME = /^[a-z0-9]+$/i;
 
+const HARNESS_SENTENCE =
+  /notes checked|not written down|demo calendar|did not call grok|grok was not called|this brief did not/i;
+
+/** One or two spoken sentences. The chat can keep the longer reply. */
+export function butlerSpeech(text: string): string {
+  const clean = text.replace(/\s+/g, " ").trim();
+  if (!clean) return "";
+  const sentences = clean.match(/[^.!?]+[.!?]+|[^.!?]+$/g) ?? [];
+  const kept = sentences
+    .map((sentence) => sentence.trim())
+    .filter((sentence) => sentence.length > 0 && !HARNESS_SENTENCE.test(sentence));
+  return kept.slice(0, 2).join(" ");
+}
+
 export function clipSpeechText(text: string): { text: string; clipped: boolean } {
   const clean = text.replace(/\s+/g, " ").trim();
   if (clean.length <= SPEAK_LIMIT) return { text: clean, clipped: false };

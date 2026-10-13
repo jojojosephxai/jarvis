@@ -90,6 +90,7 @@ export type MorningBrief = {
   mail: string;
   escalate: string | null;
   reply: string;
+  spoken: string;
   notice: string;
 };
 
@@ -195,6 +196,7 @@ export function isMorningBrief(value: unknown): value is MorningBrief {
     typeof brief.mail === "string" &&
     (brief.escalate === null || typeof brief.escalate === "string") &&
     typeof brief.reply === "string" &&
+    typeof brief.spoken === "string" &&
     typeof brief.notice === "string"
   );
 }

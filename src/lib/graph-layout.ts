@@ -397,12 +397,38 @@ export function labelEligible(
   zoom: number,
   showAll: boolean,
 ): boolean {
-  if (flags.depth < 0.4 && !flags.selected && !flags.hover) return false;
-  if (flags.hub || flags.ssot || flags.selected || flags.hover || flags.folder || flags.neighbor || flags.onPath || flags.match) {
-    return true;
-  }
+  void zoom;
   if (showAll) return true;
-  return zoom >= 1.35 && flags.depth >= 0.42;
+  if (flags.depth < 0.4 && !flags.selected && !flags.hover) return false;
+  return true;
+}
+
+/** CSS cubic-bezier(.22, 1, .36, 1) sampled over 0–1. Focus, zoom, and re-form use this. */
+export function easeFrame(t: number): number {
+  if (t <= 0) return 0;
+  if (t >= 1) return 1;
+  return cubicBezierY(t, 0.22, 1, 0.36, 1);
+}
+
+function cubicBezierY(t: number, x1: number, y1: number, x2: number, y2: number): number {
+  let u = t;
+  for (let step = 0; step < 8; step += 1) {
+    const x = bezierSample(u, x1, x2) - t;
+    const slope = bezierSlope(u, x1, x2);
+    if (Math.abs(slope) < 1e-6) break;
+    u = Math.min(1, Math.max(0, u - x / slope));
+  }
+  return bezierSample(u, y1, y2);
+}
+
+function bezierSample(u: number, p1: number, p2: number): number {
+  const c = 1 - u;
+  return 3 * c * c * u * p1 + 3 * c * u * u * p2 + u * u * u;
+}
+
+function bezierSlope(u: number, p1: number, p2: number): number {
+  const c = 1 - u;
+  return 3 * c * c * p1 + 6 * c * u * (p2 - p1) + 3 * u * u * (1 - p2);
 }
 
 function labelBoxesOverlap(a: LabelCandidate, b: LabelCandidate): boolean {
@@ -423,7 +449,6 @@ export function pickLabels(candidates: LabelCandidate[]): PlacedLabel[] {
     const parked = label.protected ? nudgeLabel(label, placed) : label;
     const hits = placed.some((other) => labelBoxesOverlap(parked, other));
     if (!parked.protected && hits) continue;
-    if (!parked.protected && parked.depth < 0.32 && parked.priority < 50) continue;
     const opacity = parked.protected ? 1 : parked.depth < 0.32 ? 0.45 : Math.min(1, 0.55 + parked.depth * 0.45);
     placed.push(parked);
     out.push({ id: parked.id, opacity, y: parked.y });

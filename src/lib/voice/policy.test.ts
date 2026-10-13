@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 
 import {
   buildSsml,
+  butlerSpeech,
   clipSpeechText,
   escapeSsml,
   isBritishBrowserVoice,
@@ -14,6 +15,15 @@ import {
   resolveAzureVoice,
   voiceSnapshot,
 } from "./policy";
+
+describe("butlerSpeech", () => {
+  it("keeps two short sentences and drops harness lines", () => {
+    const spoken = butlerSpeech(
+      "Saved the library return for Friday. No calendar is connected. Notes checked: Goals. This brief did not call Grok.",
+    );
+    assert.equal(spoken, "Saved the library return for Friday. No calendar is connected.");
+  });
+});
 
 describe("clipSpeechText", () => {
   it("keeps a short reply whole", () => {

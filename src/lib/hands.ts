@@ -31,29 +31,25 @@ function planCopy(
   switch (tool) {
     case "calendar.write":
       return {
-        title: "Save on the demo calendar",
+        title: "Save an event on this computer",
         steps: [
           `Save “${shown(input.title, "this event")}” for ${shown(input.when, "a time you still need to give")}.`,
           "Calendar writes are auto-approved. No extra yes is required.",
-          "The event stays on the demo calendar on this computer. It is not sent to Apple Calendar or Google Calendar.",
+          "No calendar is connected. This stays on this computer only.",
         ],
       };
     case "calendar.list":
       return {
-        title: "Read the demo calendar",
-        steps: [
-          "Read events saved on this computer.",
-          "This read is auto-approved.",
-          "Nothing is loaded from Apple Calendar or Google Calendar.",
-        ],
+        title: "Calendar",
+        steps: ["Calendar not connected.", "This read is auto-approved."],
       };
     case "calendar.delete":
       return {
-        title: "Delete a demo calendar event",
+        title: "Delete a saved event",
         steps: [
-          `Delete “${shown(input.title, "the named event")}” from the demo calendar.`,
+          `Delete “${shown(input.title, "the named event")}” from the events saved on this computer.`,
           "Deleting needs your yes. Nothing is removed until you press Yes, do it.",
-          "Only the demo calendar on this computer can change.",
+          "No calendar is connected. Only the copy on this computer can change.",
         ],
       };
     case "notes.recall":
@@ -206,7 +202,7 @@ function doneReply(receipt: Receipt): string {
   switch (receipt.tool) {
     case "calendar.write":
       if (receipt.status === "failed") return receipt.outcome;
-      return `Saved “${receipt.input.title}” for ${receipt.input.when}. Calendar writes are auto-approved. The receipt is below. This stays on the demo calendar on this computer.`;
+      return `Saved “${receipt.input.title}” for ${receipt.input.when}. No calendar is connected. It stays on this computer.`;
     case "calendar.list":
       return receipt.outcome;
     case "calendar.delete":

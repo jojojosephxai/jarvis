@@ -5,11 +5,11 @@ import { listCalendarEvents } from "./calendar-store";
 import type { CalendarEvent, ChatResponse, MorningBrief } from "./types";
 import { loadVaultNotes, resolveVaultPath, type VaultLoad, type VaultNote } from "./vault-read";
 
-const MAX_EVENTS = 8;
 const MAX_LINES = 8;
 
-export const MAIL_LINE =
-  "No mail was read. No overnight email is in the vault or on the demo calendar. Nothing was sent, and nothing is waiting to send.";
+export const CALENDAR_LINE = "Calendar not connected";
+
+export const MAIL_LINE = "No mail was read. Nothing was sent, and nothing is waiting to send.";
 
 const BRIEF_RE =
   /^(?:please\s+)?(?:(?:give me|show(?:\s+me)?|run|open|start)\s+)?(?:my\s+)?(?:the\s+)?(?:morning|daily)\s+brief[.!?]*$/i;
@@ -60,10 +60,10 @@ type ComposeInput = {
 
 export function composeMorningBrief(input: ComposeInput): MorningBrief {
   const heading = formatHeading(input.now, input.timeZone);
-  const calendar = calendarSection(input.events);
+  const calendar = unconnectedCalendar();
   const vault = vaultSection(input.loaded);
   const escalate = escalateLine(vault);
-  const notice = "Read from the demo calendar and the vault. No mail was read. Grok was not called.";
+  const notice = "Read from the vault. No mail was read.";
   const brief: MorningBrief = {
     at: input.now.toISOString(),
     heading,
@@ -80,6 +80,7 @@ export function composeMorningBrief(input: ComposeInput): MorningBrief {
     mail: MAIL_LINE,
     escalate,
     reply: "",
+    spoken: spokenLine(input.now, input.timeZone, vault.priorities),
     notice,
   };
   brief.reply = formatReply(brief);
@@ -121,34 +122,17 @@ function formatHeading(now: Date, timeZone?: string): string {
   }).format(now);
 }
 
-function calendarSection(events: CalendarEvent[]): {
+function unconnectedCalendar(): {
   calendarEmpty: boolean;
   calendarNote: string;
   events: { title: string; when: string }[];
   hiddenEvents: number;
 } {
-  if (events.length === 0) {
-    return {
-      calendarEmpty: true,
-      calendarNote:
-        "The demo calendar on this computer is empty. Nothing was read from Apple Calendar or Google Calendar. No events were invented.",
-      events: [],
-      hiddenEvents: 0,
-    };
-  }
-
-  const shown = events.slice(0, MAX_EVENTS).map((event) => ({
-    title: event.title,
-    when: event.when,
-  }));
-  const hiddenEvents = Math.max(0, events.length - shown.length);
-  const noun = events.length === 1 ? "event" : "events";
-  const more = hiddenEvents > 0 ? ` Showing ${shown.length} of ${events.length}.` : "";
   return {
-    calendarEmpty: false,
-    calendarNote: `${events.length} ${noun} saved on the demo calendar on this computer. Times are shown as they were saved. Nothing was read from Apple Calendar or Google Calendar.${more}`,
-    events: shown,
-    hiddenEvents,
+    calendarEmpty: true,
+    calendarNote: CALENDAR_LINE,
+    events: [],
+    hiddenEvents: 0,
   };
 }
 
@@ -217,24 +201,29 @@ function vaultCopy(thin: boolean, priorityCount: number, gapCount: number): stri
 
 function escalateLine(vault: { vaultThin: boolean; gaps: { note: string; field: string }[]; priorities: { line: string }[]; vaultNote: string }): string | null {
   if (vault.vaultNote.startsWith("Brain wiring:")) {
-    return "The vault folder could not be read, so there is nothing to send to Grok. This brief did not call Grok and did not invent priorities.";
+    return "The vault folder could not be read, so I have no priorities. Nothing was invented.";
   }
   if (!vault.vaultThin) return null;
   const swimTime = vault.gaps.find((gap) => /practice time/i.test(gap.field));
   const example = swimTime ? "Example: What time is swim practice?" : "Example: What is written in Goals?";
-  return `This brief did not call Grok. Ask in the talk box if you want Brain to read a note. ${example}`;
+  return `Ask in the talk box if you want a note read. ${example}`;
+}
+
+function spokenLine(now: Date, timeZone: string | undefined, priorities: { line: string }[]): string {
+  const hourText = new Intl.DateTimeFormat("en-US", {
+    hour: "numeric",
+    hourCycle: "h23",
+    timeZone,
+  }).format(now);
+  const hour = Number(hourText);
+  const hello = hour < 12 ? "Good morning." : hour < 17 ? "Good afternoon." : "Good evening.";
+  const priority = priorities[0]?.line.replace(/\s+/g, " ").trim().replace(/[.?!]+$/, "");
+  if (!priority) return `${hello} The calendar is not connected.`;
+  return `${hello} The calendar is not connected, and your notes mention ${clip(priority, 90)}.`;
 }
 
 function formatReply(brief: MorningBrief): string {
-  const lines = [`Morning brief — ${brief.heading}`, "", "Demo calendar", brief.calendarNote];
-  if (brief.events.length === 0) {
-    lines.push("No events are listed.");
-  } else {
-    for (const event of brief.events) {
-      lines.push(`• ${event.title} — ${event.when}`);
-    }
-  }
-  lines.push("", "Vault priorities", brief.vaultNote);
+  const lines = [`Morning brief — ${brief.heading}`, "", brief.calendarNote, "", "Vault priorities", brief.vaultNote];
   if (brief.priorities.length === 0) {
     lines.push("No priority lines are listed.");
   } else {
@@ -242,16 +231,7 @@ function formatReply(brief: MorningBrief): string {
       lines.push(`• ${item.note}: ${item.line}`);
     }
   }
-  if (brief.gaps.length > 0) {
-    lines.push("", "Not written down");
-    for (const gap of brief.gaps) {
-      lines.push(`• ${gap.note}: ${gap.field}`);
-    }
-  }
   lines.push("", "Mail", brief.mail);
-  if (brief.checked.length > 0) {
-    lines.push("", `Notes checked: ${brief.checked.join(", ")}.`);
-  }
   if (brief.escalate) {
     lines.push("", brief.escalate);
   }

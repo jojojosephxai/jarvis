@@ -106,7 +106,7 @@ async function talk(latest: string, options: AnswerOptions): Promise<ChatRespons
   if (mentionsCalendar(latest)) {
     return {
       reply:
-        "I need an event and a time before I can put that on the demo calendar. Try: Put soccer practice on my calendar tomorrow at 4pm.",
+        "I need an event and a time before I can save that. No calendar is connected.",
       mode: brainMode(),
       receipts: [],
     };

@@ -6,6 +6,7 @@ import { NoteReader, type NoteLink } from "@/components/note-reader";
 import {
   cageRadius,
   frameAroundPoint,
+  easeFrame,
   frameAroundPoints,
   labelEligible,
   labelRank,
@@ -655,6 +656,24 @@ function viewBox(frame: Frame): string {
   return `${frame.x} ${frame.y} ${frame.w} ${frame.h}`;
 }
 
+function lerpFrame(from: Frame, to: Frame, t: number): Frame {
+  return {
+    x: from.x + (to.x - from.x) * t,
+    y: from.y + (to.y - from.y) * t,
+    w: from.w + (to.w - from.w) * t,
+    h: from.h + (to.h - from.h) * t,
+  };
+}
+
+function frameClose(left: Frame, right: Frame): boolean {
+  return (
+    Math.abs(left.x - right.x) < 0.5 &&
+    Math.abs(left.y - right.y) < 0.5 &&
+    Math.abs(left.w - right.w) < 0.5 &&
+    Math.abs(left.h - right.h) < 0.5
+  );
+}
+
 function onRoute(edge: GraphEdge, route: string[] | null): boolean {
   if (!route) return false;
   for (let index = 0; index < route.length - 1; index += 1) {
@@ -874,10 +893,50 @@ function GalaxyScene({
   }
 
   const shifted = frameAtZoom(frame, zoom);
-  frameWidthRef.current = shifted.w;
+  const motionKey = `${frameToken}|${zoom}`;
+  const targetRef = useRef(shifted);
+  const displayRef = useRef(shifted);
+  const motionKeyRef = useRef(motionKey);
+  const tweeningRef = useRef(false);
+  const [motionTick, setMotionTick] = useState(0);
+  targetRef.current = shifted;
+  if (motionKeyRef.current !== motionKey) {
+    motionKeyRef.current = motionKey;
+    tweeningRef.current = true;
+  } else if (!tweeningRef.current) {
+    displayRef.current = shifted;
+  }
+  useEffect(() => {
+    const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const from = { ...displayRef.current };
+    const to = targetRef.current;
+    if (reduce || frameClose(from, to)) {
+      displayRef.current = to;
+      tweeningRef.current = false;
+      setMotionTick((tick) => tick + 1);
+      return;
+    }
+    tweeningRef.current = true;
+    const started = performance.now();
+    let raf = 0;
+    const step = (now: number) => {
+      const t = Math.min(1, (now - started) / 600);
+      displayRef.current = lerpFrame(from, targetRef.current, easeFrame(t));
+      setMotionTick((tick) => tick + 1);
+      if (t < 1) {
+        raf = requestAnimationFrame(step);
+        return;
+      }
+      tweeningRef.current = false;
+    };
+    raf = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(raf);
+  }, [motionKey]);
+  const shown = motionTick >= 0 ? displayRef.current : shifted;
+  frameWidthRef.current = shown.w;
   const showAllLabels = false;
   const fitScale = Math.max(pxPerUnit, 0.05);
-  const currentScale = Math.max(meetScale(svgRef.current, shifted) || fitScale * zoom, 0.05);
+  const currentScale = Math.max(meetScale(svgRef.current, shown) || fitScale * zoom, 0.05);
   const fontUser = 12 / currentScale;
   const linkWidth = 2 / fitScale;
   const nodeById = new Map(nodes.map((node) => [node.id, node]));
@@ -971,7 +1030,7 @@ function GalaxyScene({
     <svg
       ref={svgRef}
       className={grabbing ? "graph-svg is-grabbing" : "graph-svg"}
-      viewBox={viewBox(shifted)}
+      viewBox={viewBox(shown)}
       role="group"
       aria-label="Vault notes. Drag to turn. Scroll to zoom. Click a note to open it."
       onPointerDown={onSpacePointerDown}
@@ -987,10 +1046,10 @@ function GalaxyScene({
     >
       <rect
         className="graph-grab"
-        x={shifted.x}
-        y={shifted.y}
-        width={shifted.w}
-        height={shifted.h}
+        x={shown.x}
+        y={shown.y}
+        width={shown.w}
+        height={shown.h}
         fill="transparent"
         onClick={(event) => {
           event.stopPropagation();
@@ -1039,7 +1098,7 @@ function GalaxyScene({
         const dim = clusterDim || pathDim || searchDim;
         const pathStep = frameMode === "path" && route ? route.indexOf(node.id) : -1;
         const labelY = label?.y ?? point.y;
-        const labelLeft = point.x > shifted.x + shifted.w * 0.68;
+        const labelLeft = point.x > shown.x + shown.w * 0.68;
         const plateX = labelLeft ? point.x - radius - 8 - plate : point.x + radius + 8;
         const plateY = labelY - fontUser * 0.72;
         const ring = 3 / currentScale;
@@ -1112,7 +1171,7 @@ function GalaxyScene({
           degree={degreeOf(hover.id, edges)}
           x={hoverPoint.x}
           y={hoverPoint.y}
-          frame={shifted}
+          frame={shown}
         />
       ) : null}
     </svg>

@@ -31,7 +31,7 @@ void main() {
   float voice = speaking * level;
   float listen = listening * level;
   vec3 p = position * aRadial;
-  p *= (1.0 + breath + voice * (wobble - 0.5) * 0.28 + listen * (0.05 + wobble * 0.08));
+  p *= (1.0 + breath + voice * 0.04 + listen * (0.05 + wobble * 0.08));
   float fit = 0.78;
   vec2 aspect = vec2(uResolution.y / max(uResolution.x, 1.0), 1.0);
   gl_Position = vec4(p.xy * fit * aspect, 0.0, 1.0);
@@ -193,6 +193,7 @@ export function OrbCanvas({
 
       let ackStart = 0;
       let lastMode = -1;
+      let smoothLevel = 0;
       const started = performance.now();
       const tick = (now: number) => {
         if (dead || !renderer) return;
@@ -208,9 +209,12 @@ export function OrbCanvas({
           lastMode = modeId;
         }
         const reduced = reducedQuery.matches;
+        const target = levelRef.current ?? 0;
+        smoothLevel += (target - smoothLevel) * 0.18;
+        if (Math.abs(target - smoothLevel) < 0.002) smoothLevel = target;
         program.uniforms.uTime.value = reduced ? 0 : (now - started) / 1000;
         program.uniforms.uMode.value = modeId;
-        program.uniforms.uLevel.value = levelRef.current ?? 0;
+        program.uniforms.uLevel.value = smoothLevel;
         program.uniforms.uFlash.value = modeNow === "ack" ? Math.max(0, 1 - (now - ackStart) / 300) : 0;
         program.uniforms.uReduced.value = reduced ? 1 : 0;
         renderer.render({ scene: mesh });

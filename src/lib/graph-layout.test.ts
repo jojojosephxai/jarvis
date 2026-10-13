@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import {
+  easeFrame,
   frameAroundPoints,
   grabDelta,
   labelEligible,
@@ -149,11 +150,11 @@ describe("graph labels", () => {
     );
   });
 
-  it("drops a far quiet note and shows more titles when zoomed in", () => {
+  it("shows an ordinary title at rest and hides the far side unless showAll", () => {
     const placed = pickLabels([
       { id: "far", x: 0, y: 0, w: 20, h: 12, depth: 0.1, priority: 10, protected: false },
     ]);
-    assert.equal(placed.length, 0);
+    assert.equal(placed.length, 1);
     const quiet = {
       selected: false,
       hover: false,
@@ -164,11 +165,19 @@ describe("graph labels", () => {
       match: false,
       depth: 0.7,
     };
-    assert.equal(labelEligible(quiet, 1, false), false);
+    assert.equal(labelEligible(quiet, 1, false), true);
     assert.equal(labelEligible(quiet, 1.4, false), true);
+    assert.equal(labelEligible({ ...quiet, depth: 0.1 }, 1, false), false);
+    assert.equal(labelEligible({ ...quiet, depth: 0.1 }, 1, true), true);
     assert.equal(labelEligible({ ...quiet, hub: true, depth: 0.1 }, 1, false), false);
     assert.equal(labelEligible({ ...quiet, hub: true, depth: 0.8 }, 1, false), true);
     assert.equal(labelEligible({ ...quiet, ssot: true, depth: 0.8 }, 1, false), true);
+  });
+
+  it("eases focus on cubic-bezier(.22, 1, .36, 1)", () => {
+    assert.equal(easeFrame(0), 0);
+    assert.equal(easeFrame(1), 1);
+    assert.ok(easeFrame(0.5) > 0.5);
   });
 });
 

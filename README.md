@@ -6,9 +6,9 @@ Jarvis is a personal assistant you open in a browser. This version is the **Face
 
 The **brain** calls **grok-4.7** for normal chat when `XAI_API_KEY` is set. Matching vault notes are context, and Jarvis cites them. If no note matches, Jarvis still answers. It does not skip the model just because the vault was quiet. With no key, a local reader quotes the notes instead. It does not send email.
 
-**Morning brief** reads the demo calendar and the priority lines written in the vault. If the calendar is empty, or a note is blank, the brief says that. It does not invent events or an overnight email, and it does not call Grok.
+**Morning brief** reads the priority lines written in the vault. No calendar is connected, so the brief says that. It does not invent a day or an overnight email.
 
-**Hands** can save a demo calendar event, show a link stub, or ask before send, spend, and delete. Those show a **plan** and then a **receipt**. Calendar writes are auto-approved. Send, spend, and delete wait for a yes.
+**Hands** can save an event on this computer, show a link stub, or ask before send, spend, and delete. Those show a **plan** and then a **receipt**. Calendar writes are auto-approved. Send, spend, and delete wait for a yes.
 
 **Voice** reads the reply already on screen. **Speak** uses the Grok voice **Altair** on the server when `XAI_API_KEY` and `XAI_TTS_VOICE_ID` are set. The key stays on the server. If either is missing, Speak uses this computer's voice. If that cannot speak, it says so. There is no Ring view and no Cube view. No account is required. Phone calls are refused.
 
@@ -49,11 +49,11 @@ On a phone using the same Wi-Fi as the computer, the server is open on port **47
 
 These still work. They are not vault answers. The orb stays in the middle. The talk strip opens just enough to show the plan.
 
-1. Type `Put soccer practice on my calendar tomorrow at 4pm` and press **Send**. A plan says **Auto-approved**, then a receipt says the event was saved on the demo calendar on this computer. The event also shows in the talk strip.
+1. Type `Put library return on my calendar Friday at 3pm` and press **Send**. A plan says **Auto-approved**, then a receipt says the event was saved on this computer and that no calendar is connected. The receipt also shows in the talk strip.
 2. Type `Open https://example.com` and press **Send**. The receipt status is **stub**. Browser automation is not running, so the page was not opened. The link works only if you click **Open this link yourself**.
 3. Type `Send an email to my coach that practice moved to 5` and press **Send**. Nothing is sent. Press **No, don't** for a declined receipt. Press **Yes, do it** only if you want to try. After a yes, the receipt still says no mail was sent, because no mail hand is connected. Typing yes in the box does not send it.
 4. `Spend $12 on pizza` waits the same way. After a yes, no money is spent.
-5. `Delete soccer practice from my calendar` waits for a yes. **Yes, do it** removes that demo event. **No, don't** leaves it.
+5. `Delete library return from my calendar` waits for a yes. **Yes, do it** removes that saved event. **No, don't** leaves it.
 
 ## What you see
 
@@ -65,8 +65,8 @@ These still work. They are not vault answers. The orb stays in the middle. The t
 ## Morning brief
 
 1. Press **Talk**, then **Morning brief**. Or type `morning brief` and press **Send**.
-2. You should see today's date, then two parts: the demo calendar, and priority lines copied from the vault.
-3. With no saved events, the brief says the demo calendar is empty. It does not add a fake practice or a meeting.
+2. You should see today's date, then priority lines copied from the vault. The calendar line says Calendar not connected.
+3. The brief does not invent a practice or a meeting.
 4. The starter vault is thin. You should see the science fair, soccer after school, and the library book due Friday, copied from Goals and School. Swim practice windows come from the Swim note grid.
 5. The brief says no mail was read. It will not claim an overnight email.
 6. Grok is not called for the brief. If you want Brain to read a note, ask in the talk box. Example: `What time is swim practice?`
@@ -111,7 +111,7 @@ Question answers are not taken from `data/notes`. Those old files are not the va
 
 The answer code is `src/lib/grounded-answer.ts` and `src/lib/vault-read.ts`.
 
-The demo calendar is saved in `data/calendar.json` on this computer only. It is not Apple Calendar or Google Calendar.
+No calendar is connected. A saved event stays in `data/calendar.json` on this computer only. It is not Apple Calendar or Google Calendar, and the brief does not treat that file as the day.
 
 ## What it does not do
 
