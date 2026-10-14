@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, type RefObject } from "react";
 
 import { OrbCanvas } from "@/components/orb-canvas";
+import { OrbFallback } from "@/components/orb-fallback";
 import { orbStatusWord, type OrbMode } from "@/lib/orb-mode";
 
 const TICKS = 72;
@@ -60,7 +61,7 @@ export function OrbStage({
         <div className="orb-dial-ring">
           <OrbTicks ringRef={ringRef} listening={mode === "listening"} speaking={mode === "speaking"} />
           {glError ? (
-            <p className="orb-gl-error">WebGL failed. The particle orb did not start.</p>
+            <OrbFallback mode={mode} levelRef={levelRef} />
           ) : (
             <OrbCanvas
               mode={mode}

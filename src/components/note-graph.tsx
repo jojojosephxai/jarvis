@@ -155,6 +155,27 @@ function displayTitle(node: GraphNode): string {
   return `${title.slice(0, 35)}...`;
 }
 
+function nodeRadiusUser(node: GraphNode, fitScale: number, currentScale: number): number {
+  const onScreen = (nodeDiameterPx(node) / fitScale) * currentScale;
+  return (onScreen < 10 ? 10 : nodeDiameterPx(node)) / 2 / (onScreen < 10 ? currentScale : fitScale);
+}
+
+/** Plate rect in graph space. Collision uses this same box, not the node center. */
+function labelPlate(
+  pointX: number,
+  pointY: number,
+  radius: number,
+  text: string,
+  fontUser: number,
+  frame: Frame,
+): { x: number; y: number; w: number; h: number } {
+  const w = Math.max(fontUser * 2.2, text.length * fontUser * 0.58 + fontUser * 0.8);
+  const h = fontUser * 1.45;
+  let x = pointX + radius + 8;
+  if (x + w > frame.x + frame.w - 2) x = pointX - radius - 8 - w;
+  return { x, y: pointY - h / 2, w, h };
+}
+
 export function NoteGraph({
   cue = null,
   suspendEscape = false,
@@ -965,19 +986,19 @@ function GalaxyScene({
     if (!showLabels || !labelEligible(flags, zoom, showAllLabels || inCluster)) continue;
     const rank = labelRank(flags);
     const text = displayTitle(node);
+    const plate = labelPlate(point.x, point.y, nodeRadiusUser(node, fitScale, currentScale), text, fontUser, shown);
     labelBoxes.push({
       id: node.id,
-      x: point.x,
+      x: plate.x + plate.w / 2,
       y: point.y,
-      w: Math.max(fontUser * 2.2, text.length * fontUser * 0.58 + fontUser * 0.8),
-      h: fontUser * 1.45,
+      w: plate.w,
+      h: plate.h,
       depth: point.depth,
       priority: rank.priority,
       protected: rank.protected,
     });
   }
   const placedLabels = new Map(pickLabels(labelBoxes).map((label) => [label.id, label]));
-  const labelWidth = new Map(labelBoxes.map((label) => [label.id, label.w]));
   const hover = nodes.find((node) => node.id === hoverId) ?? null;
   const hoverPoint = hover ? projected.get(hover.id) : undefined;
   const drawnEdges = (showEdges ? edges : [])
@@ -1088,9 +1109,7 @@ function GalaxyScene({
         const degree = degreeOf(node.id, edges);
         const onPath = frameMode === "path" && (routeIds?.has(node.id) ?? false);
         const label = placedLabels.get(node.id);
-        const plate = labelWidth.get(node.id) ?? fontUser * 4;
-        const onScreen = (nodeDiameterPx(node) / fitScale) * currentScale;
-        const radius = (onScreen < 10 ? 10 : nodeDiameterPx(node)) / 2 / (onScreen < 10 ? currentScale : fitScale);
+        const radius = nodeRadiusUser(node, fitScale, currentScale);
         const inCluster = clusterId !== null && (node.id === clusterId || node.hubs.includes(clusterId));
         const clusterDim = frameMode === "cluster" && !inCluster && !onPath;
         const pathDim = frameMode === "path" && routeOn && !onPath && !active;
@@ -1098,9 +1117,7 @@ function GalaxyScene({
         const dim = clusterDim || pathDim || searchDim;
         const pathStep = frameMode === "path" && route ? route.indexOf(node.id) : -1;
         const labelY = label?.y ?? point.y;
-        const labelLeft = point.x > shown.x + shown.w * 0.68;
-        const plateX = labelLeft ? point.x - radius - 8 - plate : point.x + radius + 8;
-        const plateY = labelY - fontUser * 0.72;
+        const plate = labelPlate(point.x, labelY, radius, displayTitle(node), fontUser, shown);
         const ring = 3 / currentScale;
         return (
           <g
@@ -1143,15 +1160,15 @@ function GalaxyScene({
               <g className="graph-label" opacity={label.opacity}>
                 <rect
                   className="graph-label-plate"
-                  x={plateX}
-                  y={plateY}
-                  width={plate}
-                  height={fontUser * 1.45}
+                  x={plate.x}
+                  y={plate.y}
+                  width={plate.w}
+                  height={plate.h}
                   rx={2}
                 />
                 <text
                   className="graph-label-text"
-                  x={plateX + fontUser * 0.4}
+                  x={plate.x + fontUser * 0.4}
                   y={labelY + fontUser * 0.32}
                   fontSize={Math.max(fontUser, 11 / currentScale)}
                   style={{

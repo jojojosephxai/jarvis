@@ -120,6 +120,7 @@ export function Face() {
   const ackTimer = useRef<number | null>(null);
   const pendingRef = useRef(false);
   const jobGen = useRef(0);
+  const userSpoke = useRef(false);
   const speakingRef = useRef(false);
   const voice = useVoice((active) => {
     speakingRef.current = active;
@@ -154,7 +155,7 @@ export function Face() {
     let stopped = false;
     let busy = false;
     const start = () => {
-      if (stopped || busy) return;
+      if (stopped || busy || userSpoke.current) return;
       busy = true;
       const line = greetingLine(new Date());
       setLiveLine(line);
@@ -192,9 +193,11 @@ export function Face() {
   async function greet() {
     if (greetedThisLoad) return;
     greetedThisLoad = true;
+    if (userSpoke.current) return;
     const line = greetingLine(new Date());
     setLiveLine(line);
     const result = await speakRef.current(line);
+    if (userSpoke.current) return;
     if (result.blocked) setWake(true);
   }
 
@@ -276,6 +279,7 @@ export function Face() {
   async function send(text: string) {
     const trimmed = text.trim();
     if (!trimmed || pendingRef.current) return;
+    userSpoke.current = true;
     voice.stop();
     const decision = decideFaceMode(trimmed);
     const at = new Date().toISOString();
@@ -415,6 +419,7 @@ export function Face() {
 
   async function decide(itemId: string, plan: HandPlan, decision: "yes" | "no") {
     if (plan.state !== "waiting" || plan.gate !== "confirm" || pendingRef.current) return;
+    userSpoke.current = true;
     const name = plan.tool.trim().replace(/\./g, "-").toUpperCase();
     const { abort, id } = beginWork(handObjective(plan), handStepLabel(plan), name);
     let spoken = "";
