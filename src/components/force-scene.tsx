@@ -231,7 +231,16 @@ export function ForceScene({
           if (mesh.geometry && mesh.geometry !== sphere) mesh.geometry.dispose();
           const material = mesh.material;
           if (Array.isArray(material)) material.forEach((item) => item.dispose());
-          else if (material && material !== sharedLine && material !== hotLine && material !== spineLine) material.dispose();
+          else if (
+            material &&
+            material !== sharedLine &&
+            material !== hotLine &&
+            material !== spineLine &&
+            material !== haloMat &&
+            material !== ringMat
+          ) {
+            material.dispose();
+          }
         });
         group = null;
         meshes.length = 0;
@@ -240,6 +249,19 @@ export function ForceScene({
       const sharedLine = new THREE.LineBasicMaterial({ color: LINK, transparent: true, opacity: 0.16 });
       const spineLine = new THREE.LineBasicMaterial({ color: LINK, transparent: true, opacity: 0.62 });
       const hotLine = new THREE.LineBasicMaterial({ color: LINK, transparent: true, opacity: 0.92 });
+      const haloMat = new THREE.MeshBasicMaterial({
+        color: 0x49d4ff,
+        transparent: true,
+        opacity: 0.16,
+        depthWrite: false,
+      });
+      const ringMat = new THREE.MeshBasicMaterial({
+        color: 0x8ee7ff,
+        transparent: true,
+        opacity: 0.72,
+        side: THREE.DoubleSide,
+        depthWrite: false,
+      });
 
       let labelStamp = "";
       let generation = 0;
@@ -345,6 +367,70 @@ export function ForceScene({
           mesh.userData.id = node.id;
           group.add(mesh);
           meshes.push({ mesh, id: node.id, base: material.opacity, seed: node.id.length });
+          if (node.root || node.kind === "folder") {
+            const halo = new THREE.Mesh(sphere, haloMat);
+            halo.position.copy(mesh.position);
+            halo.scale.setScalar(mesh.scale.x * 1.9);
+            group.add(halo);
+            if (node.root) {
+              const ring = new THREE.Mesh(new THREE.RingGeometry(1.45, 1.58, 64), ringMat);
+              ring.position.copy(mesh.position);
+              ring.scale.setScalar(mesh.scale.x * 2.4);
+              ring.rotation.x = Math.PI / 2.6;
+              group.add(ring);
+            }
+          }
+        }
+        if (current.points.length > 0) {
+          let minX = Infinity;
+          let minY = Infinity;
+          let minZ = Infinity;
+          let maxX = -Infinity;
+          let maxY = -Infinity;
+          let maxZ = -Infinity;
+          for (const point of current.points) {
+            minX = Math.min(minX, point.x);
+            minY = Math.min(minY, point.y);
+            minZ = Math.min(minZ, point.z);
+            maxX = Math.max(maxX, point.x);
+            maxY = Math.max(maxY, point.y);
+            maxZ = Math.max(maxZ, point.z);
+          }
+          const span = Math.max(maxX - minX, maxZ - minZ, 480);
+          const floor = new THREE.GridHelper(span * 1.35, 22, 0x1c4a60, 0x123040);
+          const floorMaterial = floor.material;
+          const fade = (item: THREE_NS.Material) => {
+            item.transparent = true;
+            item.opacity = 0.28;
+          };
+          if (Array.isArray(floorMaterial)) floorMaterial.forEach(fade);
+          else fade(floorMaterial);
+          floor.position.set((minX + maxX) / 2, minY - 70, (minZ + maxZ) / 2);
+          group.add(floor);
+          const dustCount = 140;
+          const dust = new Float32Array(dustCount * 3);
+          for (let index = 0; index < dustCount; index += 1) {
+            const nx = ((index * 97) % 1000) / 1000;
+            const ny = ((index * 193) % 1000) / 1000;
+            const nz = ((index * 389) % 1000) / 1000;
+            dust[index * 3] = minX - 80 + nx * (maxX - minX + 160);
+            dust[index * 3 + 1] = minY - 40 + ny * (maxY - minY + 120);
+            dust[index * 3 + 2] = minZ - 80 + nz * (maxZ - minZ + 160);
+          }
+          const dustGeo = new THREE.BufferGeometry();
+          dustGeo.setAttribute("position", new THREE.BufferAttribute(dust, 3));
+          group.add(
+            new THREE.Points(
+              dustGeo,
+              new THREE.PointsMaterial({
+                color: 0x9fdfff,
+                size: 1.15,
+                transparent: true,
+                opacity: 0.32,
+                depthWrite: false,
+              }),
+            ),
+          );
         }
 
         if (current.showEdges) {
@@ -655,6 +741,8 @@ export function ForceScene({
         sharedLine.dispose();
         spineLine.dispose();
         hotLine.dispose();
+        haloMat.dispose();
+        ringMat.dispose();
         renderer.dispose();
         renderer.forceContextLoss();
         renderer.domElement.remove();

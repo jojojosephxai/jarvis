@@ -394,20 +394,115 @@ html[data-boot="done"] .boot-screen {
   stroke: rgba(73, 212, 255, 0.95);
 }
 
-.orb-dial[data-mode="listening"] .orb-arc-a {
-  animation: orb-spin 26s linear infinite;
+.orb-arc-a {
+  animation: orb-spin 54s linear infinite;
+}
+
+.orb-arc-b {
+  animation: orb-spin 76s linear infinite reverse;
+}
+
+.orb-arc-c {
+  animation: orb-spin 42s linear infinite;
+}
+
+.orb-arc-d {
+  animation: orb-spin 88s linear infinite reverse;
+}
+
+.orb-arc-e {
+  animation: orb-spin 36s linear infinite;
+}
+
+.orb-spokes {
+  animation: orb-spin 110s linear infinite reverse;
+}
+
+.orb-degrees text {
+  fill: rgba(186, 236, 255, 0.9);
+  font-size: 3.1px;
+  letter-spacing: 0.02em;
+}
+
+.orb-hex polygon {
+  fill: none;
+  stroke: rgba(73, 212, 255, 0.28);
+  stroke-width: 0.6px;
+}
+
+.orb-bloom {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  z-index: 1;
+  width: 46%;
+  height: 46%;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(73, 212, 255, 0.28), rgba(73, 212, 255, 0.05) 58%, transparent 72%);
+  pointer-events: none;
+  transform: translate(-50%, -50%);
+}
+
+.orb-scan {
+  position: absolute;
+  top: 18%;
+  right: 18%;
+  left: 18%;
+  z-index: 4;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(186, 236, 255, 0.55), transparent);
+  pointer-events: none;
+  animation: orb-scan 7.5s ease-in-out infinite;
+}
+
+@keyframes orb-scan {
+  0% {
+    top: 22%;
+    opacity: 0;
+  }
+  15% {
+    opacity: 0.7;
+  }
+  85% {
+    opacity: 0.35;
+  }
+  100% {
+    top: 78%;
+    opacity: 0;
+  }
+}
+
+.orb-dial[data-mode="listening"] .orb-arc-a,
+.orb-dial[data-mode="listening"] .orb-arc-c,
+.orb-dial[data-mode="listening"] .orb-arc-e {
+  animation-duration: 16s;
+}
+
+.orb-dial[data-mode="listening"] .orb-arc-b,
+.orb-dial[data-mode="listening"] .orb-arc-d {
+  animation-duration: 22s;
+}
+
+.orb-dial[data-mode="listening"] .orb-bloom,
+.orb-dial[data-mode="speaking"] .orb-bloom {
+  animation: orb-core-breath 1.6s ease-in-out infinite;
 }
 
 .orb-dial[data-mode="speaking"] .orb-arc-a {
-  animation: orb-spin 16s linear infinite;
+  animation-duration: 9s;
 }
 
 .orb-dial[data-mode="speaking"] .orb-arc-b {
-  animation: orb-spin 11s linear infinite reverse;
+  animation-duration: 7s;
 }
 
 .orb-dial[data-mode="speaking"] .orb-arc-c {
-  animation: orb-spin 19s linear infinite;
+  animation-duration: 11s;
+}
+
+.orb-dial[data-mode="speaking"] .orb-arc-d,
+.orb-dial[data-mode="speaking"] .orb-arc-e {
+  animation-duration: 13s;
 }
 
 .orb-dial[data-mode="working"] .orb-arc-a {
@@ -467,7 +562,10 @@ html[data-boot="done"] .boot-screen {
 
 @media (prefers-reduced-motion: reduce) {
   .orb-arc,
-  .orb-core {
+  .orb-core,
+  .orb-spokes,
+  .orb-scan,
+  .orb-bloom {
     animation: none;
   }
 }

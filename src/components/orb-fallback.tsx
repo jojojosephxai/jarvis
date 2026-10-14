@@ -4,23 +4,8 @@ import { useEffect, useRef, type RefObject } from "react";
 
 import { easeFrame } from "@/lib/graph-layout";
 import type { OrbMode } from "@/lib/orb-mode";
-import { hash01, ORB_PARTICLE_KEEP, shellPoint, shellRadius } from "@/lib/orb-shell";
 
-const COUNT = Math.round(8000 * ORB_PARTICLE_KEEP);
-
-const POINTS = Array.from({ length: COUNT }, (_, index) => {
-  const point = shellPoint(index, COUNT);
-  const seed = hash01(index);
-  return {
-    x: point[0],
-    y: point[1],
-    z: point[2],
-    seed,
-    radial: shellRadius(seed),
-  };
-});
-
-/** Same thin shell as the WebGL orb, used only when WebGL cannot start. */
+/** Flat stand-in used only when WebGL cannot start. The HUD rings sit on top of this glow. */
 export function OrbFallback({ mode, levelRef }: { mode: OrbMode; levelRef: RefObject<number> }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const modeRef = useRef(mode);
@@ -83,38 +68,23 @@ export function OrbFallback({ mode, levelRef }: { mode: OrbMode; levelRef: RefOb
       const breath = !reduced ? Math.sin(time * 1.04719755) * 0.01 * (1 - morph) : 0;
       const voice = speaking ? smoothLevel : 0;
       const listen = listening ? smoothLevel : 0;
-      const yaw = time * 0.045 * (reduced ? 0 : 1) * (1 - morph);
-      const cy = Math.cos(yaw);
-      const sy = Math.sin(yaw);
-      const scale = Math.min(width, height) * 0.36 * (1 + breath + voice * 0.035 + listen * 0.02);
+      const scale = Math.min(width, height) * 0.34 * (1 + breath + voice * 0.04 + listen * 0.025);
+      const centerX = width / 2;
+      const centerY = height / 2;
       context.clearRect(0, 0, width, height);
-      context.globalCompositeOperation = "lighter";
-      for (const point of POINTS) {
-        const theta = Math.atan2(point.y, point.x) + point.seed * 0.15;
-        const tube = (point.seed - 0.5) * 0.03;
-        const sphereX = point.x * point.radial;
-        const sphereY = point.y * point.radial;
-        const sphereZ = point.z * point.radial;
-        const spunX = sphereX * cy + sphereZ * sy;
-        const spunZ = -sphereX * sy + sphereZ * cy;
-        const ringX = Math.cos(theta) * (0.76 + tube);
-        const ringY = Math.sin(theta) * (0.76 + tube);
-        const ringZ = (point.seed - 0.5) * 0.018;
-        const x1 = spunX + (ringX - spunX) * morph;
-        const y0 = sphereY + (ringY - sphereY) * morph;
-        const z1 = spunZ + (ringZ - spunZ) * morph;
-        const shell = point.radial > 0.9 ? 1 : 0.45;
-        const facing = 0.55 + Math.max(0, z1) * 0.45;
-        const x = width / 2 + x1 * scale;
-        const y = height / 2 - y0 * scale;
-        const radius = Math.max(0.4, (width / 420) * (0.55 + point.seed * 0.4) * facing);
-        const alpha = Math.max(0.02, Math.min(0.16, 0.045 * shell * facing * (1 + voice * 0.4 + listen * 0.25)));
-        context.fillStyle = `rgba(73, 212, 255, ${alpha.toFixed(3)})`;
-        context.beginPath();
-        context.arc(x, y, radius, 0, Math.PI * 2);
-        context.fill();
-      }
-      context.globalCompositeOperation = "source-over";
+      const glow = context.createRadialGradient(centerX, centerY, scale * 0.05, centerX, centerY, scale);
+      glow.addColorStop(0, `rgba(186, 236, 255, ${0.35 + voice * 0.25 + listen * 0.15})`);
+      glow.addColorStop(0.35, "rgba(73, 212, 255, 0.12)");
+      glow.addColorStop(1, "rgba(73, 212, 255, 0)");
+      context.fillStyle = glow;
+      context.beginPath();
+      context.arc(centerX, centerY, scale, 0, Math.PI * 2);
+      context.fill();
+      context.strokeStyle = `rgba(73, 212, 255, ${(0.25 + morph * 0.55).toFixed(3)})`;
+      context.lineWidth = Math.max(1, scale * (0.015 + morph * 0.02));
+      context.beginPath();
+      context.arc(centerX, centerY, scale * (0.72 + morph * 0.04), 0, Math.PI * 2);
+      context.stroke();
     };
     frame = requestAnimationFrame(draw);
     return () => {
