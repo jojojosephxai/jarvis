@@ -26,7 +26,7 @@ describe("describeGraphCommand", () => {
     const command = parseGraphCommand("show me my swim notes");
     assert.ok(command);
     const described = describeGraphCommand(command, graph.nodes);
-    assert.equal(described.reply, "Showing 2 Swim notes");
+    assert.equal(described.reply, "Showing 3 Swim notes");
     assert.deepEqual(described.directive, { action: "filter", value: "Swim" });
   });
 });

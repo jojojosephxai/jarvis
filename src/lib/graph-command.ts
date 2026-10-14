@@ -60,8 +60,10 @@ export function describeGraphCommand(command: GraphCommand, nodes: GraphNode[]):
       if (!hub) {
         return { reply: `I don't see a ${command.hub} hub`, directive: { action: "filter", value: command.hub } };
       }
-      const count = nodes.filter((node) => node.hubs.includes(hub.id) && node.id.endsWith(".md") && !node.root).length;
-      return { reply: `Showing ${count} ${hub.title} notes`, directive: { action: "filter", value: hub.title } };
+      const members = nodes.filter((node) => node.hubs.includes(hub.id) && node.id.endsWith(".md") && !node.root).length;
+      const count = members + (hub.file ? 1 : 0);
+      const noun = count === 1 ? "note" : "notes";
+      return { reply: `Showing ${count} ${hub.title} ${noun}`, directive: { action: "filter", value: hub.title } };
     }
     case "search": {
       const found = matchingNodes(nodes, command.query);
