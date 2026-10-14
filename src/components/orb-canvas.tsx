@@ -3,9 +3,17 @@
 import { useEffect, useRef, type RefObject } from "react";
 import { Geometry, Mesh, Program, Renderer, type OGLRenderingContext } from "ogl";
 
+import { easeFrame } from "@/lib/graph-layout";
 import { orbModeIndex, type OrbMode } from "@/lib/orb-mode";
 
-const PARTICLE_COUNT = 6400;
+/** Filled sphere. Fewer points on high-DPI and small CPUs so the fill stays near 60fps. */
+function particleBudget(): number {
+  const dpr = window.devicePixelRatio || 1;
+  const cores = navigator.hardwareConcurrency || 8;
+  let count = dpr >= 1.75 ? 32000 : dpr >= 1.25 ? 42000 : 56000;
+  if (cores <= 4) count = Math.round(count * 0.65);
+  return count;
+}
 
 const VERT = `
 precision mediump float;
@@ -19,44 +27,67 @@ uniform float uLevel;
 uniform float uFlash;
 uniform float uReduced;
 uniform float uPoint;
+uniform float uMorph;
 varying float vBright;
+varying float vCore;
 void main() {
-  float standby = step(uMode, 0.5);
   float listening = step(0.5, uMode) * step(uMode, 1.5);
   float speaking = step(1.5, uMode) * step(uMode, 2.5);
   float level = clamp(uLevel, 0.0, 1.0);
   float motion = 1.0 - uReduced;
-  float breath = sin(uTime * 1.04719755) * 0.01 * motion * standby;
-  float wobble = fract(sin(aSeed * 91.7) * 43758.5453);
+  float morph = clamp(uMorph, 0.0, 1.0);
+  float breath = sin(uTime * 1.04719755) * 0.01 * motion * (1.0 - morph);
   float voice = speaking * level;
   float listen = listening * level;
-  vec3 p = position * aRadial;
-  p *= (1.0 + breath + voice * 0.04 + listen * (0.05 + wobble * 0.08));
-  float fit = 0.78;
+  float pulse = sin(uTime * 7.4 + aSeed * 6.2831853) * 0.5 + 0.5;
+  float voicePulse = (voice + listen) * (0.35 + pulse * 0.65);
+
+  vec3 sphere = position * aRadial;
+  float yaw = uTime * 0.16 * motion;
+  float cy = cos(yaw);
+  float sy = sin(yaw);
+  sphere = vec3(sphere.x * cy + sphere.z * sy, sphere.y, -sphere.x * sy + sphere.z * cy);
+  float theta = atan(position.y, position.x) + uTime * 0.1 * motion;
+  float tube = (aSeed - 0.5) * 0.22;
+  float major = 0.62;
+  vec3 donut = vec3(cos(theta) * (major + tube), sin(theta) * (major + tube), (aRadial - 0.5) * 0.18);
+  vec3 p = mix(sphere, donut, morph);
+  p *= 1.0 + breath + voice * 0.05 + listen * 0.03 + voicePulse * 0.025;
+
+  float fit = 0.84;
   vec2 aspect = vec2(uResolution.y / max(uResolution.x, 1.0), 1.0);
   gl_Position = vec4(p.xy * fit * aspect, 0.0, 1.0);
-  float facing = 0.72 + p.z * 0.38;
-  gl_PointSize = max(1.0, uPoint * (0.65 + aSeed * 0.95) * facing * (1.0 + voice * 0.7 + listen * 0.28));
-  float idleBright = 1.0 + sin(uTime * 1.04719755) * 0.06 * motion * standby;
-  float loud = 0.62 + voice * 0.95 + listen * 0.5 + uFlash * 0.85;
-  vBright = loud * idleBright * (0.42 + aRadial * 0.75) * facing;
+
+  float facing = 0.45 + clamp(p.z, 0.0, 1.0) * 0.7;
+  float core = pow(clamp(1.0 - aRadial, 0.0, 1.0), 0.72);
+  core = mix(core, 0.8, morph);
+  vCore = core;
+  gl_PointSize = max(
+    1.5,
+    uPoint * (0.62 + aSeed * 0.7) * (0.78 + facing) * (1.0 + core * 0.28) * (1.0 + voice * 0.45 + listen * 0.22)
+  );
+  float idleBright = 1.0 + sin(uTime * 1.04719755) * 0.06 * motion;
+  float loud = 1.0 + voice * 0.7 + listen * 0.42 + uFlash * 0.45 + voicePulse * 0.28;
+  vBright = loud * idleBright * (0.42 + core * 0.95) * (0.55 + facing) * mix(1.0, 0.58, morph);
 }
 `;
 
 const FRAG = `
 precision mediump float;
 varying float vBright;
+varying float vCore;
 void main() {
   vec2 uv = gl_PointCoord - vec2(0.5);
   float d = length(uv);
   if (d > 0.5) discard;
-  float glow = smoothstep(0.5, 0.04, d);
-  float core = smoothstep(0.2, 0.0, d);
-  vec3 cyan = vec3(0.286, 0.831, 1.0);
-  vec3 hot = vec3(0.85, 0.96, 1.0);
-  vec3 color = mix(cyan, hot, core) * vBright;
-  float alpha = glow * (0.22 + core * 0.62) * clamp(vBright, 0.15, 1.35);
-  gl_FragColor = vec4(color, alpha);
+  float glow = smoothstep(0.5, 0.0, d);
+  float hot = smoothstep(0.22, 0.0, d);
+  vec3 cyan = vec3(0.16, 0.72, 1.0);
+  vec3 white = vec3(0.78, 0.94, 1.0);
+  float energy = clamp(vBright, 0.0, 1.45);
+  vec3 color = mix(cyan, white, clamp(hot * 0.45 + vCore * 0.82, 0.0, 1.0));
+  float alpha = glow * (0.14 + hot * 0.2) * energy;
+  gl_FragColor = vec4(color * alpha, alpha);
 }
 `;
 
@@ -67,18 +98,23 @@ function shellPoint(index: number, count: number): [number, number, number] {
   return [Math.cos(theta) * ring, y, Math.sin(theta) * ring];
 }
 
-function particleGeometry(gl: OGLRenderingContext): Geometry {
-  const position = new Float32Array(PARTICLE_COUNT * 3);
-  const seed = new Float32Array(PARTICLE_COUNT);
-  const radial = new Float32Array(PARTICLE_COUNT);
-  for (let index = 0; index < PARTICLE_COUNT; index += 1) {
-    const point = shellPoint(index, PARTICLE_COUNT);
+function hash01(index: number): number {
+  const value = Math.sin(index * 127.1 + 311.7) * 43758.5453;
+  return value - Math.floor(value);
+}
+
+function particleGeometry(gl: OGLRenderingContext, count: number): Geometry {
+  const position = new Float32Array(count * 3);
+  const seed = new Float32Array(count);
+  const radial = new Float32Array(count);
+  for (let index = 0; index < count; index += 1) {
+    const point = shellPoint(index, count);
     position[index * 3] = point[0];
     position[index * 3 + 1] = point[1];
     position[index * 3 + 2] = point[2];
-    seed[index] = (index % 97) / 97;
-    const unit = index / PARTICLE_COUNT;
-    radial[index] = unit < 0.62 ? 0.9 + (index % 7) * 0.014 : 0.16 + ((index * 17) % 100) / 100 * 0.7;
+    const unit = hash01(index);
+    seed[index] = unit;
+    radial[index] = Math.pow(0.015 + unit * 0.985, 0.34);
   }
   return new Geometry(gl, {
     position: { size: 3, data: position },
@@ -137,7 +173,7 @@ export function OrbCanvas({
         depth: false,
         stencil: false,
         antialias: false,
-        premultipliedAlpha: false,
+        premultipliedAlpha: true,
         preserveDrawingBuffer: false,
         powerPreference: "default",
         dpr,
@@ -163,10 +199,11 @@ export function OrbCanvas({
           uLevel: { value: 0 },
           uFlash: { value: 0 },
           uReduced: { value: 0 },
-          uPoint: { value: 2 },
+          uPoint: { value: 3 },
+          uMorph: { value: 0 },
         },
       });
-      program.setBlendFunc(gl.SRC_ALPHA, gl.ONE);
+      program.setBlendFunc(gl.ONE, gl.ONE);
       const linked = gl.getProgramParameter(program.program, gl.LINK_STATUS);
       if (!linked) {
         const vert = program.vertexShader ? shaderLog(gl, program.vertexShader, "vertex") : "";
@@ -175,17 +212,19 @@ export function OrbCanvas({
         fail(["Particle program did not link.", vert, frag, link].filter(Boolean).join(" "));
         return;
       }
-      const mesh = new Mesh(gl, { geometry: particleGeometry(gl), program, mode: gl.POINTS });
+      const mesh = new Mesh(gl, { geometry: particleGeometry(gl, particleBudget()), program, mode: gl.POINTS });
 
       const resize = () => {
         if (!renderer || dead) return;
         const parent = canvas.parentElement;
         const width = Math.max(parent?.clientWidth || canvas.clientWidth || 1, 1);
         const height = Math.max(parent?.clientHeight || canvas.clientHeight || 1, 1);
-        renderer.dpr = Math.min(1.5, window.devicePixelRatio || 1);
+        const nextDpr = Math.min(1.5, window.devicePixelRatio || 1);
+        renderer.dpr = nextDpr;
         renderer.setSize(width, height);
         program.uniforms.uResolution.value = [gl.drawingBufferWidth, gl.drawingBufferHeight];
-        program.uniforms.uPoint.value = Math.max(1.5, Math.min(width, height) / 78);
+        const minSide = Math.min(gl.drawingBufferWidth, gl.drawingBufferHeight);
+        program.uniforms.uPoint.value = Math.max(1.8, minSide / 86);
       };
       resize();
       const observer = new ResizeObserver(resize);
@@ -194,6 +233,11 @@ export function OrbCanvas({
       let ackStart = 0;
       let lastMode = -1;
       let smoothLevel = 0;
+      let morph = 0;
+      let morphFrom = 0;
+      let morphTo = 0;
+      let morphStart = 0;
+      let lastNow = performance.now();
       const started = performance.now();
       const tick = (now: number) => {
         if (dead || !renderer) return;
@@ -206,17 +250,28 @@ export function OrbCanvas({
         const modeId = orbModeIndex(modeNow);
         if (modeId !== lastMode) {
           if (modeNow === "ack") ackStart = now;
+          const nextMorph = modeNow === "working" ? 1 : 0;
+          if (nextMorph !== morphTo) {
+            morphFrom = morph;
+            morphTo = nextMorph;
+            morphStart = now;
+          }
           lastMode = modeId;
         }
         const reduced = reducedQuery.matches;
+        const span = reduced ? 1 : Math.min(1, (now - morphStart) / 600);
+        morph = morphFrom + (morphTo - morphFrom) * easeFrame(span);
         const target = levelRef.current ?? 0;
-        smoothLevel += (target - smoothLevel) * 0.18;
+        const dt = Math.min(0.05, (now - lastNow) / 1000);
+        lastNow = now;
+        smoothLevel += (target - smoothLevel) * Math.min(1, dt * 12);
         if (Math.abs(target - smoothLevel) < 0.002) smoothLevel = target;
         program.uniforms.uTime.value = reduced ? 0 : (now - started) / 1000;
         program.uniforms.uMode.value = modeId;
         program.uniforms.uLevel.value = smoothLevel;
         program.uniforms.uFlash.value = modeNow === "ack" ? Math.max(0, 1 - (now - ackStart) / 300) : 0;
         program.uniforms.uReduced.value = reduced ? 1 : 0;
+        program.uniforms.uMorph.value = morph;
         renderer.render({ scene: mesh });
       };
       frame = requestAnimationFrame(tick);

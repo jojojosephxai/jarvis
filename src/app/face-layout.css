@@ -630,12 +630,9 @@
   transition-duration: 700ms;
 }
 
-.orb-ticks[data-speaking="true"] line {
-  stroke: #49d4ff;
-}
-
-.orb-ticks[data-speaking="true"] .orb-listen-arc {
-  opacity: 0.85;
+.orb-ticks[data-speaking="true"] line,
+.orb-ticks[data-listening="true"] line {
+  stroke: rgba(73, 212, 255, 0.5);
 }
 
 @media (prefers-reduced-motion: reduce) {

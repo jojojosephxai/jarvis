@@ -23,14 +23,30 @@ export function OrbStage({
   place: OrbPlace;
   onCornerClick?: () => void;
 }) {
-  const ringRef = useRef<SVGSVGElement>(null);
+  const dialRef = useRef<HTMLDivElement>(null);
+  const glowRef = useRef<HTMLDivElement>(null);
   const [glError, setGlError] = useState<string | null>(null);
   const word = orbStatusWord(mode, skill);
 
   useEffect(() => {
+    const reducedQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
     let frame = 0;
-    const tick = () => {
-      ringRef.current?.style.setProperty("--level", String(levelRef.current ?? 0));
+    const started = performance.now();
+    const tick = (now: number) => {
+      const level = Math.max(0, Math.min(1, levelRef.current ?? 0));
+      const breath = reducedQuery.matches ? 0 : Math.sin((now - started) / 1000 * 1.04719755);
+      const working = dialRef.current?.dataset.mode === "working";
+      dialRef.current?.style.setProperty("--level", String(level));
+      const glow = glowRef.current;
+      if (glow) {
+        if (working) {
+          glow.style.opacity = String(0.82 + level * 0.14);
+          glow.style.transform = "scale(1)";
+        } else {
+          glow.style.opacity = String(0.7 + breath * 0.06 + level * 0.22);
+          glow.style.transform = `scale(${(1 + breath * 0.01 + level * 0.16).toFixed(4)})`;
+        }
+      }
       frame = requestAnimationFrame(tick);
     };
     frame = requestAnimationFrame(tick);
@@ -40,6 +56,7 @@ export function OrbStage({
   return (
     <div className="stage-orb" data-place={place}>
       <div
+        ref={dialRef}
         className="orb-dial"
         data-place={place}
         data-mode={mode}
@@ -59,7 +76,8 @@ export function OrbStage({
         aria-label={place === "corner" ? "Close the task panel" : undefined}
       >
         <div className="orb-dial-ring">
-          <OrbTicks ringRef={ringRef} listening={mode === "listening"} speaking={mode === "speaking"} />
+          <div ref={glowRef} className="orb-glow" />
+          <OrbTicks listening={mode === "listening"} speaking={mode === "speaking"} />
           {glError ? (
             <OrbFallback mode={mode} levelRef={levelRef} />
           ) : (
@@ -85,34 +103,26 @@ export function OrbStage({
   );
 }
 
-function OrbTicks({
-  ringRef,
-  listening,
-  speaking,
-}: {
-  ringRef: RefObject<SVGSVGElement | null>;
-  listening: boolean;
-  speaking: boolean;
-}) {
+function OrbTicks({ listening, speaking }: { listening: boolean; speaking: boolean }) {
   const ticks = [];
   for (let index = 0; index < TICKS; index += 1) {
     const angle = (index / TICKS) * Math.PI * 2 - Math.PI / 2;
     const long = index % 6 === 0;
-    const inner = long ? 40 : 43.5;
-    const outer = 47.5;
+    const inner = long ? 45.4 : 46.5;
+    const outer = 47.3;
+    const round = (value: number) => Math.round(value * 1000) / 1000;
     ticks.push(
       <line
         key={index}
-        x1={50 + Math.cos(angle) * inner}
-        y1={50 + Math.sin(angle) * inner}
-        x2={50 + Math.cos(angle) * outer}
-        y2={50 + Math.sin(angle) * outer}
+        x1={round(50 + Math.cos(angle) * inner)}
+        y1={round(50 + Math.sin(angle) * inner)}
+        x2={round(50 + Math.cos(angle) * outer)}
+        y2={round(50 + Math.sin(angle) * outer)}
       />,
     );
   }
   return (
     <svg
-      ref={ringRef}
       className="orb-ticks"
       viewBox="0 0 100 100"
       data-listening={listening ? "true" : "false"}
@@ -120,7 +130,6 @@ function OrbTicks({
       aria-hidden="true"
     >
       {ticks}
-      <circle className="orb-listen-arc" cx="50" cy="50" r="47.5" />
     </svg>
   );
 }

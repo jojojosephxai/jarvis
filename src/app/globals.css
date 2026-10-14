@@ -336,17 +336,45 @@ html[data-boot="done"] .boot-screen {
 .orb-canvas {
   position: absolute;
   inset: 0;
-  z-index: 0;
+  z-index: 1;
   display: block;
   width: 100%;
   height: 100%;
   pointer-events: none;
 }
 
+.orb-glow {
+  position: absolute;
+  inset: 18%;
+  z-index: 0;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle,
+    rgba(210, 248, 255, 0.55) 0%,
+    rgba(73, 212, 255, 0.28) 34%,
+    rgba(73, 212, 255, 0.08) 60%,
+    transparent 78%
+  );
+  filter: blur(16px);
+  pointer-events: none;
+}
+
+.orb-dial[data-mode="working"] .orb-glow {
+  inset: 8%;
+  background: radial-gradient(
+    circle,
+    transparent 36%,
+    rgba(73, 212, 255, 0.16) 48%,
+    rgba(198, 244, 255, 0.48) 57%,
+    rgba(73, 212, 255, 0.12) 66%,
+    transparent 78%
+  );
+}
+
 .orb-ticks {
   position: absolute;
   inset: 0;
-  z-index: 1;
+  z-index: 2;
   width: 100%;
   height: 100%;
   overflow: visible;
@@ -354,32 +382,14 @@ html[data-boot="done"] .boot-screen {
 }
 
 .orb-ticks line {
-  stroke: #1c6f8c;
+  stroke: rgba(73, 212, 255, 0.28);
   stroke-width: 1px;
   vector-effect: non-scaling-stroke;
 }
 
-.orb-ticks[data-listening="true"] line {
-  stroke: #49d4ff;
-}
-
-.orb-listen-arc {
-  fill: none;
-  stroke: #49d4ff;
-  stroke-width: 1.5px;
-  stroke-linecap: round;
-  vector-effect: non-scaling-stroke;
-  stroke-dasharray: 298;
-  stroke-dashoffset: calc(298 * (1 - var(--level, 0)));
-  opacity: 0;
-  transform-box: fill-box;
-  transform-origin: center;
-  transform: rotate(-90deg);
-  transition: opacity 150ms cubic-bezier(0.22, 1, 0.36, 1);
-}
-
-.orb-ticks[data-listening="true"] .orb-listen-arc {
-  opacity: 1;
+.orb-ticks[data-listening="true"] line,
+.orb-ticks[data-speaking="true"] line {
+  stroke: rgba(73, 212, 255, 0.5);
 }
 
 .orb-status {
