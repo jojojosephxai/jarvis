@@ -5,13 +5,13 @@ import path from "node:path";
 import { describe, it } from "node:test";
 
 import { loadVaultGraph, resolveVaultPath } from "./note-graph.server";
-import { buildNoteGraph, MAX_GRAPH_NODES, nodeDiameterPx } from "./note-graph";
+import { areaHubs, buildNoteGraph, MAX_GRAPH_NODES, nodeDiameterPx } from "./note-graph";
 
 describe("buildNoteGraph", () => {
   it("connects wikilinks, shared tags, and a folder parent", () => {
     const graph = buildNoteGraph([
       {
-        path: "school/index.md",
+        path: "school/board.md",
         text: "---\ntags:\n  - school\n---\n# School\n\nHome room.\n",
       },
       {
@@ -24,10 +24,10 @@ describe("buildNoteGraph", () => {
     assert.equal(graph.edges.some((edge) => edge.reason === "folder"), true);
     assert.equal(graph.edges.some((edge) => edge.reason === "wikilink"), true);
     assert.equal(
-      graph.edges.some((edge) => edge.reason === "tag" && (edge.from === "tag:school" || edge.to === "tag:school")),
+      graph.nodes.some((node) => node.id === "area:school" && node.nodeType === "hub"),
       true,
     );
-    assert.equal(graph.nodes.some((node) => node.id === "tag:school" && node.nodeType === "hub"), true);
+    assert.equal(graph.nodes.filter((node) => node.kind === "folder" && node.title === "School").length, 1);
     assert.equal(
       graph.nodes.find((note) => note.id === "school/fair.md")?.excerpt.includes("[[School|the board]]"),
       true,
@@ -51,12 +51,8 @@ describe("buildNoteGraph", () => {
       { path: "School.md", text: "# School\n\nClass.\n" },
     ]);
     assert.equal(graph.noteCount, 2);
-    assert.equal(graph.nodes.filter((node) => node.kind === "folder").length, 1);
-    assert.equal(graph.connectionCount, 2);
-    assert.equal(
-      graph.edges.every((edge) => edge.reason === "folder"),
-      true,
-    );
+    assert.equal(areaHubs(graph.nodes).map((row) => row.hub.title).sort().join(","), "Me,School");
+    assert.equal(graph.connectionCount >= 2, true);
   });
 
   it("uses a folder hub only for notes that have no tag", () => {
@@ -66,27 +62,23 @@ describe("buildNoteGraph", () => {
       { path: "Journal/plain.md", text: "# Plain\n\nNo tag in the folder.\n" },
       { path: "Loose.md", text: "# Loose\n\nNo tag.\n" },
     ]);
-    const onFolder = (id: string) =>
-      graph.edges.some((edge) => edge.reason === "folder" && (edge.from === id || edge.to === id));
-    assert.equal(onFolder("About.md"), false);
-    assert.equal(onFolder("Journal/day.md"), false);
-    assert.equal(graph.nodes.some((node) => node.id === "folder:Journal"), true);
-    assert.equal(graph.nodes.find((node) => node.id === "Journal/plain.md")?.hubs[0], "folder:Journal");
-    assert.equal(graph.nodes.filter((node) => node.hubs.includes("folder:Journal")).length, 1);
-    assert.equal(graph.nodes.find((node) => node.id === "Loose.md")?.hubs[0], "folder:");
-    assert.equal(graph.nodes.filter((node) => node.hubs.includes("folder:")).length, 1);
+    assert.equal(graph.nodes.find((node) => node.id === "About.md")?.hubs[0], "area:me");
+    assert.equal(graph.nodes.find((node) => node.id === "Journal/day.md")?.hubs[0], "area:journal");
+    assert.equal(graph.nodes.find((node) => node.id === "Journal/plain.md")?.hubs[0], "area:journal");
+    assert.equal(graph.nodes.find((node) => node.id === "Loose.md")?.hubs[0], "area:me");
+    assert.equal(areaHubs(graph.nodes).some((row) => row.hub.title === "Joseph"), false);
   });
 
   it("keeps a real parent note instead of adding a folder hub", () => {
     const graph = buildNoteGraph([
-      { path: "school/index.md", text: "# School\n\nHome.\n" },
+      { path: "school/home.md", text: "# School\n\nHome.\n" },
       { path: "school/fair.md", text: "# Fair\n\nPlants.\n" },
+      { path: "Help.md", text: "# Help\n\nAid.\n" },
+      { path: "Index.md", text: "# Index\n\nMap.\n" },
     ]);
-    assert.equal(
-      graph.nodes.some((node) => node.kind === "folder"),
-      false,
-    );
-    assert.equal(graph.edges.filter((edge) => edge.reason === "folder").length, 1);
+    assert.equal(graph.nodes.some((node) => node.id === "Help.md" || node.id === "Index.md"), false);
+    assert.equal(graph.nodes.filter((node) => node.kind === "folder" && node.title === "School").length, 1);
+    assert.equal(graph.edges.filter((edge) => edge.reason === "folder").length, 2);
   });
 
   it("marks ssot notes and counts only types that are on the graph", () => {
@@ -108,7 +100,7 @@ describe("buildNoteGraph", () => {
     assert.equal(graph.nodes.find((node) => node.id === "School.md")?.nodeType, "note");
     const schedule = graph.nodes.find((node) => node.id === "School-schedule.md");
     assert.equal(schedule?.ssot, true);
-    assert.equal(schedule?.hubs[0], "tag:school");
+    assert.equal(schedule?.hubs[0], "area:school");
     assert.equal(graph.nodes.find((node) => node.id === "Links.md")?.nodeType, "link");
     assert.equal(graph.legend.some((entry) => entry.type === "file"), false);
     assert.equal(graph.legend.find((entry) => entry.type === "person")?.count, 1);
@@ -161,22 +153,26 @@ describe("loadVaultGraph", () => {
       assert.equal(graph.nodes.some((note) => note.title === "School"), true);
       assert.equal(graph.noteCount <= MAX_GRAPH_NODES, true);
       assert.equal(graph.connectionCount > 0, true);
-      const notes = graph.nodes.filter((node) => node.kind === "note");
-      const untagged = notes.filter((note) => note.tags.length === 0);
-      const folderHubEdges = graph.edges.filter(
-        (edge) => edge.reason === "folder" && (edge.from.startsWith("folder:") || edge.to.startsWith("folder:")),
+      const notes = graph.nodes.filter((node) => node.kind === "note" && node.id.endsWith(".md"));
+      assert.equal(
+        notes.every((note) => note.hubs[0]?.startsWith("area:")),
+        true,
       );
-      for (const edge of folderHubEdges) {
-        const noteId = edge.from.startsWith("folder:") ? edge.to : edge.from;
-        assert.equal(notes.find((note) => note.id === noteId)?.tags.length ?? 0, 0);
-      }
-      assert.equal(folderHubEdges.length > 0, untagged.length > 0);
       const schedule = graph.nodes.find((node) => node.id === "School-schedule.md");
       assert.equal(schedule?.ssot, true);
-      assert.equal(schedule?.hubs[0], "tag:school");
+      assert.equal(schedule?.hubs[0], "area:school");
       const swim = graph.nodes.find((node) => node.id === "Swim.md");
       assert.equal(swim?.ssot, true);
-      assert.equal(swim?.hubs[0], "tag:swim");
+      assert.equal(swim?.hubs[0], "area:swim");
+      assert.equal(graph.nodes.filter((node) => node.kind === "folder" && node.title === "Swim").length, 1);
+      assert.equal(graph.nodes.some((node) => node.id === "tag:swim"), false);
+      const hubs = areaHubs(graph.nodes);
+      assert.equal(hubs.length <= 8, true);
+      assert.equal(hubs.length >= 6, true);
+      assert.equal(
+        hubs.some((row) => /^(help|index|hud|identity|joseph|interests)$/i.test(row.hub.title)),
+        false,
+      );
       assert.equal(
         graph.edges.some((edge) => edge.reason === "wikilink"),
         true,
@@ -191,7 +187,7 @@ describe("loadVaultGraph", () => {
     const root = await mkdtemp(path.join(tmpdir(), "jarvis-vault-"));
     try {
       await mkdir(path.join(root, "school"), { recursive: true });
-      await writeFile(path.join(root, "school", "index.md"), "# School\n\n#class\n", "utf8");
+      await writeFile(path.join(root, "school", "home.md"), "# School\n\n#class\n", "utf8");
       await writeFile(
         path.join(root, "school", "fair.md"),
         "# Science fair\n\nSee [[School]].\n\n#class\n",

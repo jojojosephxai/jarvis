@@ -38,18 +38,20 @@ export function NoteReader({
   path,
   onBack,
   onOpen,
+  docked = false,
 }: {
   node: GraphNode;
   links: NoteLink[];
   path: PathStep[];
   onBack: () => void;
   onOpen: (id: string) => void;
+  docked?: boolean;
 }) {
   const color = nodeColor(node.nodeType);
   const excerpt = excerptLines(node);
   const tracing = path.length > 1;
   return (
-    <aside className="graph-inspector glass" aria-label="Inspector">
+    <aside className={docked ? "graph-inspector is-docked" : "graph-inspector glass"} aria-label="Inspector">
       <div className="inspector-head">
         <p className="inspector-kicker">Inspector</p>
         <button type="button" className="inspector-back" onClick={onBack}>

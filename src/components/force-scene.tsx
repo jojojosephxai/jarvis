@@ -1,0 +1,571 @@
+"use client";
+
+import { useEffect, useRef } from "react";
+import type * as THREE_NS from "three";
+
+import { labelEligible, labelRank, pickLabels, type LayoutPoint } from "@/lib/graph-layout";
+import { nodeColor, nodeDiameterPx, type GraphEdge, type GraphNode } from "@/lib/note-graph";
+
+type ZoomKind = "fit" | "in" | "out";
+
+const LINK = 0x49d4ff;
+
+export function ForceScene({
+  nodes,
+  edges,
+  points,
+  visibleIds,
+  selectedId,
+  clusterId,
+  route,
+  showLabels,
+  showEdges,
+  focusKey,
+  zoomToken,
+  zoomKind,
+  onSelect,
+  onClear,
+}: {
+  nodes: GraphNode[];
+  edges: GraphEdge[];
+  points: LayoutPoint[];
+  visibleIds: Set<string>;
+  selectedId: string | null;
+  clusterId: string | null;
+  route: string[] | null;
+  showLabels: boolean;
+  showEdges: boolean;
+  focusKey: string;
+  zoomToken: number;
+  zoomKind: ZoomKind;
+  onSelect: (id: string, shift: boolean) => void;
+  onClear: () => void;
+}) {
+  const hostRef = useRef<HTMLDivElement>(null);
+  const labelRef = useRef<HTMLDivElement>(null);
+  const stateRef = useRef({
+    nodes,
+    edges,
+    points,
+    visibleIds,
+    selectedId,
+    clusterId,
+    route,
+    showLabels,
+    showEdges,
+    onSelect,
+    onClear,
+  });
+  stateRef.current = {
+    nodes,
+    edges,
+    points,
+    visibleIds,
+    selectedId,
+    clusterId,
+    route,
+    showLabels,
+    showEdges,
+    onSelect,
+    onClear,
+  };
+
+  const apiRef = useRef<{ fit: () => void; zoom: (kind: ZoomKind) => void; rebuild: () => void } | null>(null);
+  const stopRef = useRef<(() => void) | null>(null);
+
+  useEffect(() => {
+    const host = hostRef.current;
+    const labelHost = labelRef.current;
+    if (!host || !labelHost) return;
+    let dead = false;
+    let frame = 0;
+    const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+    void import("three").then((THREE) => {
+      if (dead || !hostRef.current || !labelRef.current) return;
+      const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+      renderer.setClearColor(0x000000, 0);
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
+      host.appendChild(renderer.domElement);
+      const scene = new THREE.Scene();
+      const camera = new THREE.PerspectiveCamera(46, 1, 1, 8000);
+      const raycaster = new THREE.Raycaster();
+      const pointer = new THREE.Vector2();
+      const target = new THREE.Vector3();
+      const sphere = new THREE.SphereGeometry(1, 14, 12);
+      let group: THREE_NS.Group | null = null;
+      const meshes: { mesh: THREE_NS.Mesh; id: string; base: number; seed: number }[] = [];
+      let yaw = 0.62;
+      let pitch = 0.38;
+      let dist = 900;
+      let fitDist = 900;
+      let hoverId = "";
+      let drag: { x: number; y: number; button: number; shift: boolean } | null = null;
+      let moved = false;
+
+      const size = () => {
+        const width = Math.max(host.clientWidth, 1);
+        const height = Math.max(host.clientHeight, 1);
+        renderer.setSize(width, height, false);
+        renderer.domElement.style.width = "100%";
+        renderer.domElement.style.height = "100%";
+        camera.aspect = width / height;
+        camera.updateProjectionMatrix();
+        return { width, height };
+      };
+
+      const placeCamera = () => {
+        camera.position.set(
+          target.x + Math.sin(yaw) * Math.cos(pitch) * dist,
+          target.y + Math.sin(pitch) * dist,
+          target.z + Math.cos(yaw) * Math.cos(pitch) * dist,
+        );
+        camera.lookAt(target);
+      };
+
+      const framePoints = (list: LayoutPoint[]) => {
+        if (list.length === 0) return;
+        let minX = Infinity;
+        let minY = Infinity;
+        let minZ = Infinity;
+        let maxX = -Infinity;
+        let maxY = -Infinity;
+        let maxZ = -Infinity;
+        for (const point of list) {
+          minX = Math.min(minX, point.x);
+          minY = Math.min(minY, point.y);
+          minZ = Math.min(minZ, point.z);
+          maxX = Math.max(maxX, point.x);
+          maxY = Math.max(maxY, point.y);
+          maxZ = Math.max(maxZ, point.z);
+        }
+        const { width, height } = size();
+        const padTop = 96;
+        const padLeft = 280;
+        const padRight = 248;
+        const padBottom = 188;
+        const availW = Math.max(220, width - padLeft - padRight);
+        const availH = Math.max(220, height - padTop - padBottom);
+        target.set((minX + maxX) / 2, (minY + maxY) / 2, (minZ + maxZ) / 2);
+        const radius = Math.max(maxX - minX, maxY - minY, maxZ - minZ, 80) * 0.62 + 48;
+        const fov = (camera.fov * Math.PI) / 180;
+        dist = (radius / Math.tan(fov / 2)) * (height / availH) * 1.28;
+        fitDist = dist;
+        yaw = 0.62;
+        pitch = 0.38;
+        const ndcX = ((padLeft + availW / 2) / width) * 2 - 1;
+        const ndcY = -(((padTop + availH / 2) / height) * 2 - 1);
+        const shiftX = ndcX * dist * Math.tan(fov / 2) * camera.aspect;
+        const shiftY = ndcY * dist * Math.tan(fov / 2);
+        target.x -= shiftX;
+        target.y -= shiftY;
+        placeCamera();
+      };
+
+      const disposeGroup = () => {
+        if (!group) return;
+        scene.remove(group);
+        group.traverse((obj) => {
+          const mesh = obj as THREE_NS.Mesh;
+          if (mesh.geometry && mesh.geometry !== sphere) mesh.geometry.dispose();
+          const material = mesh.material;
+          if (Array.isArray(material)) material.forEach((item) => item.dispose());
+          else if (material && material !== sharedLine) material.dispose();
+        });
+        group = null;
+        meshes.length = 0;
+      };
+
+      const sharedLine = new THREE.LineBasicMaterial({ color: LINK, transparent: true, opacity: 0.12 });
+      const hotLine = new THREE.LineBasicMaterial({ color: LINK, transparent: true, opacity: 0.92 });
+
+      const rebuild = () => {
+        disposeGroup();
+        const current = stateRef.current;
+        const pointOf = new Map(current.points.map((point) => [point.id, point]));
+        const nodeOf = new Map(current.nodes.map((node) => [node.id, node]));
+        const counts = new Map<string, number>();
+        for (const node of current.nodes) {
+          const home = node.hubs[0];
+          if (home) counts.set(home, (counts.get(home) ?? 0) + 1);
+        }
+        group = new THREE.Group();
+        const hot = new Set<string>();
+        if (current.clusterId) {
+          hot.add(current.clusterId);
+          for (const node of current.nodes) {
+            if (node.hubs.includes(current.clusterId)) hot.add(node.id);
+          }
+        }
+        if (current.selectedId) {
+          hot.add(current.selectedId);
+          for (const edge of current.edges) {
+            if (edge.from === current.selectedId) hot.add(edge.to);
+            if (edge.to === current.selectedId) hot.add(edge.from);
+          }
+        }
+        if (current.route) for (const id of current.route) hot.add(id);
+        const dim = hot.size > 0;
+
+        for (const node of current.nodes) {
+          if (!current.visibleIds.has(node.id)) continue;
+          const point = pointOf.get(node.id);
+          if (!point) continue;
+          const count = node.kind === "folder" ? counts.get(node.id) ?? 1 : 0;
+          const px = node.kind === "folder" ? Math.min(34, 16 + Math.sqrt(count) * 2.6) : nodeDiameterPx(node);
+          const color = new THREE.Color(nodeColor(node.nodeType));
+          const material = new THREE.MeshBasicMaterial({
+            color,
+            transparent: true,
+            opacity: dim && !hot.has(node.id) ? 0.14 : 0.95,
+          });
+          const mesh = new THREE.Mesh(sphere, material);
+          mesh.position.set(point.x, point.y, point.z);
+          mesh.scale.setScalar(Math.max(3.2, px * 0.42));
+          mesh.userData.id = node.id;
+          group.add(mesh);
+          meshes.push({ mesh, id: node.id, base: material.opacity, seed: node.id.length });
+        }
+
+        if (current.showEdges) {
+          const focusId = current.selectedId;
+          const routeSet = current.route ? new Set(current.route) : null;
+          const positions: number[] = [];
+          const hotPositions: number[] = [];
+          const pairs = new Map<string, { a: string; b: string }>();
+          const push = (bucket: number[], a: { x: number; y: number; z: number }, b: { x: number; y: number; z: number }) => {
+            bucket.push(a.x, a.y, a.z, b.x, b.y, b.z);
+          };
+          for (const edge of current.edges) {
+            if (!current.visibleIds.has(edge.from) || !current.visibleIds.has(edge.to)) continue;
+            const from = nodeOf.get(edge.from);
+            const to = nodeOf.get(edge.to);
+            const a = pointOf.get(edge.from);
+            const b = pointOf.get(edge.to);
+            if (!from || !to || !a || !b) continue;
+            const onFocus = focusId && (edge.from === focusId || edge.to === focusId);
+            const onRoute =
+              routeSet &&
+              routeSet.has(edge.from) &&
+              routeSet.has(edge.to) &&
+              Math.abs((current.route ?? []).indexOf(edge.from) - (current.route ?? []).indexOf(edge.to)) === 1;
+            if (onFocus || onRoute) {
+              push(hotPositions, a, b);
+              continue;
+            }
+            if (focusId || routeSet) continue;
+            const homeA = from.kind === "folder" ? from.id : from.hubs[0];
+            const homeB = to.kind === "folder" ? to.id : to.hubs[0];
+            if (homeA && homeB && homeA !== homeB) {
+              const key = homeA < homeB ? `${homeA}|${homeB}` : `${homeB}|${homeA}`;
+              pairs.set(key, { a: homeA, b: homeB });
+            } else {
+              push(positions, a, b);
+            }
+          }
+          let cx = 0;
+          let cy = 0;
+          let cz = 0;
+          let hubs = 0;
+          for (const node of current.nodes) {
+            if (node.kind !== "folder") continue;
+            const point = pointOf.get(node.id);
+            if (!point) continue;
+            cx += point.x;
+            cy += point.y;
+            cz += point.z;
+            hubs += 1;
+          }
+          if (hubs > 0) {
+            cx /= hubs;
+            cy /= hubs;
+            cz /= hubs;
+          }
+          for (const pair of pairs.values()) {
+            const a = pointOf.get(pair.a);
+            const b = pointOf.get(pair.b);
+            if (!a || !b) continue;
+            const mx = (a.x + b.x) / 2;
+            const my = (a.y + b.y) / 2;
+            const mz = (a.z + b.z) / 2;
+            const c = { x: mx + (cx - mx) * 0.45, y: my + (cy - my) * 0.45, z: mz + (cz - mz) * 0.45 };
+            let prev: { x: number; y: number; z: number } = a;
+            for (let step = 1; step <= 12; step += 1) {
+              const t = step / 12;
+              const u = 1 - t;
+              const next = {
+                x: u * u * a.x + 2 * u * t * c.x + t * t * b.x,
+                y: u * u * a.y + 2 * u * t * c.y + t * t * b.y,
+                z: u * u * a.z + 2 * u * t * c.z + t * t * b.z,
+              };
+              push(positions, prev, next);
+              prev = next;
+            }
+          }
+          if (positions.length > 0) {
+            const geometry = new THREE.BufferGeometry();
+            geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+            group.add(new THREE.LineSegments(geometry, sharedLine));
+          }
+          if (hotPositions.length > 0) {
+            const geometry = new THREE.BufferGeometry();
+            geometry.setAttribute("position", new THREE.Float32BufferAttribute(hotPositions, 3));
+            group.add(new THREE.LineSegments(geometry, hotLine));
+          }
+        }
+        scene.add(group);
+        host.dataset.ready = meshes.length > 0 ? "true" : "false";
+      };
+
+      const paintLabels = () => {
+        const current = stateRef.current;
+        const width = host.clientWidth || 1;
+        const height = host.clientHeight || 1;
+        labelHost.replaceChildren();
+        if (!current.showLabels) return;
+        const zoomed = dist < fitDist * 0.72;
+        const routeIndex = new Map((current.route ?? []).map((id, index) => [id, index]));
+        const candidates: {
+          id: string;
+          x: number;
+          y: number;
+          w: number;
+          h: number;
+          depth: number;
+          priority: number;
+          protected: boolean;
+          title: string;
+        }[] = [];
+        for (const entry of meshes) {
+          const node = current.nodes.find((item) => item.id === entry.id);
+          if (!node || !current.visibleIds.has(node.id)) continue;
+          const hub = node.kind === "folder" || node.nodeType === "hub";
+          const onPath = routeIndex.has(node.id);
+          const neighbor =
+            current.selectedId !== null &&
+            current.edges.some(
+              (edge) =>
+                (edge.from === current.selectedId && edge.to === node.id) ||
+                (edge.to === current.selectedId && edge.from === node.id),
+            );
+          const inCluster = current.clusterId !== null && (node.id === current.clusterId || node.hubs.includes(current.clusterId));
+          const flags = {
+            selected: node.id === current.selectedId,
+            hover: node.id === hoverId,
+            hub,
+            ssot: node.ssot,
+            onPath,
+            neighbor,
+            folder: false,
+            match: inCluster,
+            depth: 0.8,
+          };
+          if (!labelEligible(flags, zoomed ? 1.4 : 1, inCluster)) continue;
+          const vector = entry.mesh.position.clone().project(camera);
+          if (vector.z > 1) continue;
+          const sx = (vector.x * 0.5 + 0.5) * width;
+          const sy = (-vector.y * 0.5 + 0.5) * height;
+          const distance = camera.position.distanceTo(entry.mesh.position);
+          const fov = (camera.fov * Math.PI) / 180;
+          const nodePx = (entry.mesh.scale.x * height) / (2 * Math.tan(fov / 2) * Math.max(distance, 1));
+          const number = routeIndex.get(node.id);
+          const title = number !== undefined ? `${number + 1}. ${node.title}` : node.title;
+          const text = title.length > 28 ? `${title.slice(0, 27)}…` : title;
+          const w = Math.max(48, text.length * 7.4 + 10);
+          const h = 18;
+          const spots = [
+            { x: sx + nodePx + 8, y: sy - h / 2 },
+            { x: sx - nodePx - 8 - w, y: sy - h / 2 },
+            { x: sx + nodePx + 8, y: sy - h - 10 },
+          ];
+          const spot = spots.find((item) => !blocked(item.x, item.y, w, h, width, height));
+          if (!spot) continue;
+          const rank = labelRank(flags);
+          candidates.push({
+            id: node.id,
+            x: spot.x + w / 2,
+            y: spot.y + h / 2,
+            w,
+            h,
+            depth: 0.8,
+            priority: rank.priority,
+            protected: rank.protected || hub,
+            title: text,
+          });
+        }
+        const placed = pickLabels(candidates);
+        const byId = new Map(candidates.map((item) => [item.id, item]));
+        for (const label of placed) {
+          const source = byId.get(label.id);
+          if (!source) continue;
+          const el = document.createElement("span");
+          el.className = "graph-float-label";
+          el.textContent = source.title;
+          el.style.left = `${source.x - source.w / 2}px`;
+          el.style.top = `${label.y - source.h / 2}px`;
+          el.style.opacity = String(label.opacity);
+          labelHost.appendChild(el);
+        }
+      };
+
+      const tick = (now: number) => {
+        if (dead) return;
+        frame = requestAnimationFrame(tick);
+        if (!reduced) {
+          const t = now / 1000;
+          for (const entry of meshes) {
+            const material = entry.mesh.material as THREE_NS.MeshBasicMaterial;
+            material.opacity = entry.base * (0.9 + Math.sin(t * 1.3 + entry.seed) * 0.08);
+          }
+        }
+        placeCamera();
+        renderer.render(scene, camera);
+        paintLabels();
+      };
+
+      const hit = (event: PointerEvent) => {
+        const rect = renderer.domElement.getBoundingClientRect();
+        pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+        pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+        raycaster.setFromCamera(pointer, camera);
+        const found = raycaster.intersectObjects(meshes.map((entry) => entry.mesh), false)[0];
+        const id = found?.object.userData.id;
+        return typeof id === "string" ? id : "";
+      };
+
+      const onDown = (event: PointerEvent) => {
+        drag = { x: event.clientX, y: event.clientY, button: event.button, shift: event.shiftKey };
+        moved = false;
+      };
+      const onMove = (event: PointerEvent) => {
+        if (!drag) {
+          hoverId = hit(event);
+          host.style.cursor = hoverId ? "pointer" : "grab";
+          return;
+        }
+        const dx = event.clientX - drag.x;
+        const dy = event.clientY - drag.y;
+        if (Math.hypot(dx, dy) > 3) moved = true;
+        if (drag.button === 2 || drag.shift || event.shiftKey) {
+          const scale = dist / Math.max(host.clientHeight, 1);
+          target.x -= dx * scale;
+          target.y += dy * scale;
+        } else {
+          yaw -= dx * 0.005;
+          pitch = Math.max(-1.1, Math.min(1.1, pitch + dy * 0.005));
+        }
+        drag.x = event.clientX;
+        drag.y = event.clientY;
+      };
+      const onUp = (event: PointerEvent) => {
+        if (!drag) return;
+        const shift = drag.shift || event.shiftKey;
+        drag = null;
+        if (moved) return;
+        const id = hit(event);
+        if (!id) {
+          stateRef.current.onClear();
+          return;
+        }
+        stateRef.current.onSelect(id, shift);
+      };
+      const onWheel = (event: WheelEvent) => {
+        event.preventDefault();
+        dist = Math.max(80, Math.min(4000, dist * (event.deltaY > 0 ? 1.08 : 0.92)));
+      };
+
+      const onMenu = (event: Event) => event.preventDefault();
+      renderer.domElement.addEventListener("pointerdown", onDown);
+      window.addEventListener("pointermove", onMove);
+      window.addEventListener("pointerup", onUp);
+      renderer.domElement.addEventListener("wheel", onWheel, { passive: false });
+      renderer.domElement.addEventListener("contextmenu", onMenu);
+      const observer = new ResizeObserver(() => size());
+      observer.observe(host);
+      const stop = () => {
+        cancelAnimationFrame(frame);
+        observer.disconnect();
+        renderer.domElement.removeEventListener("pointerdown", onDown);
+        window.removeEventListener("pointermove", onMove);
+        window.removeEventListener("pointerup", onUp);
+        renderer.domElement.removeEventListener("wheel", onWheel);
+        renderer.domElement.removeEventListener("contextmenu", onMenu);
+        disposeGroup();
+        sphere.dispose();
+        sharedLine.dispose();
+        hotLine.dispose();
+        renderer.dispose();
+        renderer.domElement.remove();
+      };
+      stopRef.current = stop;
+      if (dead) {
+        stop();
+        return;
+      }
+      size();
+      rebuild();
+      const visiblePoints = stateRef.current.points.filter((point) => stateRef.current.visibleIds.has(point.id));
+      framePoints(visiblePoints.length > 0 ? visiblePoints : stateRef.current.points);
+      const fit = () => {
+        const current = stateRef.current;
+        const chosen = current.points.filter((point) => {
+          if (!current.visibleIds.has(point.id)) return false;
+          if (current.clusterId) {
+            const node = current.nodes.find((item) => item.id === point.id);
+            return point.id === current.clusterId || node?.hubs.includes(current.clusterId) === true;
+          }
+          return true;
+        });
+        framePoints(chosen.length > 0 ? chosen : current.points);
+      };
+      apiRef.current = {
+        fit,
+        rebuild,
+        zoom: (kind) => {
+          if (kind === "fit") fit();
+          if (kind === "in") dist = Math.max(80, dist * 0.82);
+          if (kind === "out") dist = Math.min(4000, dist * 1.22);
+        },
+      };
+      frame = requestAnimationFrame(tick);
+
+      host.dataset.scene = "ready";
+    });
+
+    return () => {
+      dead = true;
+      cancelAnimationFrame(frame);
+      apiRef.current = null;
+      stopRef.current?.();
+      stopRef.current = null;
+    };
+  }, []);
+
+  useEffect(() => {
+    apiRef.current?.rebuild();
+    apiRef.current?.fit();
+  }, [focusKey, points, nodes, edges, showEdges, selectedId, clusterId, route, visibleIds, showLabels]);
+
+  useEffect(() => {
+    if (zoomToken === 0) return;
+    apiRef.current?.zoom(zoomKind);
+  }, [zoomToken, zoomKind]);
+
+  return (
+    <div ref={hostRef} className="force-scene" data-ready="false">
+      <div ref={labelRef} className="force-labels" />
+    </div>
+  );
+}
+
+function blocked(x: number, y: number, w: number, h: number, width: number, height: number): boolean {
+  const zones = [
+    [0, 0, width, 46],
+    [0, 40, 268, height],
+    [width - 232, 40, 232, 340],
+    [width - 210, height * 0.3, 210, 300],
+    [248, height - 176, width - 248 - 356, 176],
+    [width - 356, height - 330, 356, 330],
+  ];
+  return zones.some(([zx, zy, zw, zh]) => x < (zx ?? 0) + (zw ?? 0) && x + w > (zx ?? 0) && y < (zy ?? 0) + (zh ?? 0) && y + h > (zy ?? 0));
+}

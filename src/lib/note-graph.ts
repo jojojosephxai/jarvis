@@ -3,13 +3,23 @@ const MAX_GRAPH_EDGES = 2500;
 const EXCERPT_LIMIT = 320;
 const TEXT_LIMIT = 12_000;
 
-export type GraphReason = "wikilink" | "tag" | "folder";
+export type GraphReason = "wikilink" | "tag" | "folder" | "heading" | "file";
 
 export type GraphStatus = "ready" | "not-wired" | "missing" | "empty";
 
 export type GraphNodeKind = "note" | "folder";
 
-export type GraphNodeType = "note" | "hub" | "person" | "link" | "file" | "journal" | "decision";
+export type GraphNodeType =
+  | "note"
+  | "heading"
+  | "hub"
+  | "tag"
+  | "person"
+  | "link"
+  | "file"
+  | "journal"
+  | "decision"
+  | "project";
 
 export type GraphLegendEntry = {
   type: GraphNodeType;
@@ -20,12 +30,15 @@ export type GraphLegendEntry = {
 
 export const GRAPH_NODE_TYPES: readonly { type: GraphNodeType; label: string; color: string }[] = [
   { type: "note", label: "Markdown note", color: "#3DDC97" },
+  { type: "heading", label: "Heading", color: "#8EB4FF" },
   { type: "hub", label: "Tag / hub", color: "#C084FC" },
+  { type: "tag", label: "Tag", color: "#D6B4FF" },
   { type: "person", label: "Person", color: "#F5C451" },
   { type: "link", label: "Link / URL", color: "#6AA6FF" },
   { type: "file", label: "File / attachment", color: "#C6E05A" },
   { type: "journal", label: "Journal entry", color: "#FF6BB5" },
   { type: "decision", label: "Decision", color: "#FF7A45" },
+  { type: "project", label: "Project", color: "#FFB347" },
 ];
 
 const TOP_HUB_NAMES = new Set(["school", "swim", "jarvis", "people", "journal", "decisions", "unsorted"]);
@@ -185,6 +198,16 @@ export function classifyNote(input: {
   }
   if (type === "file" || type === "attachment" || tags.has("file") || tags.has("attachment")) return "file";
   if (type === "link" || type === "url" || tags.has("link") || tags.has("url")) return "link";
+  if (
+    type === "project" ||
+    tags.has("project") ||
+    tags.has("projects") ||
+    tags.has("goals") ||
+    base === "projects.md" ||
+    base === "goals.md"
+  ) {
+    return "project";
+  }
   if (base.length > 0 && !base.endsWith(".md")) return "file";
   return "note";
 }
@@ -311,39 +334,134 @@ function findNote(target: string, notes: GraphNode[]): GraphNode | undefined {
   );
 }
 
+const AREAS: { id: string; title: string; keys: string[] }[] = [
+  { id: "area:school", title: "School", keys: ["school"] },
+  { id: "area:swim", title: "Swim", keys: ["swim"] },
+  { id: "area:jarvis", title: "Jarvis", keys: ["jarvis", "voice", "tech"] },
+  { id: "area:health", title: "Health", keys: ["health", "routines", "sleep", "recovery", "energy"] },
+  { id: "area:people", title: "People", keys: ["people", "family", "person"] },
+  { id: "area:journal", title: "Journal", keys: ["journal", "diary"] },
+  { id: "area:projects", title: "Projects", keys: ["projects", "goals", "project"] },
+  { id: "area:me", title: "Me", keys: ["me", "about", "identity", "joseph", "preferences", "interests", "fun", "decisions", "background"] },
+];
+
+const AREA_KEYS = new Set(AREAS.flatMap((area) => area.keys));
+
+function areaByKey(value: string): (typeof AREAS)[number] | undefined {
+  const key = value.trim().toLowerCase().replace(/\.md$/i, "");
+  return AREAS.find((area) => area.keys.includes(key));
+}
+
+function areaFor(note: Pick<GraphNode, "id" | "title" | "folder" | "tags">): (typeof AREAS)[number] {
+  const top = note.folder.split("/")[0]?.toLowerCase() ?? "";
+  const fallback = AREAS.find((area) => area.id === "area:me") ?? AREAS[0];
+  if (!fallback) return { id: "area:me", title: "Me", keys: ["me"] };
+  if (top === "journal") return AREAS.find((area) => area.id === "area:journal") ?? fallback;
+  if (top === "jarvis") return AREAS.find((area) => area.id === "area:jarvis") ?? fallback;
+  const stem = posixBasename(note.id, ".md");
+  return areaByKey(stem) ?? areaByKey(note.title) ?? note.tags.map(areaByKey).find(Boolean) ?? fallback;
+}
+
+export function isHiddenGraphFile(path: string, title: string): boolean {
+  const base = posixBasename(path, ".md").toLowerCase();
+  if (base === "index" || base === "help" || base === "readme" || base === "00-readme") return true;
+  const name = title.trim().toLowerCase();
+  return name === "index" || name === "help";
+}
+
+export function areaHubs(nodes: GraphNode[]): { hub: GraphNode; count: number }[] {
+  return nodes
+    .filter((node) => node.kind === "folder")
+    .map((hub) => ({
+      hub,
+      count: nodes.filter((node) => node.hubs.includes(hub.id)).length,
+    }))
+    .filter((row) => row.count > 0)
+    .sort((a, b) => b.count - a.count || a.hub.title.localeCompare(b.hub.title));
+}
+
+function headingsIn(body: string, title: string): string[] {
+  const found: string[] = [];
+  for (const match of body.matchAll(/^#{2,3}\s+(.+)$/gm)) {
+    const text = (match[1] ?? "")
+      .replace(/!\[[^\]]*\]\([^)]*\)/g, " ")
+      .replace(/\[\[([^\]|#]+)(?:#[^\]|]+)?(?:\|[^\]]+)?\]\]/g, "$1")
+      .replace(/\s+/g, " ")
+      .trim();
+    if (!text || text.toLowerCase() === title.trim().toLowerCase()) continue;
+    found.push(text);
+    if (found.length === 6) break;
+  }
+  return found;
+}
+
+function attachmentsIn(body: string): { href: string; kind: "file" | "link" }[] {
+  const found: { href: string; kind: "file" | "link" }[] = [];
+  for (const match of body.matchAll(/!?\[[^\]]*\]\(([^)\s]+)\)/g)) {
+    const href = match[1]?.trim() ?? "";
+    if (!href || href.startsWith("#")) continue;
+    if (/^https?:/i.test(href)) found.push({ href, kind: "link" });
+    else if (/\.(png|jpe?g|gif|webp|pdf|txt|csv|mp3|mp4|wav)$/i.test(href)) found.push({ href, kind: "file" });
+    if (found.length === 4) break;
+  }
+  return found;
+}
+
+function slug(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "")
+    .slice(0, 48);
+}
+
 export function buildNoteGraph(files: NoteSourceFile[]): NoteGraphPayload {
   const sorted = [...files].sort((a, b) => a.path.localeCompare(b.path));
-  const kept = sorted.slice(0, MAX_GRAPH_NODES);
-  const hiddenCount = sorted.length - kept.length;
-  const nodes: GraphNode[] = kept.map((file) => {
+  const cappedFiles = sorted.slice(0, MAX_GRAPH_NODES);
+  const hiddenCount = sorted.length - cappedFiles.length;
+  const parsed = cappedFiles.flatMap((file) => {
     const posix = file.path.replace(/\\/g, "/");
     const { front, body } = splitFrontmatter(file.text);
     const folder = posixDirname(posix);
     const cleanFolder = folder === "." ? "" : folder;
+    const title = titleFrom(posix, body);
+    if (isHiddenGraphFile(posix, title)) return [];
     const tags = unique([...tagsFromFrontmatter(front), ...tagsFromBody(body)]);
-    return {
-      id: posix,
-      title: titleFrom(posix, body),
-      folder: cleanFolder,
-      tags,
-      excerpt: excerptFrom(body),
-      text: noteText(body),
-      kind: "note",
-      nodeType: classifyNote({
-        path: posix,
-        folder: cleanFolder,
+    return [
+      {
+        file,
+        posix,
+        front,
+        body,
+        cleanFolder,
+        title,
         tags,
-        frontType: frontmatterValue(front, "type"),
-        kind: "note",
-      }),
-      ssot: frontmatterFlag(front, "ssot"),
-      hubs: tags.map((tag) => tagHubId(tag)),
-    };
+      },
+    ];
   });
 
-  if (nodes.length === 0) {
+  if (parsed.length === 0) {
     return blank("empty", "The vault folder has no notes yet. Nothing was invented.");
   }
+
+  const nodes: GraphNode[] = parsed.map((item) => ({
+    id: item.posix,
+    title: item.title,
+    folder: item.cleanFolder,
+    tags: item.tags,
+    excerpt: excerptFrom(item.body),
+    text: noteText(item.body),
+    kind: "note" as const,
+    nodeType: classifyNote({
+      path: item.posix,
+      folder: item.cleanFolder,
+      tags: item.tags,
+      frontType: frontmatterValue(item.front, "type"),
+      kind: "note",
+    }),
+    ssot: frontmatterFlag(item.front, "ssot"),
+    hubs: [] as string[],
+  }));
 
   const byId = new Map(nodes.map((note) => [norm(note.id), note]));
   const edges: GraphEdge[] = [];
@@ -362,51 +480,118 @@ export function buildNoteGraph(files: NoteSourceFile[]): NoteGraphPayload {
     edges.push({ id, from, to, reason });
   }
 
-  for (const file of kept) {
-    const source = byId.get(norm(file.path.replace(/\\/g, "/")));
+  const areaOf = new Map<string, (typeof AREAS)[number]>();
+  for (const note of nodes) areaOf.set(note.id, areaFor(note));
+  const usedAreas = new Map<string, (typeof AREAS)[number]>();
+  for (const area of areaOf.values()) usedAreas.set(area.id, area);
+
+  for (const note of nodes) {
+    const area = areaOf.get(note.id);
+    if (!area) continue;
+    note.hubs = [area.id];
+    addEdge(note.id, area.id, "folder");
+    for (const tag of note.tags) {
+      const other = areaByKey(tag);
+      if (other && other.id !== area.id) addEdge(note.id, other.id, "tag");
+    }
+  }
+
+  for (const item of parsed) {
+    const source = byId.get(norm(item.posix));
     if (!source) continue;
-    const { body } = splitFrontmatter(file.text);
-    for (const match of body.matchAll(/\[\[([^\]|#]+)(?:#[^\]|]+)?(?:\|[^\]]+)?\]\]/g)) {
+    for (const match of item.body.matchAll(/\[\[([^\]|#]+)(?:#[^\]|]+)?(?:\|[^\]]+)?\]\]/g)) {
       const target = match[1]?.trim();
       if (!target) continue;
       const hit = findNote(target, nodes);
       if (hit) addEdge(source.id, hit.id, "wikilink");
     }
+    const area = areaOf.get(source.id);
+    headingsIn(item.body, item.title).forEach((heading, index) => {
+      const id = `heading:${source.id}:${index}:${slug(heading)}`;
+      nodes.push({
+        id,
+        title: heading,
+        folder: source.folder,
+        tags: [],
+        excerpt: heading,
+        text: heading,
+        kind: "note",
+        nodeType: "heading",
+        ssot: false,
+        hubs: area ? [area.id] : [],
+      });
+      addEdge(source.id, id, "heading");
+    });
+    for (const attachment of attachmentsIn(item.body)) {
+      const id = `${attachment.kind}:${source.id}:${slug(attachment.href)}`;
+      const title = posixBasename(attachment.href) || attachment.href;
+      nodes.push({
+        id,
+        title,
+        folder: source.folder,
+        tags: [],
+        excerpt: attachment.href,
+        text: attachment.href,
+        kind: "note",
+        nodeType: attachment.kind === "file" ? "file" : "link",
+        ssot: false,
+        hubs: area ? [area.id] : [],
+      });
+      addEdge(source.id, id, "file");
+    }
   }
 
-  const tagHubs = new Map<string, GraphNode>();
+  const tagMembers = new Map<string, GraphNode[]>();
   for (const note of nodes) {
+    if (!note.id.endsWith(".md") && !note.id.includes("/")) continue;
+    if (note.kind !== "note" || note.nodeType === "heading") continue;
     for (const tag of note.tags) {
-      if (!tagHubs.has(tag)) tagHubs.set(tag, tagHub(tag));
-      addEdge(note.id, tagHubId(tag), "tag");
+      if (AREA_KEYS.has(tag)) continue;
+      const list = tagMembers.get(tag) ?? [];
+      list.push(note);
+      tagMembers.set(tag, list);
     }
   }
-
-  for (const note of nodes) {
-    if (!note.folder) continue;
-    const candidates = [
-      `${note.folder}.md`,
-      `${note.folder}/index.md`,
-      `${note.folder}/${posixBasename(note.folder)}.md`,
-    ];
-    for (const candidate of candidates) {
-      const parent = byId.get(norm(candidate));
-      if (parent && parent.id !== note.id) {
-        addEdge(note.id, parent.id, "folder");
-        break;
-      }
+  for (const [tag, members] of tagMembers) {
+    const counts = new Map<string, number>();
+    for (const member of members) {
+      const home = member.hubs[0];
+      if (!home) continue;
+      counts.set(home, (counts.get(home) ?? 0) + 1);
     }
+    const home = [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))[0]?.[0] ?? "";
+    const id = tagHubId(tag);
+    const title = tag.slice(0, 1).toUpperCase() + tag.slice(1);
+    nodes.push({
+      id,
+      title,
+      folder: "",
+      tags: [tag],
+      excerpt: `Tag ${tag}.`,
+      text: `Tag ${tag}.`,
+      kind: "note",
+      nodeType: "tag",
+      ssot: false,
+      hubs: home ? [home] : [],
+    });
+    for (const member of members) addEdge(member.id, id, "tag");
   }
 
-  const folderHubs = linkLooseFolderNotes(nodes, edges, addEdge);
-  for (const note of nodes) {
-    if (note.kind !== "note" || note.hubs.length > 0) continue;
-    const hub = folderHubs.get(note.folder);
-    if (hub) note.hubs = [hub.id];
+  const noteCount = parsed.length;
+  for (const area of usedAreas.values()) {
+    nodes.push({
+      id: area.id,
+      title: area.title,
+      folder: "",
+      tags: [],
+      excerpt: `${area.title} gathers the notes in this area.`,
+      text: `${area.title} gathers the notes in this area.`,
+      kind: "folder",
+      nodeType: "hub",
+      ssot: false,
+      hubs: [],
+    });
   }
-  const noteCount = nodes.length;
-  for (const hub of folderHubs.values()) nodes.push(hub);
-  for (const hub of tagHubs.values()) nodes.push(hub);
 
   const detail = capped
     ? "Some notes were left out so this stays light on an older computer."
@@ -422,87 +607,5 @@ export function buildNoteGraph(files: NoteSourceFile[]): NoteGraphPayload {
     hiddenCount,
     capped,
     legend: legendFromNodes(nodes),
-  };
-}
-
-function tagHub(tag: string): GraphNode {
-  const title = tag.slice(0, 1).toUpperCase() + tag.slice(1);
-  const excerpt = `Tag ${tag}. Notes with this tag cluster here. It is not a separate note.`;
-  return {
-    id: tagHubId(tag),
-    title,
-    folder: "",
-    tags: [tag],
-    excerpt,
-    text: excerpt,
-    kind: "folder",
-    nodeType: "hub",
-    ssot: false,
-    hubs: [],
-  };
-}
-
-function linkLooseFolderNotes(
-  nodes: GraphNode[],
-  edges: GraphEdge[],
-  addEdge: (a: string, b: string, reason: GraphReason) => void,
-): Map<string, GraphNode> {
-  const folderTouch = new Set<string>();
-  for (const edge of edges) {
-    if (edge.reason !== "folder") continue;
-    folderTouch.add(edge.from);
-    folderTouch.add(edge.to);
-  }
-
-  const folderHubs = new Map<string, GraphNode>();
-  const pendingByFolder = new Map<string, GraphNode[]>();
-  for (const note of nodes) {
-    if (note.kind !== "note" || folderTouch.has(note.id) || note.tags.length > 0) continue;
-    const group = pendingByFolder.get(note.folder) ?? [];
-    group.push(note);
-    pendingByFolder.set(note.folder, group);
-  }
-
-  for (const [folder, group] of pendingByFolder) {
-    const anchor = nodes.find((note) => note.folder === folder && folderTouch.has(note.id));
-    if (anchor) {
-      for (const note of group) addEdge(note.id, anchor.id, "folder");
-      continue;
-    }
-    const hub = folderHub(folder);
-    folderHubs.set(folder, hub);
-    for (const note of group) addEdge(note.id, hub.id, "folder");
-  }
-
-  for (const [folder, hub] of folderHubs) {
-    if (!folder) continue;
-    const parentHub = folderHubs.get(hub.folder);
-    if (parentHub) {
-      addEdge(hub.id, parentHub.id, "folder");
-      continue;
-    }
-    const parentNote = nodes.find((note) => note.folder === hub.folder && folderTouch.has(note.id));
-    if (parentNote) addEdge(hub.id, parentNote.id, "folder");
-  }
-
-  return folderHubs;
-}
-
-function folderHub(folder: string): GraphNode {
-  const parent = folder.includes("/") ? posixDirname(folder) : "";
-  const excerpt = folder
-    ? `Folder ${folder}. Notes inside it use this as their parent. It is not a note.`
-    : "Top of the vault. Notes in this folder connect here. It is not a note.";
-  return {
-    id: folderHubId(folder),
-    title: folder ? posixBasename(folder) : "Unsorted",
-    folder: folder ? parent : "",
-    tags: [],
-    excerpt,
-    text: excerpt,
-    kind: "folder",
-    nodeType: "hub",
-    ssot: false,
-    hubs: [],
   };
 }
