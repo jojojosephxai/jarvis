@@ -263,7 +263,7 @@ function bezierSlope(u: number, p1: number, p2: number): number {
 }
 
 function labelBoxesOverlap(a: LabelCandidate, b: LabelCandidate): boolean {
-  const pad = 6;
+  const pad = 10;
   return Math.abs(a.x - b.x) < (a.w + b.w) / 2 + pad && Math.abs(a.y - b.y) < (a.h + b.h) / 2 + pad;
 }
 
@@ -289,10 +289,10 @@ export function pickLabels(candidates: LabelCandidate[]): PlacedLabel[] {
 
 function nudgeLabel(label: LabelCandidate, placed: LabelCandidate[]): LabelCandidate {
   let y = label.y;
-  for (let step = 0; step < 6; step += 1) {
+  for (let step = 0; step < 12; step += 1) {
     const trial = { ...label, y };
     if (!placed.some((other) => labelBoxesOverlap(trial, other))) return trial;
-    y += label.h + 8;
+    y += 8;
   }
   return label;
 }

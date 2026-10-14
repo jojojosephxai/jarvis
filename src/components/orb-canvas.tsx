@@ -135,6 +135,8 @@ export function OrbCanvas({
     let frame = 0;
     let dead = false;
     let renderer: Renderer | null = null;
+    let program: Program | null = null;
+    let geometry: Geometry | null = null;
     let observer: ResizeObserver | null = null;
     let onLost: ((event: Event) => void) | null = null;
     let schedule: ((now: number) => void) | null = null;
@@ -152,7 +154,12 @@ export function OrbCanvas({
       if (onLost) canvas.removeEventListener("webglcontextlost", onLost);
       reducedQuery.removeEventListener("change", onReduce);
       const gl = renderer?.gl;
-      if (gl && !gl.isContextLost()) gl.getExtension("WEBGL_lose_context")?.loseContext();
+      if (gl && !gl.isContextLost()) {
+        geometry?.remove();
+        program?.remove();
+      }
+      geometry = null;
+      program = null;
       renderer = null;
     };
 
@@ -185,7 +192,7 @@ export function OrbCanvas({
         return release;
       }
       gl.clearColor(0, 0, 0, 0);
-      const program = new Program(gl, {
+      const shader = new Program(gl, {
         vertex: VERT,
         fragment: FRAG,
         depthTest: false,
@@ -203,16 +210,19 @@ export function OrbCanvas({
           uMorph: { value: 0 },
         },
       });
-      program.setBlendFunc(gl.ONE, gl.ONE);
-      const linked = gl.getProgramParameter(program.program, gl.LINK_STATUS);
+      program = shader;
+      shader.setBlendFunc(gl.ONE, gl.ONE);
+      const linked = gl.getProgramParameter(shader.program, gl.LINK_STATUS);
       if (!linked) {
-        const vert = program.vertexShader ? shaderLog(gl, program.vertexShader, "vertex") : "";
-        const frag = program.fragmentShader ? shaderLog(gl, program.fragmentShader, "fragment") : "";
-        const link = (gl.getProgramInfoLog(program.program) ?? "").trim();
+        const vert = shader.vertexShader ? shaderLog(gl, shader.vertexShader, "vertex") : "";
+        const frag = shader.fragmentShader ? shaderLog(gl, shader.fragmentShader, "fragment") : "";
+        const link = (gl.getProgramInfoLog(shader.program) ?? "").trim();
         fail(["Particle program did not link.", vert, frag, link].filter(Boolean).join(" "));
         return release;
       }
-      const mesh = new Mesh(gl, { geometry: particleGeometry(gl, particleBudget()), program, mode: gl.POINTS });
+      const shape = particleGeometry(gl, particleBudget());
+      geometry = shape;
+      const mesh = new Mesh(gl, { geometry: shape, program: shader, mode: gl.POINTS });
 
       const resize = () => {
         if (!renderer || dead) return;
@@ -222,9 +232,9 @@ export function OrbCanvas({
         const nextDpr = Math.min(1.5, window.devicePixelRatio || 1);
         renderer.dpr = nextDpr;
         renderer.setSize(width, height);
-        program.uniforms.uResolution.value = [gl.drawingBufferWidth, gl.drawingBufferHeight];
+        shader.uniforms.uResolution.value = [gl.drawingBufferWidth, gl.drawingBufferHeight];
         const minSide = Math.min(gl.drawingBufferWidth, gl.drawingBufferHeight);
-        program.uniforms.uPoint.value = Math.max(1.05, minSide / 150);
+        shader.uniforms.uPoint.value = Math.max(1.05, minSide / 150);
       };
       resize();
       observer = new ResizeObserver(resize);
@@ -267,12 +277,12 @@ export function OrbCanvas({
         lastNow = now;
         smoothLevel += (target - smoothLevel) * Math.min(1, dt * 12);
         if (Math.abs(target - smoothLevel) < 0.002) smoothLevel = target;
-        program.uniforms.uTime.value = reduced ? 0 : (now - started) / 1000;
-        program.uniforms.uMode.value = modeId;
-        program.uniforms.uLevel.value = smoothLevel;
-        program.uniforms.uFlash.value = modeNow === "ack" ? Math.max(0, 1 - (now - ackStart) / 300) : 0;
-        program.uniforms.uReduced.value = reduced ? 1 : 0;
-        program.uniforms.uMorph.value = morph;
+        shader.uniforms.uTime.value = reduced ? 0 : (now - started) / 1000;
+        shader.uniforms.uMode.value = modeId;
+        shader.uniforms.uLevel.value = smoothLevel;
+        shader.uniforms.uFlash.value = modeNow === "ack" ? Math.max(0, 1 - (now - ackStart) / 300) : 0;
+        shader.uniforms.uReduced.value = reduced ? 1 : 0;
+        shader.uniforms.uMorph.value = morph;
         renderer.render({ scene: mesh });
       };
       schedule = tick;

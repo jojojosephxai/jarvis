@@ -139,6 +139,17 @@ describe("graph labels", () => {
     assert.equal(placed[0]?.opacity, 1);
   });
 
+  it("leaves room when a hub label sits on a source-of-truth label", () => {
+    const placed = pickLabels([
+      { id: "journal", x: 800, y: 290, w: 68, h: 18, depth: 0.8, priority: 80, protected: true },
+      { id: "schedule", x: 820, y: 292, w: 136, h: 18, depth: 0.8, priority: 75, protected: true },
+    ]);
+    const journal = placed.find((label) => label.id === "journal");
+    const schedule = placed.find((label) => label.id === "schedule");
+    assert.ok(journal && schedule);
+    assert.equal(Math.abs(journal.y - schedule.y) >= 30, true);
+  });
+
   it("keeps overlapping hubs", () => {
     const placed = pickLabels([
       { id: "hub-a", x: 0, y: 0, w: 30, h: 14, depth: 0.2, priority: 80, protected: true },

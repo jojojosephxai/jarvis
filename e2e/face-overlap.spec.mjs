@@ -36,6 +36,10 @@ function panelOverlaps() {
   }
   if (badge) boxes.push(badge);
   else missing.push("dev badge missing");
+  const mark = portal?.shadowRoot?.querySelector("[data-next-badge]");
+  if (mark?.getAttribute("data-error") === "true" || /issue/i.test(mark?.textContent || "")) {
+    missing.push("dev badge reports issues");
+  }
   if (!boxes.some((box) => box.name === "notes")) missing.push("notes count missing");
   const hits = [];
   for (let i = 0; i < boxes.length; i += 1) {
@@ -83,8 +87,7 @@ for (const size of sizes) {
     await page.setViewportSize(size);
     await openFace(page, "/?hub=School");
     await page.waitForSelector(".graph-inspector");
-    const hits = await page.evaluate(panelOverlaps);
-    expect(hits, hits.join("; ")).toEqual([]);
+    await expect.poll(async () => page.evaluate(panelOverlaps), { timeout: 15000 }).toEqual([]);
   });
 }
 
@@ -92,8 +95,7 @@ test("working card stays off the other panels", async ({ page }) => {
   await page.setViewportSize({ width: 1920, height: 1080 });
   await openFace(page, "/?face=working");
   await page.waitForSelector(".face-task");
-  const hits = await page.evaluate(panelOverlaps);
-  expect(hits, hits.join("; ")).toEqual([]);
+  await expect.poll(async () => page.evaluate(panelOverlaps), { timeout: 15000 }).toEqual([]);
 });
 
 test("screenshots of the face", async ({ page }) => {
@@ -112,6 +114,7 @@ test("screenshots of the face", async ({ page }) => {
     await openFace(page, path);
     if (String(path).includes("hub")) await page.waitForSelector(".graph-inspector");
     if (String(path).includes("working")) await page.waitForSelector(".face-task");
+    await expect.poll(async () => page.evaluate(panelOverlaps), { timeout: 15000 }).toEqual([]);
     await page.screenshot({ path: `${dir}/${name}.png`, fullPage: false });
   }
 });
