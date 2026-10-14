@@ -96,7 +96,7 @@ export function ForceScene({
       const target = new THREE.Vector3();
       const sphere = new THREE.SphereGeometry(1, 14, 12);
       let group: THREE_NS.Group | null = null;
-      const meshes: { mesh: THREE_NS.Mesh; id: string; base: number; seed: number }[] = [];
+      const meshes: { mesh: THREE_NS.Mesh; id: string; baseScale: number }[] = [];
       let yaw = 0.62;
       let pitch = 0.38;
       let dist = 900;
@@ -237,6 +237,7 @@ export function ForceScene({
             material !== hotLine &&
             material !== spineLine &&
             material !== haloMat &&
+            material !== leafHalo &&
             material !== ringMat
           ) {
             material.dispose();
@@ -253,6 +254,12 @@ export function ForceScene({
         color: 0x49d4ff,
         transparent: true,
         opacity: 0.16,
+        depthWrite: false,
+      });
+      const leafHalo = new THREE.MeshBasicMaterial({
+        color: 0x49d4ff,
+        transparent: true,
+        opacity: 0.1,
         depthWrite: false,
       });
       const ringMat = new THREE.MeshBasicMaterial({
@@ -289,9 +296,10 @@ export function ForceScene({
       const draw = (now: number) => {
         if (!reduced) {
           const t = now / 1000;
+          const selected = stateRef.current.selectedId;
           for (const entry of meshes) {
-            const material = entry.mesh.material as THREE_NS.MeshBasicMaterial;
-            material.opacity = entry.base * (0.9 + Math.sin(t * 1.3 + entry.seed) * 0.08);
+            const pulse = entry.id === selected ? 1 + Math.sin(t * 2.2) * 0.055 : 1;
+            entry.mesh.scale.setScalar(entry.baseScale * pulse);
           }
         }
         placeCamera();
@@ -356,29 +364,54 @@ export function ForceScene({
           if (!point) continue;
           const px = nodeDiameterPx(node, degree.get(node.id) ?? 0);
           const color = new THREE.Color(nodeColor(node.nodeType));
-          const material = new THREE.MeshBasicMaterial({
-            color,
+          const material = new THREE.ShaderMaterial({
             transparent: true,
-            opacity: dim && !hot.has(node.id) ? 0.14 : 0.95,
+            depthWrite: false,
+            uniforms: {
+              uColor: { value: color },
+              uDim: { value: dim && !hot.has(node.id) ? 0.2 : 1 },
+            },
+            vertexShader: `
+              varying vec3 vNormal;
+              varying vec3 vView;
+              void main() {
+                vec4 world = modelMatrix * vec4(position, 1.0);
+                vNormal = normalize(mat3(modelMatrix) * normal);
+                vView = normalize(cameraPosition - world.xyz);
+                gl_Position = projectionMatrix * viewMatrix * world;
+              }
+            `,
+            fragmentShader: `
+              uniform vec3 uColor;
+              uniform float uDim;
+              varying vec3 vNormal;
+              varying vec3 vView;
+              void main() {
+                vec3 normal = normalize(vNormal);
+                float shade = 0.42 + 0.58 * max(dot(normal, normalize(vec3(0.2, 0.7, 0.65))), 0.0);
+                float rim = pow(1.0 - max(dot(normal, normalize(vView)), 0.0), 2.1);
+                vec3 color = uColor * shade + vec3(0.72, 0.95, 1.0) * rim * 0.55;
+                gl_FragColor = vec4(color, (0.78 + rim * 0.22) * uDim);
+              }
+            `,
           });
           const mesh = new THREE.Mesh(sphere, material);
           mesh.position.set(point.x, point.y, point.z);
           mesh.scale.setScalar(Math.max(1.5, px * 0.46));
           mesh.userData.id = node.id;
           group.add(mesh);
-          meshes.push({ mesh, id: node.id, base: material.opacity, seed: node.id.length });
-          if (node.root || node.kind === "folder") {
-            const halo = new THREE.Mesh(sphere, haloMat);
-            halo.position.copy(mesh.position);
-            halo.scale.setScalar(mesh.scale.x * 1.9);
-            group.add(halo);
-            if (node.root) {
-              const ring = new THREE.Mesh(new THREE.RingGeometry(1.45, 1.58, 64), ringMat);
-              ring.position.copy(mesh.position);
-              ring.scale.setScalar(mesh.scale.x * 2.4);
-              ring.rotation.x = Math.PI / 2.6;
-              group.add(ring);
-            }
+          meshes.push({ mesh, id: node.id, baseScale: mesh.scale.x });
+          const major = node.root || node.kind === "folder";
+          const halo = new THREE.Mesh(sphere, major ? haloMat : leafHalo);
+          halo.position.copy(mesh.position);
+          halo.scale.setScalar(mesh.scale.x * (major ? 1.85 : 1.55));
+          group.add(halo);
+          if (major) {
+            const ring = new THREE.Mesh(new THREE.RingGeometry(1.45, 1.58, 64), ringMat);
+            ring.position.copy(mesh.position);
+            ring.scale.setScalar(mesh.scale.x * 2.35);
+            ring.rotation.x = Math.PI / 2.6;
+            group.add(ring);
           }
         }
         if (current.points.length > 0) {
@@ -742,6 +775,7 @@ export function ForceScene({
         spineLine.dispose();
         hotLine.dispose();
         haloMat.dispose();
+        leafHalo.dispose();
         ringMat.dispose();
         renderer.dispose();
         renderer.forceContextLoss();
