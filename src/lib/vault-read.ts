@@ -123,3 +123,37 @@ export async function loadVaultNotes(directory: string): Promise<VaultLoad> {
 
   return { ok: true, notes, directory };
 }
+
+/** Read one vault note by its path relative to the vault. Refuses anything outside that folder. */
+export async function readVaultMarkdown(
+  directory: string,
+  relativePath: string,
+): Promise<{ path: string; markdown: string } | null> {
+  const cleaned = relativePath.replace(/\\/g, "/").replace(/^\/+/, "");
+  if (!cleaned.endsWith(".md") || cleaned.includes("\0")) return null;
+  const parts = cleaned.split("/");
+  if (parts.some((part) => part === "" || part === "." || part === "..")) return null;
+  let rootReal: string;
+  try {
+    rootReal = await fs.realpath(directory);
+  } catch {
+    return null;
+  }
+  const full = path.resolve(rootReal, cleaned);
+  let real: string;
+  try {
+    real = await fs.realpath(full);
+  } catch {
+    return null;
+  }
+  if (real !== rootReal && !real.startsWith(rootReal + path.sep)) return null;
+  let stat;
+  try {
+    stat = await fs.stat(real);
+  } catch {
+    return null;
+  }
+  if (!stat.isFile() || stat.size > MAX_BYTES) return null;
+  const markdown = await fs.readFile(real, "utf8");
+  return { path: path.relative(rootReal, real).replace(/\\/g, "/"), markdown };
+}

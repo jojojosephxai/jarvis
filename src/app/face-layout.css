@@ -418,6 +418,18 @@
   color: #9fd4ea;
 }
 
+.inspector-body pre {
+  margin: 0 0 8px;
+  overflow: auto;
+  color: #cfefff;
+  font-size: 12px;
+}
+
+.inspector-body a,
+.inspector-body p button {
+  color: #49d4ff;
+}
+
 .inspector-more {
   color: #6fa9bf;
 }

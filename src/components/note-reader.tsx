@@ -1,7 +1,9 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 
+import { safeHttpUrl } from "@/lib/http-url";
+import { parseMarkdown, type MarkdownBlock } from "@/lib/note-inspector";
 import { nodeColor, nodeTypeLabel, type GraphEdge, type GraphNode } from "@/lib/note-graph";
 
 export type NoteLink = {
@@ -16,77 +18,93 @@ export type PathStep = {
   title: string;
 };
 
-type ExcerptBlock = { kind: "h" | "p"; text: string } | { kind: "ul"; items: string[] };
-
-function tidyInline(text: string): string {
-  return text
-    .replace(/!\[[^\]]*]\([^)]*\)/g, "")
-    .replace(/\[([^\]]+)]\([^)]*\)/g, "$1")
-    .replace(/\[\[([^\]|]+)(?:\|[^\]]+)?]]/g, "$1")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-function markdownExcerpt(node: GraphNode): { blocks: ExcerptBlock[]; truncated: boolean } {
-  const raw = node.text || node.excerpt || "";
-  const body = raw.replace(/^\s*---\r?\n[\s\S]*?\r?\n---\s*/, "");
-  const blocks: ExcerptBlock[] = [];
-  let skippedTitle = false;
-  let chars = 0;
-  let list: string[] = [];
-  const flushList = () => {
-    if (list.length === 0) return;
-    blocks.push({ kind: "ul", items: list });
-    list = [];
-  };
-  for (const rawLine of body.split(/\r?\n/)) {
-    const line = rawLine.trim();
-    if (!line || line === "---") {
-      flushList();
-      continue;
-    }
-    if (!skippedTitle && /^#\s+/.test(line)) {
-      skippedTitle = true;
-      continue;
-    }
-    if (chars > 360 || blocks.length >= 5) {
-      flushList();
-      return { blocks, truncated: true };
-    }
-    const heading = /^#{2,3}\s+(.*)$/.exec(line);
-    if (heading) {
-      flushList();
-      const text = tidyInline(heading[1] ?? "");
-      if (!text) continue;
-      chars += text.length;
-      blocks.push({ kind: "h", text });
-      continue;
-    }
-    const item = /^[-*]\s+(.*)$/.exec(line);
-    if (item) {
-      const text = tidyInline(item[1] ?? "");
-      if (!text) continue;
-      chars += text.length;
-      list.push(text);
-      continue;
-    }
-    flushList();
-    const text = tidyInline(line.replace(/^#{1,6}\s+/, ""));
-    if (!text) continue;
-    chars += text.length;
-    blocks.push({ kind: "p", text });
-  }
-  flushList();
-  return { blocks, truncated: false };
-}
-
-function inlineBits(text: string): ReactNode[] {
-  const parts = text.split(/(\*\*[^*]+\*\*|`[^`]+`)/g);
+function inlineBits(text: string, links: NoteLink[], onOpen: (id: string) => void): ReactNode[] {
+  const parts = text.split(/(\*\*[^*]+\*\*|`[^`]+`|\[[^\]]+\]\([^)]+\)|\[\[[^\]]+\]\])/g);
   return parts.map((part, index) => {
     if (part.startsWith("**") && part.endsWith("**")) return <strong key={index}>{part.slice(2, -2)}</strong>;
     if (part.startsWith("`") && part.endsWith("`")) return <code key={index}>{part.slice(1, -1)}</code>;
+    const link = /^\[([^\]]+)\]\(([^)]+)\)$/.exec(part);
+    if (link) {
+      const href = safeHttpUrl(link[2] ?? "");
+      if (!href) return link[1];
+      return (
+        <a key={index} href={href} target="_blank" rel="noreferrer">
+          {link[1]}
+        </a>
+      );
+    }
+    const wiki = /^\[\[([^\]|#]+)(?:#[^\]|]+)?(?:\|([^\]]+))?\]\]$/.exec(part);
+    if (wiki) {
+      const target = (wiki[1] ?? "").trim().toLowerCase();
+      const label = (wiki[2] ?? wiki[1] ?? "").trim();
+      const hit = links.find((item) => item.title.toLowerCase() === target || item.id.toLowerCase().startsWith(target));
+      if (!hit) return label;
+      return (
+        <button key={index} type="button" onClick={() => onOpen(hit.id)}>
+          {label}
+        </button>
+      );
+    }
     return part;
   });
+}
+
+function MarkdownBody({
+  markdown,
+  heading,
+  links,
+  onOpen,
+}: {
+  markdown: string;
+  heading: string;
+  links: NoteLink[];
+  onOpen: (id: string) => void;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  const blocks = parseMarkdown(markdown);
+  useEffect(() => {
+    if (!heading || !ref.current) return;
+    const target = [...ref.current.querySelectorAll("[data-heading]")].find(
+      (node) => node.getAttribute("data-heading")?.toLowerCase() === heading.toLowerCase(),
+    );
+    target?.scrollIntoView({ block: "start" });
+  }, [heading, markdown]);
+  return (
+    <div className="inspector-body" ref={ref}>
+      {blocks.map((block, index) => renderBlock(block, index, links, onOpen))}
+    </div>
+  );
+}
+
+function renderBlock(block: MarkdownBlock, index: number, links: NoteLink[], onOpen: (id: string) => void): ReactNode {
+  switch (block.kind) {
+    case "h":
+      return (
+        <h4 key={index} data-heading={block.text}>
+          {inlineBits(block.text, links, onOpen)}
+        </h4>
+      );
+    case "ul":
+      return (
+        <ul key={index}>
+          {block.items.map((item) => (
+            <li key={item}>{inlineBits(item, links, onOpen)}</li>
+          ))}
+        </ul>
+      );
+    case "code":
+      return (
+        <pre key={index}>
+          <code>{block.text}</code>
+        </pre>
+      );
+    case "p":
+      return <p key={index}>{inlineBits(block.text, links, onOpen)}</p>;
+    default: {
+      const neverBlock: never = block;
+      return neverBlock;
+    }
+  }
 }
 
 export function NoteReader({
@@ -95,6 +113,7 @@ export function NoteReader({
   path,
   onBack,
   onOpen,
+  members = [],
   docked = false,
 }: {
   node: GraphNode;
@@ -102,11 +121,39 @@ export function NoteReader({
   path: PathStep[];
   onBack: () => void;
   onOpen: (id: string) => void;
+  members?: { id: string; title: string }[];
   docked?: boolean;
 }) {
   const color = nodeColor(node.nodeType);
-  const excerpt = markdownExcerpt(node);
+  const [markdown, setMarkdown] = useState(node.file ? "" : node.text);
+  const [missing, setMissing] = useState(false);
   const tracing = path.length > 1;
+  useEffect(() => {
+    if (!node.file) {
+      setMarkdown(node.text);
+      setMissing(false);
+      return;
+    }
+    let cancelled = false;
+    setMissing(false);
+    fetch(`/api/note?path=${encodeURIComponent(node.file)}`)
+      .then((response) => (response.ok ? response.json() : Promise.reject(new Error("missing"))))
+      .then((body: unknown) => {
+        if (cancelled) return;
+        const text = body && typeof body === "object" ? (body as { markdown?: unknown }).markdown : "";
+        if (typeof text !== "string") {
+          setMissing(true);
+          return;
+        }
+        setMarkdown(text);
+      })
+      .catch(() => {
+        if (!cancelled) setMissing(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [node.file, node.id, node.text]);
   return (
     <aside className={docked ? "graph-inspector is-docked" : "graph-inspector glass"} aria-label="Inspector">
       <div className="inspector-head">
@@ -121,30 +168,25 @@ export function NoteReader({
       </p>
       <h3 className="inspector-title">{node.title}</h3>
       <p className="inspector-path">{node.id}</p>
-      {excerpt.blocks.length > 0 ? (
-        <div className="inspector-body">
-          {excerpt.blocks.map((block, index) => {
-            switch (block.kind) {
-              case "h":
-                return <h4 key={index}>{inlineBits(block.text)}</h4>;
-              case "ul":
-                return (
-                  <ul key={index}>
-                    {block.items.map((item) => (
-                      <li key={item}>{inlineBits(item)}</li>
-                    ))}
-                  </ul>
-                );
-              case "p":
-                return <p key={index}>{inlineBits(block.text)}</p>;
-              default: {
-                const neverBlock: never = block;
-                return neverBlock;
-              }
-            }
-          })}
-          {excerpt.truncated ? <p className="inspector-more">…</p> : null}
+      {members.length > 0 && !node.file ? (
+        <div className="inspector-block">
+          <h4>
+            Notes <span>{members.length}</span>
+          </h4>
+          <ul className="inspector-links">
+            {members.map((member) => (
+              <li key={member.id}>
+                <button type="button" onClick={() => onOpen(member.id)}>
+                  <span>{member.title}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
         </div>
+      ) : null}
+      {missing ? <p className="inspector-body">That note is not in the vault.</p> : null}
+      {!missing && markdown.trim() && (node.file || members.length === 0) ? (
+        <MarkdownBody markdown={markdown} heading={node.anchor} links={links} onOpen={onOpen} />
       ) : null}
       {tracing ? (
         <div className="inspector-block">

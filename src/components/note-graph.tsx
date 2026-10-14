@@ -486,6 +486,13 @@ function GraphReady({
             node={selected}
             links={noteLinks}
             path={pathNodes}
+            members={
+              selected.file
+                ? []
+                : payload.nodes
+                    .filter((node) => node.hubs.includes(selected.id) && node.id.endsWith(".md") && !node.root)
+                    .map((node) => ({ id: node.id, title: node.title }))
+            }
             onBack={clearFocus}
             onOpen={(id) => openNote(id)}
           />
