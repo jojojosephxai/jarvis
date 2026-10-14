@@ -496,6 +496,7 @@ html[data-boot="done"] .boot-screen {
 .orb-status {
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 8px;
   margin: 10px 0 0;
   color: #49d4ff;
@@ -503,8 +504,17 @@ html[data-boot="done"] .boot-screen {
   font-size: 13px;
   letter-spacing: 0.08em;
   line-height: 1;
-  text-transform: uppercase;
   white-space: nowrap;
+  animation: status-fade 300ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@keyframes status-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
 
 .orb-status-dot {

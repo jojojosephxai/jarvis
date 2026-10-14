@@ -4,18 +4,22 @@ import { describe, it } from "node:test";
 import { orbModeIndex, orbStatusWord, resolveOrbMode } from "./orb-mode";
 
 describe("resolveOrbMode", () => {
-  it("lets speaking win, then working, then listening, then ack", () => {
+  it("lets speaking win, then working, then listening, then thinking, then ack", () => {
     assert.equal(
-      resolveOrbMode({ speaking: true, working: true, listening: true, ack: true }),
+      resolveOrbMode({ speaking: true, working: true, listening: true, thinking: true, ack: true }),
       "speaking",
     );
     assert.equal(
-      resolveOrbMode({ speaking: false, working: true, listening: true, ack: true }),
+      resolveOrbMode({ speaking: false, working: true, listening: true, thinking: true, ack: true }),
       "working",
     );
     assert.equal(
-      resolveOrbMode({ speaking: false, working: false, listening: true, ack: true }),
+      resolveOrbMode({ speaking: false, working: false, listening: true, thinking: true, ack: true }),
       "listening",
+    );
+    assert.equal(
+      resolveOrbMode({ speaking: false, working: false, listening: false, thinking: true, ack: true }),
+      "thinking",
     );
     assert.equal(
       resolveOrbMode({ speaking: false, working: false, listening: false, ack: true }),
@@ -33,17 +37,19 @@ describe("resolveOrbMode", () => {
     assert.equal(orbModeIndex("speaking"), 2);
     assert.equal(orbModeIndex("ack"), 3);
     assert.equal(orbModeIndex("working"), 4);
+    assert.equal(orbModeIndex("thinking"), 5);
   });
 });
 
 describe("orbStatusWord", () => {
-  it("names the live state and hides the mark while exploring", () => {
-    assert.equal(orbStatusWord("listening", null), "LISTENING");
-    assert.equal(orbStatusWord("speaking", "CALENDAR-LIST"), "SPEAKING");
-    assert.equal(orbStatusWord("working", null), "WORKING");
-    assert.equal(orbStatusWord("working", "CALENDAR-LIST"), "CALENDAR-LIST");
-    assert.equal(orbStatusWord("standby", null), null);
-    assert.equal(orbStatusWord("ack", null), null);
-    assert.equal(orbStatusWord("standby", "CALENDAR-LIST"), "CALENDAR-LIST");
+  it("names the live state and the skill on one line", () => {
+    assert.equal(orbStatusWord("standby", null), "Idle");
+    assert.equal(orbStatusWord("listening", null), "Listening");
+    assert.equal(orbStatusWord("speaking", "calendar"), "Speaking");
+    assert.equal(orbStatusWord("ack", null), "Thinking");
+    assert.equal(orbStatusWord("thinking", null), "Thinking");
+    assert.equal(orbStatusWord("thinking", "calendar"), "Thinking · calendar");
+    assert.equal(orbStatusWord("working", null), "Working");
+    assert.equal(orbStatusWord("working", "calendar"), "Working · calendar");
   });
 });

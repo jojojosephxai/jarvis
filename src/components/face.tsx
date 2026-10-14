@@ -130,8 +130,9 @@ export function Face() {
   speakRef.current = voice.speak;
   const orb = resolveOrbMode({
     speaking,
-    working,
+    working: working && Boolean(skill),
     listening: voice.listening,
+    thinking: pending && !speaking,
     ack: ackOn,
   });
   const place = orbPlace(working, orb);
@@ -420,7 +421,7 @@ export function Face() {
   async function decide(itemId: string, plan: HandPlan, decision: "yes" | "no") {
     if (plan.state !== "waiting" || plan.gate !== "confirm" || pendingRef.current) return;
     userSpoke.current = true;
-    const name = plan.tool.trim().replace(/\./g, "-").toUpperCase();
+    const name = plainSkill(plan.tool);
     const { abort, id } = beginWork(handObjective(plan), handStepLabel(plan), name);
     let spoken = "";
     try {
@@ -880,6 +881,11 @@ function isStubTask(item: LogItem): boolean {
   if (item.kind !== "hand") return false;
   if (item.plan && STUB_TASKS.has(item.plan.tool)) return true;
   return item.receipts.length > 0 && item.receipts.every((receipt) => STUB_TASKS.has(receipt.tool));
+}
+
+function plainSkill(tool: string): string {
+  const head = tool.split(".")[0]?.trim().toLowerCase() ?? "";
+  return head || "task";
 }
 
 function handObjective(plan: HandPlan): string {
