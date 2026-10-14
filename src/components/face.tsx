@@ -134,6 +134,7 @@ function orbPlace(mode: OrbMode): OrbPlace {
 export function Face() {
   const [items, setItems] = useState<LogItem[]>([]);
   const [draft, setDraft] = useState("");
+  const [askFocus, setAskFocus] = useState(false);
   const [speaking, setSpeaking] = useState(false);
   const [ackOn, setAckOn] = useState(false);
   const [working, setWorking] = useState(false);
@@ -588,6 +589,24 @@ export function Face() {
                 void send(draft);
               }}
             >
+              {askFocus && draft.trim() === "" ? (
+                <div className="ask-chips">
+                  {EXAMPLES.map((example) => (
+                    <button
+                      key={example}
+                      type="button"
+                      className="ask-chip"
+                      onMouseDown={(event) => {
+                        event.preventDefault();
+                        setDraft(example);
+                        inputRef.current?.focus();
+                      }}
+                    >
+                      {example}
+                    </button>
+                  ))}
+                </div>
+              ) : null}
               <span className="ask-label">ASK</span>
               <label className="sr-only" htmlFor="talk">
                 Ask Jarvis
@@ -599,8 +618,10 @@ export function Face() {
                 maxLength={2000}
                 autoComplete="off"
                 enterKeyHint="send"
-                placeholder={EXAMPLES.map((example) => `“${example}”`).join("   ")}
+                placeholder="Ask Jarvis"
                 disabled={pending}
+                onFocus={() => setAskFocus(true)}
+                onBlur={() => setAskFocus(false)}
                 onChange={(event) => setDraft(event.target.value)}
               />
               <button type="submit" className="ask-go" aria-label="Send">
