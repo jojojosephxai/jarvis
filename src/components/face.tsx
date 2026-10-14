@@ -499,7 +499,8 @@ export function Face() {
         <WorkingPanel job={job} onStop={stopWork} />
       ) : (
         <>
-          <div className="face-bottom face-chrome">
+          <div className="face-dock face-chrome">
+          <div className="face-bottom">
             {wake ? <p className="wake-hint">click to wake Jarvis</p> : null}
             {caption ? <p className="face-caption">{caption}</p> : null}
             <form
@@ -570,12 +571,6 @@ export function Face() {
               </ToolButton>
             </div>
           </div>
-          {settingsOpen ? (
-            <aside className="face-settings glass" aria-label="Settings">
-              <p>Voice</p>
-              <p>{voiceName(voice.mouth)}</p>
-            </aside>
-          ) : null}
           <ChatCard
             items={items}
             tab={tab}
@@ -584,6 +579,13 @@ export function Face() {
             onTab={setTab}
             onDecide={(id, plan, choice) => void decide(id, plan, choice)}
           />
+          </div>
+          {settingsOpen ? (
+            <aside className="face-settings glass" aria-label="Settings">
+              <p>Voice</p>
+              <p>{voiceName(voice.mouth)}</p>
+            </aside>
+          ) : null}
         </>
       )}
     </div>

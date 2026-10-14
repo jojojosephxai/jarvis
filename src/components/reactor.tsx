@@ -31,6 +31,8 @@ export function orbLabel(mode: OrbMode): string {
       return "Speaking";
     case "ack":
       return "Heard";
+    case "thinking":
+      return "Thinking";
     case "working":
       return "Working";
     default: {
