@@ -362,6 +362,11 @@ function areaFor(note: Pick<GraphNode, "id" | "title" | "folder" | "tags">): (ty
   return areaByKey(stem) ?? areaByKey(note.title) ?? note.tags.map(areaByKey).find(Boolean) ?? fallback;
 }
 
+/** Lowercase letters and digits only, so "Swim" and "swim" count as one name. */
+export function hubNameKey(title: string): string {
+  return title.trim().toLowerCase().replace(/[^a-z0-9]+/g, "");
+}
+
 export function isHiddenGraphFile(path: string, title: string): boolean {
   const base = posixBasename(path, ".md").toLowerCase();
   if (base === "index" || base === "help" || base === "readme" || base === "00-readme") return true;
@@ -593,6 +598,36 @@ export function buildNoteGraph(files: NoteSourceFile[]): NoteGraphPayload {
     });
   }
 
+  const hubByName = new Map<string, GraphNode>();
+  for (const node of nodes) {
+    if (node.kind === "folder") hubByName.set(hubNameKey(node.title), node);
+  }
+  const absorbed = new Map<string, string>();
+  for (const note of nodes) {
+    if (!note.ssot || note.kind === "folder" || !note.id.endsWith(".md")) continue;
+    const hub = hubByName.get(hubNameKey(note.title));
+    if (!hub || hub.id === note.id) continue;
+    hub.excerpt = note.excerpt;
+    hub.text = note.text;
+    hub.tags = [...note.tags];
+    hub.ssot = true;
+    if (note.folder) hub.folder = note.folder;
+    absorbed.set(note.id, hub.id);
+  }
+  const visibleNodes = absorbed.size === 0 ? nodes : nodes.filter((node) => !absorbed.has(node.id));
+  const visibleEdges: GraphEdge[] = [];
+  const seenEdges = new Set<string>();
+  for (const edge of edges) {
+    const from = absorbed.get(edge.from) ?? edge.from;
+    const to = absorbed.get(edge.to) ?? edge.to;
+    if (from === to) continue;
+    const [left, right] = from < to ? [from, to] : [to, from];
+    const id = `${edge.reason}:${left}:${right}`;
+    if (seenEdges.has(id)) continue;
+    seenEdges.add(id);
+    visibleEdges.push({ id, from: left, to: right, reason: edge.reason });
+  }
+
   const detail = capped
     ? "Some notes were left out so this stays light on an older computer."
     : "These notes were read from the vault folder.";
@@ -600,12 +635,12 @@ export function buildNoteGraph(files: NoteSourceFile[]): NoteGraphPayload {
   return {
     status: "ready",
     detail,
-    nodes,
-    edges,
+    nodes: visibleNodes,
+    edges: visibleEdges,
     noteCount,
-    connectionCount: edges.length,
+    connectionCount: visibleEdges.length,
     hiddenCount,
     capped,
-    legend: legendFromNodes(nodes),
+    legend: legendFromNodes(visibleNodes),
   };
 }

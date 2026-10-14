@@ -148,14 +148,72 @@ export function ForceScene({
         const padBottom = 200;
         const availW = Math.max(220, width - padLeft - padRight);
         const availH = Math.max(220, height - padTop - padBottom);
-        target.set((minX + maxX) / 2, (minY + maxY) / 2, (minZ + maxZ) / 2);
-        const span = Math.max(maxX - minX, maxY - minY, maxZ - minZ, 160);
+        const midX = (minX + maxX) / 2;
+        const midY = (minY + maxY) / 2;
+        const midZ = (minZ + maxZ) / 2;
+        target.set(midX, midY, midZ);
         const fov = (camera.fov * Math.PI) / 180;
-        const half = span * 0.58 + 64;
-        dist = (half / Math.tan(fov / 2)) * Math.max(height / availH, (width / availW) * 0.85) * 1.22;
-        fitDist = dist;
         yaw = 0.62;
         pitch = 0.38;
+        const unit = (v: { x: number; y: number; z: number }) => {
+          const length = Math.hypot(v.x, v.y, v.z) || 1;
+          return { x: v.x / length, y: v.y / length, z: v.z / length };
+        };
+        const zAxis = unit({
+          x: Math.sin(yaw) * Math.cos(pitch),
+          y: Math.sin(pitch),
+          z: Math.cos(yaw) * Math.cos(pitch),
+        });
+        const xAxis = unit({ x: zAxis.z, y: 0, z: -zAxis.x });
+        const yAxis = unit({
+          x: zAxis.y * xAxis.z - zAxis.z * xAxis.y,
+          y: zAxis.z * xAxis.x - zAxis.x * xAxis.z,
+          z: zAxis.x * xAxis.y - zAxis.y * xAxis.x,
+        });
+        const vTan = Math.tan(fov / 2);
+        const hTan = vTan * camera.aspect;
+        const edge = 36;
+        let distNeeded = 160;
+        for (const point of list) {
+          const relX = point.x - midX;
+          const relY = point.y - midY;
+          const relZ = point.z - midZ;
+          const camX = relX * xAxis.x + relY * xAxis.y + relZ * xAxis.z;
+          const camY = relX * yAxis.x + relY * yAxis.y + relZ * yAxis.z;
+          const camZ = relX * zAxis.x + relY * zAxis.y + relZ * zAxis.z;
+          const need = Math.max((Math.abs(camX) + edge) / hTan, (Math.abs(camY) + edge) / vTan) + camZ;
+          if (need > distNeeded) distNeeded = need;
+        }
+        const spanAt = (cameraDist: number) => {
+          let loX = Infinity;
+          let hiX = -Infinity;
+          let loY = Infinity;
+          let hiY = -Infinity;
+          for (const point of list) {
+            const relX = point.x - midX;
+            const relY = point.y - midY;
+            const relZ = point.z - midZ;
+            const camX = relX * xAxis.x + relY * xAxis.y + relZ * xAxis.z;
+            const camY = relX * yAxis.x + relY * yAxis.y + relZ * yAxis.z;
+            const camZ = relX * zAxis.x + relY * zAxis.y + relZ * zAxis.z;
+            const depth = Math.max(40, cameraDist - camZ);
+            loX = Math.min(loX, camX / (depth * hTan));
+            hiX = Math.max(hiX, camX / (depth * hTan));
+            loY = Math.min(loY, camY / (depth * vTan));
+            hiY = Math.max(hiY, camY / (depth * vTan));
+          }
+          return { w: (hiX - loX) * width * 0.5, h: (hiY - loY) * height * 0.5 };
+        };
+        dist = Math.max(distNeeded, 160);
+        const goalW = availW * 0.75;
+        const goalH = availH * 0.75;
+        for (let pass = 0; pass < 4; pass += 1) {
+          const span = spanAt(dist);
+          const scale = Math.max(span.w / goalW, span.h / goalH);
+          if (!Number.isFinite(scale) || scale === 0) break;
+          dist *= scale;
+        }
+        fitDist = dist;
         const ndcX = ((padLeft + availW / 2) / width) * 2 - 1;
         const ndcY = -(((padTop + availH / 2) / height) * 2 - 1);
         const shiftX = ndcX * dist * Math.tan(fov / 2) * camera.aspect;

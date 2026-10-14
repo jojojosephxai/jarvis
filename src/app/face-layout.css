@@ -132,7 +132,7 @@
   flex-direction: column;
   gap: 14px;
   overflow: auto;
-  padding: 12px;
+  padding: 12px 12px 64px;
 }
 
 .face-search input,

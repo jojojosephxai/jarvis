@@ -5,7 +5,7 @@ import path from "node:path";
 import { describe, it } from "node:test";
 
 import { loadVaultGraph, resolveVaultPath } from "./note-graph.server";
-import { areaHubs, buildNoteGraph, MAX_GRAPH_NODES, nodeDiameterPx } from "./note-graph";
+import { areaHubs, buildNoteGraph, hubNameKey, MAX_GRAPH_NODES, nodeDiameterPx } from "./note-graph";
 
 describe("buildNoteGraph", () => {
   it("connects wikilinks, shared tags, and a folder parent", () => {
@@ -112,6 +112,33 @@ describe("buildNoteGraph", () => {
     assert.equal(nodeDiameterPx({ kind: "note", nodeType: "note", ssot: false, title: "About" }), 12);
   });
 
+  it("merges a source-of-truth note into the hub that already has its name", () => {
+    const graph = buildNoteGraph([
+      { path: "Swim.md", text: "---\nssot: true\ntags:\n  - swim\n---\n# Swim\n\nLanes.\n" },
+      { path: "Meet.md", text: "---\ntags:\n  - swim\n---\n# Meet\n\nSee [[Swim]].\n" },
+      { path: "School.md", text: "---\nssot: true\ntags:\n  - school\n---\n# School\n\nClass.\n" },
+    ]);
+    const hubs = graph.nodes.filter((node) => node.kind === "folder" || node.nodeType === "hub");
+    const names = hubs.map((node) => hubNameKey(node.title));
+    assert.equal(new Set(names).size, names.length);
+    const swim = graph.nodes.filter((node) => hubNameKey(node.title) === "swim");
+    assert.equal(swim.length, 1);
+    assert.equal(swim[0]?.id, "area:swim");
+    assert.equal(swim[0]?.ssot, true);
+    assert.match(swim[0]?.text ?? "", /Lanes/);
+    assert.equal(graph.nodes.some((node) => node.id === "Swim.md"), false);
+    assert.equal(
+      graph.edges.some((edge) => edge.from === "Swim.md" || edge.to === "Swim.md"),
+      false,
+    );
+    assert.equal(
+      graph.edges.some(
+        (edge) => edge.reason === "wikilink" && (edge.from === "area:swim" || edge.to === "area:swim"),
+      ),
+      true,
+    );
+  });
+
   it("returns no nodes for an empty list", () => {
     const graph = buildNoteGraph([]);
     assert.equal(graph.status, "empty");
@@ -161,11 +188,19 @@ describe("loadVaultGraph", () => {
       const schedule = graph.nodes.find((node) => node.id === "School-schedule.md");
       assert.equal(schedule?.ssot, true);
       assert.equal(schedule?.hubs[0], "area:school");
-      const swim = graph.nodes.find((node) => node.id === "Swim.md");
-      assert.equal(swim?.ssot, true);
-      assert.equal(swim?.hubs[0], "area:swim");
-      assert.equal(graph.nodes.filter((node) => node.kind === "folder" && node.title === "Swim").length, 1);
+      assert.equal(graph.nodes.some((node) => node.id === "Swim.md"), false);
+      const swimHubs = graph.nodes.filter(
+        (node) => (node.kind === "folder" || node.nodeType === "hub") && hubNameKey(node.title) === "swim",
+      );
+      assert.equal(swimHubs.length, 1);
+      assert.equal(swimHubs[0]?.id, "area:swim");
+      assert.equal(swimHubs[0]?.ssot, true);
+      assert.match(swimHubs[0]?.text ?? "", /UMLY/);
       assert.equal(graph.nodes.some((node) => node.id === "tag:swim"), false);
+      const hubNames = graph.nodes
+        .filter((node) => node.kind === "folder" || node.nodeType === "hub")
+        .map((node) => hubNameKey(node.title));
+      assert.equal(new Set(hubNames).size, hubNames.length);
       const hubs = areaHubs(graph.nodes);
       assert.equal(hubs.length <= 8, true);
       assert.equal(hubs.length >= 6, true);
