@@ -51,7 +51,8 @@ describe("buildNoteGraph", () => {
       { path: "School.md", text: "# School\n\nClass.\n" },
     ]);
     assert.equal(graph.noteCount, 2);
-    assert.equal(areaHubs(graph.nodes).map((row) => row.hub.title).sort().join(","), "Me,School");
+    assert.equal(graph.nodes.find((node) => node.root)?.title, "Me / Jarvis");
+    assert.equal(areaHubs(graph.nodes).map((row) => row.hub.title).sort().join(","), "School");
     assert.equal(graph.connectionCount >= 2, true);
   });
 
@@ -62,7 +63,8 @@ describe("buildNoteGraph", () => {
       { path: "Journal/plain.md", text: "# Plain\n\nNo tag in the folder.\n" },
       { path: "Loose.md", text: "# Loose\n\nNo tag.\n" },
     ]);
-    assert.equal(graph.nodes.find((node) => node.id === "About.md")?.hubs[0], "area:me");
+    assert.equal(graph.nodes.find((node) => node.id === "About.md")?.root, true);
+    assert.equal(graph.nodes.find((node) => node.id === "About.md")?.hubs.length, 0);
     assert.equal(graph.nodes.find((node) => node.id === "Journal/day.md")?.hubs[0], "area:journal");
     assert.equal(graph.nodes.find((node) => node.id === "Journal/plain.md")?.hubs[0], "area:journal");
     assert.equal(graph.nodes.find((node) => node.id === "Loose.md")?.hubs[0], "area:me");
@@ -76,9 +78,11 @@ describe("buildNoteGraph", () => {
       { path: "Help.md", text: "# Help\n\nAid.\n" },
       { path: "Index.md", text: "# Index\n\nMap.\n" },
     ]);
-    assert.equal(graph.nodes.some((node) => node.id === "Help.md" || node.id === "Index.md"), false);
+    assert.equal(graph.nodes.some((node) => node.id === "Help.md"), false);
+    assert.equal(graph.nodes.find((node) => node.id === "Index.md")?.root, true);
+    assert.equal(graph.nodes.find((node) => node.id === "Index.md")?.title, "Me / Jarvis");
     assert.equal(graph.nodes.filter((node) => node.kind === "folder" && node.title === "School").length, 1);
-    assert.equal(graph.edges.filter((edge) => edge.reason === "folder").length, 2);
+    assert.equal(graph.edges.filter((edge) => edge.reason === "folder").length, 4);
   });
 
   it("marks ssot notes and counts only types that are on the graph", () => {
@@ -106,10 +110,11 @@ describe("buildNoteGraph", () => {
     assert.equal(graph.legend.find((entry) => entry.type === "person")?.count, 1);
     assert.equal(graph.legend.find((entry) => entry.type === "person")?.color, "#F5C451");
     assert.equal(graph.legend.some((entry) => entry.type === "hub" && entry.count > 0), true);
-    assert.equal(nodeDiameterPx({ kind: "folder", nodeType: "hub", ssot: false, title: "School" }), 22);
-    assert.equal(nodeDiameterPx({ kind: "folder", nodeType: "hub", ssot: false, title: "Conestoga" }), 16);
-    assert.equal(nodeDiameterPx({ kind: "note", nodeType: "note", ssot: true, title: "School schedule" }), 14);
-    assert.equal(nodeDiameterPx({ kind: "note", nodeType: "note", ssot: false, title: "About" }), 12);
+    assert.equal(nodeDiameterPx({ kind: "folder", nodeType: "hub", ssot: false, title: "School" }), 10);
+    assert.equal(nodeDiameterPx({ kind: "folder", nodeType: "hub", ssot: false, title: "School" }, 12), 14);
+    assert.equal(nodeDiameterPx({ kind: "note", nodeType: "note", ssot: true, title: "School schedule" }), 4);
+    assert.equal(nodeDiameterPx({ kind: "note", nodeType: "note", ssot: false, title: "About" }, 6), 6);
+    assert.equal(nodeDiameterPx({ kind: "note", nodeType: "hub", ssot: true, title: "Me / Jarvis", root: true }), 14);
   });
 
   it("merges a source-of-truth note into the hub that already has its name", () => {
@@ -125,6 +130,7 @@ describe("buildNoteGraph", () => {
     assert.equal(swim.length, 1);
     assert.equal(swim[0]?.id, "area:swim");
     assert.equal(swim[0]?.ssot, true);
+    assert.equal(swim[0]?.file, "Swim.md");
     assert.match(swim[0]?.text ?? "", /Lanes/);
     assert.equal(graph.nodes.some((node) => node.id === "Swim.md"), false);
     assert.equal(
@@ -176,11 +182,23 @@ describe("loadVaultGraph", () => {
     try {
       const graph = await loadVaultGraph();
       assert.equal(graph.status, "ready");
-      assert.equal(graph.nodes.some((note) => /about/i.test(note.title)), true);
+      const root = graph.nodes.find((note) => note.root);
+      assert.equal(root?.id, "About.md");
+      assert.equal(root?.title, "Me / Jarvis");
+      assert.match(root?.text ?? "", /Joseph/);
+      assert.equal(
+        graph.edges.some(
+          (edge) =>
+            edge.reason === "folder" &&
+            ((edge.from === "About.md" && edge.to.startsWith("area:")) ||
+              (edge.to === "About.md" && edge.from.startsWith("area:"))),
+        ),
+        true,
+      );
       assert.equal(graph.nodes.some((note) => note.title === "School"), true);
       assert.equal(graph.noteCount <= MAX_GRAPH_NODES, true);
       assert.equal(graph.connectionCount > 0, true);
-      const notes = graph.nodes.filter((node) => node.kind === "note" && node.id.endsWith(".md"));
+      const notes = graph.nodes.filter((node) => node.kind === "note" && node.id.endsWith(".md") && !node.root);
       assert.equal(
         notes.every((note) => note.hubs[0]?.startsWith("area:")),
         true,

@@ -440,6 +440,13 @@
   pointer-events: none;
 }
 
+.graph-orbit-hint {
+  margin: 0;
+  color: #6fa9bf;
+  font-size: 12px;
+  letter-spacing: 0.06em;
+}
+
 .graph-float-label {
   position: absolute;
   padding: 1px 4px;
@@ -447,7 +454,7 @@
   color: #49d4ff;
   font-family: var(--font-jetbrains), ui-monospace, monospace;
   font-size: 13px;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.06em;
   line-height: 1.2;
   white-space: nowrap;
   pointer-events: none;

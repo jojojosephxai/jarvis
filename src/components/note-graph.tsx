@@ -44,6 +44,9 @@ export type GraphCue = {
   pathFrom?: string;
   pathTo?: string;
   fit?: boolean;
+  filterHub?: string;
+  search?: string;
+  clear?: boolean;
 };
 
 function isKind(value: unknown): value is GraphNode["kind"] {
@@ -80,7 +83,10 @@ function isNode(value: unknown): value is GraphNode {
     Array.isArray(node.hubs) &&
     node.hubs.every((hub) => typeof hub === "string") &&
     Array.isArray(node.tags) &&
-    node.tags.every((tag) => typeof tag === "string")
+    node.tags.every((tag) => typeof tag === "string") &&
+    typeof node.root === "boolean" &&
+    typeof node.file === "string" &&
+    typeof node.anchor === "string"
   );
 }
 
@@ -228,17 +234,36 @@ function GraphReady({
   const [showLabels, setShowLabels] = useState(true);
   const [showEdges, setShowEdges] = useState(true);
   const [hiddenTypes, setHiddenTypes] = useState<GraphNodeType[]>([]);
+  const [filterId, setFilterId] = useState<string | null>(null);
 
   if (cue && cue.token !== seenCue) {
     setSeenCue(cue.token);
-    if (cue.fit) {
+    if (cue.fit || cue.clear) {
       setQuery("");
+      setFilterId(null);
       setPathFromId("");
       setPathToId("");
       setSelectedId(null);
       setClusterId(null);
       setFrameMode("fit");
       setHomeToken((token) => token + 1);
+    } else if (cue.filterHub) {
+      const wanted = cue.filterHub.trim().toLowerCase();
+      const hub = payload.nodes.find((node) => node.kind === "folder" && node.title.toLowerCase() === wanted);
+      setQuery("");
+      setPathFromId("");
+      setPathToId("");
+      if (!hub) {
+        setFilterId(null);
+        setClusterId(null);
+        setFrameMode("fit");
+      } else {
+        setFilterId(hub.id);
+        setClusterId(hub.id);
+        setSelectedId(hub.id);
+        setFrameMode("cluster");
+        setHomeToken((token) => token + 1);
+      }
     } else if (cue.focusHub) {
       const wanted = cue.focusHub.trim().toLowerCase();
       const hub = payload.nodes.find(
@@ -272,9 +297,11 @@ function GraphReady({
         setClusterId(null);
         setFrameMode("path");
       }
-    } else if (cue.focusQuery) {
-      const found = matchingNodes(payload.nodes, cue.focusQuery);
-      setQuery(cue.focusQuery);
+    } else if (cue.search || cue.focusQuery) {
+      const text = cue.search || cue.focusQuery || "";
+      const found = matchingNodes(payload.nodes, text);
+      setFilterId(null);
+      setQuery(text);
       setPathFromId("");
       setPathToId("");
       const first = found[0];
@@ -290,6 +317,7 @@ function GraphReady({
         setClusterId(null);
         setFrameMode(found.length === 1 ? "node" : "matches");
       }
+      setHomeToken((token) => token + 1);
     } else {
       setSelectedId(null);
       setClusterId(null);
@@ -305,6 +333,7 @@ function GraphReady({
       if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) return;
       setSelectedId(null);
       setClusterId(null);
+      setFilterId(null);
       setPathFromId("");
       setPathToId("");
       setFrameMode("fit");
@@ -319,8 +348,9 @@ function GraphReady({
       payload.nodes.map((node) => ({
         id: node.id,
         kind: node.kind,
-        anchorId: node.ssot ? node.hubs[0] : undefined,
-        hubId: node.kind === "folder" ? node.id : node.hubs[0],
+        root: node.root,
+        anchorId: node.root ? undefined : node.ssot ? node.hubs[0] : undefined,
+        hubId: node.root ? node.id : node.kind === "folder" ? node.id : node.hubs[0],
       })),
     [payload.nodes],
   );
@@ -339,10 +369,11 @@ function GraphReady({
     for (const node of payload.nodes) {
       if (hidden.has(node.nodeType)) continue;
       if (!showHubs && node.kind === "folder") continue;
+      if (filterId && node.id !== filterId && !node.root && !node.hubs.includes(filterId)) continue;
       ids.add(node.id);
     }
     return ids;
-  }, [payload.nodes, hiddenTypes, showHubs]);
+  }, [payload.nodes, hiddenTypes, showHubs, filterId]);
   const selected = payload.nodes.find((node) => node.id === selectedId) ?? null;
   const noteLinks: NoteLink[] = selected
     ? payload.edges.flatMap((edge) => {
@@ -362,11 +393,12 @@ function GraphReady({
       return node ? { id, index, title: node.title } : null;
     })
     .filter((item): item is { id: string; index: number; title: string } => Boolean(item));
-  const focusKey = `${frameMode}|${selectedId ?? ""}|${clusterId ?? ""}|${pathFromId}|${pathToId}|${homeToken}|${hiddenTypes.join(",")}|${showHubs}`;
+  const focusKey = `${frameMode}|${selectedId ?? ""}|${clusterId ?? ""}|${filterId ?? ""}|${pathFromId}|${pathToId}|${homeToken}|${hiddenTypes.join(",")}|${showHubs}`;
 
   function clearFocus() {
     setSelectedId(null);
     setClusterId(null);
+    setFilterId(null);
     setPathFromId("");
     setPathToId("");
     setFrameMode("fit");
@@ -374,6 +406,7 @@ function GraphReady({
   }
 
   function focusHub(id: string) {
+    setFilterId(null);
     setClusterId(id);
     setSelectedId(id);
     setPathFromId("");
@@ -515,6 +548,7 @@ function GraphReady({
           <span>{payload.noteCount} notes</span>
           <span>{payload.connectionCount} links</span>
         </p>
+        <p className="graph-orbit-hint">drag = orbit, shift-click = path</p>
         {query.trim() ? (
           <p className="face-hint">{matches.length === 0 ? "No matches." : `${matches.length} match${matches.length === 1 ? "" : "es"}`}</p>
         ) : null}

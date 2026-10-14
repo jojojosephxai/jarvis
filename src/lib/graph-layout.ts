@@ -7,6 +7,8 @@ export type LayoutNode = {
   anchorId?: string;
   /** Cluster this note is pulled toward. Folder nodes are their own hub. */
   hubId?: string;
+  /** The single center note. Hubs are seeded around it. */
+  root?: boolean;
 };
 
 export type LayoutEdge = {
@@ -224,14 +226,14 @@ export function labelEligible(
     folder: boolean;
     match: boolean;
     depth: number;
+    big?: boolean;
   },
   zoom: number,
   showAll: boolean,
 ): boolean {
-  if (showAll) return true;
-  if (flags.hub || flags.ssot || flags.hover || flags.selected || flags.onPath || flags.neighbor || flags.match) return true;
-  if (flags.depth < 0.4) return false;
-  return zoom >= 1.2;
+  void zoom;
+  void showAll;
+  return Boolean(flags.hub || flags.big || flags.hover || flags.selected || flags.onPath);
 }
 
 /** CSS cubic-bezier(.22, 1, .36, 1) sampled over 0–1. Focus, zoom, and re-form use this. */

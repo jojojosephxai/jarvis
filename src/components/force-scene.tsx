@@ -231,13 +231,14 @@ export function ForceScene({
           if (mesh.geometry && mesh.geometry !== sphere) mesh.geometry.dispose();
           const material = mesh.material;
           if (Array.isArray(material)) material.forEach((item) => item.dispose());
-          else if (material && material !== sharedLine && material !== hotLine) material.dispose();
+          else if (material && material !== sharedLine && material !== hotLine && material !== spineLine) material.dispose();
         });
         group = null;
         meshes.length = 0;
       };
 
-      const sharedLine = new THREE.LineBasicMaterial({ color: LINK, transparent: true, opacity: 0.12 });
+      const sharedLine = new THREE.LineBasicMaterial({ color: LINK, transparent: true, opacity: 0.16 });
+      const spineLine = new THREE.LineBasicMaterial({ color: LINK, transparent: true, opacity: 0.62 });
       const hotLine = new THREE.LineBasicMaterial({ color: LINK, transparent: true, opacity: 0.92 });
 
       let labelStamp = "";
@@ -276,9 +277,19 @@ export function ForceScene({
         paintLabelsIfNeeded();
       };
 
+      let spinning = !reduced;
+      let idleUntil = 0;
+      const pauseSpin = () => {
+        spinning = false;
+        idleUntil = performance.now() + 4000;
+      };
       const tick = (now: number) => {
         if (dead) return;
         frame = requestAnimationFrame(tick);
+        if (!drag) {
+          if (!spinning && now > idleUntil) spinning = true;
+          if (spinning) yaw += 0.0016;
+        }
         draw(now);
       };
 
@@ -293,12 +304,13 @@ export function ForceScene({
         const current = stateRef.current;
         const pointOf = new Map(current.points.map((point) => [point.id, point]));
         const nodeOf = new Map(current.nodes.map((node) => [node.id, node]));
-        const counts = new Map<string, number>();
-        for (const node of current.nodes) {
-          const home = node.hubs[0];
-          if (home) counts.set(home, (counts.get(home) ?? 0) + 1);
-        }
         group = new THREE.Group();
+        const degree = new Map<string, number>();
+        for (const edge of current.edges) {
+          degree.set(edge.from, (degree.get(edge.from) ?? 0) + 1);
+          degree.set(edge.to, (degree.get(edge.to) ?? 0) + 1);
+        }
+        const rootId = current.nodes.find((node) => node.root)?.id ?? "";
         const hot = new Set<string>();
         if (current.clusterId) {
           hot.add(current.clusterId);
@@ -320,8 +332,7 @@ export function ForceScene({
           if (!current.visibleIds.has(node.id)) continue;
           const point = pointOf.get(node.id);
           if (!point) continue;
-          const count = node.kind === "folder" ? counts.get(node.id) ?? 1 : 0;
-          const px = node.kind === "folder" ? Math.min(34, 16 + Math.sqrt(count) * 2.6) : nodeDiameterPx(node);
+          const px = nodeDiameterPx(node, degree.get(node.id) ?? 0);
           const color = new THREE.Color(nodeColor(node.nodeType));
           const material = new THREE.MeshBasicMaterial({
             color,
@@ -330,7 +341,7 @@ export function ForceScene({
           });
           const mesh = new THREE.Mesh(sphere, material);
           mesh.position.set(point.x, point.y, point.z);
-          mesh.scale.setScalar(Math.max(3.2, px * 0.42));
+          mesh.scale.setScalar(Math.max(1.5, px * 0.46));
           mesh.userData.id = node.id;
           group.add(mesh);
           meshes.push({ mesh, id: node.id, base: material.opacity, seed: node.id.length });
@@ -340,6 +351,7 @@ export function ForceScene({
           const focusId = current.selectedId;
           const routeSet = current.route ? new Set(current.route) : null;
           const positions: number[] = [];
+          const spinePositions: number[] = [];
           const hotPositions: number[] = [];
           const pairs = new Map<string, { a: string; b: string }>();
           const push = (bucket: number[], a: { x: number; y: number; z: number }, b: { x: number; y: number; z: number }) => {
@@ -360,6 +372,13 @@ export function ForceScene({
               Math.abs((current.route ?? []).indexOf(edge.from) - (current.route ?? []).indexOf(edge.to)) === 1;
             if (onFocus || onRoute) {
               push(hotPositions, a, b);
+              continue;
+            }
+            const spoke =
+              rootId !== "" &&
+              ((edge.from === rootId && to.kind === "folder") || (edge.to === rootId && from.kind === "folder"));
+            if (spoke) {
+              if (!focusId && !routeSet) push(spinePositions, a, b);
               continue;
             }
             if (focusId || routeSet) continue;
@@ -411,6 +430,11 @@ export function ForceScene({
               prev = next;
             }
           }
+          if (spinePositions.length > 0) {
+            const geometry = new THREE.BufferGeometry();
+            geometry.setAttribute("position", new THREE.Float32BufferAttribute(spinePositions, 3));
+            group.add(new THREE.LineSegments(geometry, spineLine));
+          }
           if (positions.length > 0) {
             const geometry = new THREE.BufferGeometry();
             geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
@@ -448,7 +472,11 @@ export function ForceScene({
         for (const entry of meshes) {
           const node = current.nodes.find((item) => item.id === entry.id);
           if (!node || !current.visibleIds.has(node.id)) continue;
-          const hub = node.kind === "folder" || node.nodeType === "hub";
+          const hub = node.kind === "folder" || node.nodeType === "hub" || node.root;
+          const links = current.edges.reduce(
+            (count, edge) => count + (edge.from === node.id || edge.to === node.id ? 1 : 0),
+            0,
+          );
           const onPath = routeIndex.has(node.id);
           const neighbor =
             current.selectedId !== null &&
@@ -468,8 +496,9 @@ export function ForceScene({
             folder: false,
             match: inCluster,
             depth: 0.8,
+            big: links >= 4,
           };
-          if (!labelEligible(flags, zoomed ? 1.4 : 1, inCluster)) continue;
+          if (!labelEligible(flags, zoomed ? 1.4 : 1, false)) continue;
           const vector = entry.mesh.position.clone().project(camera);
           if (vector.z > 1) continue;
           const sx = (vector.x * 0.5 + 0.5) * width;
@@ -528,6 +557,7 @@ export function ForceScene({
       };
 
       const onDown = (event: PointerEvent) => {
+        pauseSpin();
         drag = { x: event.clientX, y: event.clientY, button: event.button, shift: event.shiftKey };
         moved = false;
         window.addEventListener("pointermove", onDrag);
@@ -579,6 +609,7 @@ export function ForceScene({
         stateRef.current.onSelect(id, shift);
       };
       const onWheel = (event: WheelEvent) => {
+        pauseSpin();
         event.preventDefault();
         dist = Math.max(80, Math.min(4000, dist * (event.deltaY > 0 ? 1.08 : 0.92)));
         requestDraw();
@@ -591,6 +622,7 @@ export function ForceScene({
         else if (event.key === "+" || event.key === "=") dist = Math.max(80, dist * 0.9);
         else if (event.key === "-" || event.key === "_") dist = Math.min(4000, dist * 1.1);
         else return;
+        pauseSpin();
         event.preventDefault();
         requestDraw();
       };
@@ -621,6 +653,7 @@ export function ForceScene({
         disposeGroup();
         sphere.dispose();
         sharedLine.dispose();
+        spineLine.dispose();
         hotLine.dispose();
         renderer.dispose();
         renderer.forceContextLoss();

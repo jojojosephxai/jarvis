@@ -177,18 +177,55 @@ describe("graph labels", () => {
       depth: 0.7,
     };
     assert.equal(labelEligible(quiet, 1, false), false);
-    assert.equal(labelEligible(quiet, 1.4, false), true);
+    assert.equal(labelEligible(quiet, 1.4, false), false);
     assert.equal(labelEligible({ ...quiet, depth: 0.1 }, 1.4, false), false);
-    assert.equal(labelEligible({ ...quiet, depth: 0.1 }, 1, true), true);
+    assert.equal(labelEligible({ ...quiet, depth: 0.1 }, 1, true), false);
     assert.equal(labelEligible({ ...quiet, hover: true, depth: 0.1 }, 1, false), true);
+    assert.equal(labelEligible({ ...quiet, selected: true, depth: 0.1 }, 1, false), true);
     assert.equal(labelEligible({ ...quiet, hub: true, depth: 0.1 }, 1, false), true);
-    assert.equal(labelEligible({ ...quiet, ssot: true, depth: 0.8 }, 1, false), true);
+    assert.equal(labelEligible({ ...quiet, big: true, depth: 0.1 }, 1, false), true);
+    assert.equal(labelEligible({ ...quiet, ssot: true, depth: 0.8 }, 1, false), false);
   });
 
   it("eases focus on cubic-bezier(.22, 1, .36, 1)", () => {
     assert.equal(easeFrame(0), 0);
     assert.equal(easeFrame(1), 1);
     assert.ok(easeFrame(0.5) > 0.5);
+  });
+});
+
+describe("source of truth root", () => {
+  it("keeps the root in the middle and the hubs at uneven distances", () => {
+    const placed = layoutGalaxy(
+      [
+        { id: "About.md", kind: "note", root: true },
+        { id: "area:school", kind: "folder" },
+        { id: "area:swim", kind: "folder" },
+        { id: "area:people", kind: "folder" },
+        { id: "Meet.md", kind: "note", hubId: "area:swim" },
+      ],
+      [
+        { from: "About.md", to: "area:school" },
+        { from: "About.md", to: "area:swim" },
+        { from: "About.md", to: "area:people" },
+        { from: "Meet.md", to: "area:swim" },
+      ],
+      { repel: 160, link: 140, width: 1000, height: 640 },
+    );
+    const byId = new Map(placed.map((point) => [point.id, point]));
+    const root = byId.get("About.md");
+    const school = byId.get("area:school");
+    const swim = byId.get("area:swim");
+    const people = byId.get("area:people");
+    const meet = byId.get("Meet.md");
+    assert.ok(root && school && swim && people && meet);
+    assert.equal(Math.hypot(root.x - 500, root.y - 320) < 40, true);
+    const radii = [school, swim, people].map((hub) => Math.hypot(hub.x - root.x, hub.y - root.y));
+    const spread = Math.max(...radii) - Math.min(...radii);
+    assert.equal(spread > 20, true);
+    const meetDist = Math.hypot(meet.x - swim.x, meet.y - swim.y);
+    const schoolDist = Math.hypot(meet.x - school.x, meet.y - school.y);
+    assert.equal(meetDist < schoolDist, true);
   });
 });
 
