@@ -80,30 +80,41 @@ function clusterId(node: LayoutNode, edges: LayoutEdge[], folderIds: Set<string>
   return node.hubId;
 }
 
-/** Hubs sit on a Fibonacci disk so clusters fill the frame instead of one clump. */
-function hubHomes(hubs: LayoutNode[], width: number, height: number): Map<string, SpacePoint> {
+function hashUnit(id: string, salt: number): number {
+  let hash = 2166136261;
+  const text = `${salt}:${id}`;
+  for (let index = 0; index < text.length; index += 1) {
+    hash ^= text.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0) / 4294967296;
+}
+
+/** Even grid. Same ids always land on the same cells. */
+function gridHomes(ids: string[], width: number, height: number): { homes: Map<string, SpacePoint>; cell: number } {
+  const sorted = [...ids].sort();
   const homes = new Map<string, SpacePoint>();
-  const cx = width / 2;
-  const cy = height / 2;
-  const count = hubs.length;
-  if (count === 0) return homes;
-  const rx = width * 0.36;
-  const ry = height * 0.34;
-  const golden = Math.PI * (3 - Math.sqrt(5));
-  hubs.forEach((hub, index) => {
-    if (count === 1) {
-      homes.set(hub.id, { x: cx, y: cy, z: 0 });
-      return;
-    }
-    const radius = Math.sqrt((index + 0.5) / count);
-    const theta = index * golden;
-    homes.set(hub.id, {
-      x: cx + Math.cos(theta) * rx * radius,
-      y: cy + Math.sin(theta) * ry * radius,
-      z: Math.sin(theta * 0.5) * Math.min(width, height) * 0.06,
+  const count = sorted.length;
+  if (count === 0) return { homes, cell: Math.min(width, height) * 0.24 };
+  const cols = count === 1 ? 1 : Math.max(1, Math.ceil(Math.sqrt(count * (width / Math.max(height, 1)))));
+  const rows = Math.ceil(count / cols);
+  const marginX = width * 0.08;
+  const marginY = height * 0.1;
+  const innerW = Math.max(width - marginX * 2, 1);
+  const innerH = Math.max(height - marginY * 2, 1);
+  const cell = Math.min(innerW / cols, innerH / rows);
+  sorted.forEach((id, index) => {
+    const row = Math.floor(index / cols);
+    const col = index % cols;
+    const rowCount = Math.min(cols, count - row * cols);
+    const rowOffset = ((cols - rowCount) * (innerW / cols)) / 2;
+    homes.set(id, {
+      x: marginX + rowOffset + (col + 0.5) * (innerW / cols),
+      y: marginY + (row + 0.5) * (innerH / rows),
+      z: (hashUnit(id, 4) - 0.5) * Math.min(40, cell * 0.18),
     });
   });
-  return homes;
+  return { homes, cell };
 }
 
 export function layoutGalaxy(
@@ -115,107 +126,122 @@ export function layoutGalaxy(
 
   const width = options.width;
   const height = options.height;
-  const cx = width / 2;
-  const cy = height / 2;
   const repel = clamp(options.repel, 20, 400);
   const link = clamp(options.link, 24, 480);
-  const density = edges.length / Math.max(nodes.length, 1);
-  const crowd = clamp(density / 4, 1, 2.4);
   const folders = nodes.filter((node) => node.kind === "folder");
   const folderIds = new Set(folders.map((node) => node.id));
-  const homes = hubHomes(folders, width, height);
   const membership = new Map(nodes.map((node) => [node.id, clusterId(node, edges, folderIds)]));
+  const touched = new Set<string>();
+  for (const edge of edges) {
+    touched.add(edge.from);
+    touched.add(edge.to);
+  }
+  const anchorIds = new Set<string>();
+  for (const node of nodes) {
+    if (node.kind === "folder") continue;
+    const home = membership.get(node.id);
+    if (home && folderIds.has(home)) anchorIds.add(home);
+  }
+  for (const folder of folders) {
+    if (!touched.has(folder.id)) anchorIds.add(folder.id);
+  }
+  if (anchorIds.size === 0) {
+    for (const folder of folders) anchorIds.add(folder.id);
+  }
 
-  const points: LayoutPoint[] = nodes.map((node, index) => {
-    const homeId = membership.get(node.id);
-    const home = homeId ? homes.get(homeId) : undefined;
-    const shell = shellPoint(index, Math.max(nodes.length, 2));
-    if (node.kind === "folder" && home) {
-      return { id: node.id, x: home.x, y: home.y, z: home.z };
-    }
-    const base = home ?? { x: cx, y: cy, z: 0 };
-    const spread = link * (0.28 + (index % 5) * 0.04);
-    return {
-      id: node.id,
-      x: base.x + shell.x * spread,
-      y: base.y + shell.y * spread * 0.86,
-      z: base.z + shell.z * Math.max(36, link * 0.22),
-    };
-  });
-  const index = new Map(points.map((point) => [point.id, point]));
-  const steps = 90;
+  if (anchorIds.size === 0) {
+    const free = placeLoose(nodes, repel, link, width, height);
+    pinAnchors(free, nodes, 36, width, height);
+    return free;
+  }
 
-  for (let step = 0; step < steps; step += 1) {
-    const cooling = 1 - step / steps;
-    for (let i = 0; i < points.length; i += 1) {
-      for (let j = i + 1; j < points.length; j += 1) {
-        const a = points[i];
-        const b = points[j];
-        if (!a || !b) continue;
-        let dx = a.x - b.x;
-        let dy = a.y - b.y;
-        let dz = a.z - b.z;
-        let dist = Math.hypot(dx, dy, dz);
-        if (dist < 0.8) {
-          dx = 0.8 + (i % 3) * 0.1;
-          dy = 0.4 + (j % 3) * 0.1;
-          dz = 0.3;
-          dist = Math.hypot(dx, dy, dz);
-        }
-        const same = membership.get(a.id) && membership.get(a.id) === membership.get(b.id);
-        const push = (repel * repel * (same ? 0.55 : 1) * crowd) / dist;
-        const scale = (push / dist) * 0.012 * (0.4 + cooling);
-        a.x += dx * scale;
-        a.y += dy * scale;
-        a.z += dz * scale;
-        b.x -= dx * scale;
-        b.y -= dy * scale;
-        b.z -= dz * scale;
-      }
-    }
+  const { homes, cell } = gridHomes([...anchorIds], width, height);
+  const placed = new Map<string, LayoutPoint>();
+  for (const [id, home] of homes) {
+    placed.set(id, { id, x: home.x, y: home.y, z: home.z });
+  }
 
+  const secondary = folders
+    .filter((node) => !anchorIds.has(node.id))
+    .sort((a, b) => a.id.localeCompare(b.id));
+  for (const hub of secondary) {
+    const hosts = new Map<string, number>();
     for (const edge of edges) {
-      const a = index.get(edge.from);
-      const b = index.get(edge.to);
-      if (!a || !b) continue;
-      const dx = b.x - a.x;
-      const dy = b.y - a.y;
-      const dz = b.z - a.z;
-      const dist = Math.hypot(dx, dy, dz) || 0.8;
-      const same = membership.get(a.id) && membership.get(a.id) === membership.get(b.id);
-      const target = link * (same ? 0.42 : 0.95);
-      const delta = (dist - target) * 0.028 * (0.35 + cooling);
-      const ux = dx / dist;
-      const uy = dy / dist;
-      const uz = dz / dist;
-      a.x += ux * delta;
-      a.y += uy * delta;
-      a.z += uz * delta;
-      b.x -= ux * delta;
-      b.y -= uy * delta;
-      b.z -= uz * delta;
+      const other = edge.from === hub.id ? edge.to : edge.to === hub.id ? edge.from : "";
+      if (!other) continue;
+      const host = membership.get(other);
+      if (!host || !homes.has(host)) continue;
+      hosts.set(host, (hosts.get(host) ?? 0) + 1);
     }
+    const hostId =
+      [...hosts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))[0]?.[0] ?? [...homes.keys()][0];
+    const home = hostId ? homes.get(hostId) : undefined;
+    if (!home) continue;
+    const angle = hashAngle(hub.id);
+    const radius = cell * 0.22;
+    placed.set(hub.id, {
+      id: hub.id,
+      x: home.x + Math.cos(angle) * radius,
+      y: home.y + Math.sin(angle) * radius * 0.86,
+      z: home.z + 8,
+    });
+  }
 
-    for (const point of points) {
-      const homeId = membership.get(point.id);
-      const home = homeId ? homes.get(homeId) : undefined;
-      if (!home) continue;
-      const hold = folderIds.has(point.id) ? 0.22 : 0.05;
-      point.x += (home.x - point.x) * hold;
-      point.y += (home.y - point.y) * hold;
-      point.z += (home.z - point.z) * (folderIds.has(point.id) ? 0.12 : 0.02);
-    }
+  const grouped = new Map<string, LayoutNode[]>();
+  for (const node of nodes) {
+    if (node.kind === "folder") continue;
+    const home = membership.get(node.id);
+    const key = home && homes.has(home) ? home : [...homes.keys()][0];
+    if (!key) continue;
+    const list = grouped.get(key) ?? [];
+    list.push(node);
+    grouped.set(key, list);
+  }
+  for (const [homeId, members] of grouped) {
+    const home = homes.get(homeId);
+    if (!home) continue;
+    const sorted = [...members].sort((a, b) => a.id.localeCompare(b.id));
+    sorted.forEach((node, index) => {
+      const angle = index * Math.PI * (3 - Math.sqrt(5)) + hashAngle(node.id) * 0.15;
+      const radius = cell * (0.16 + repel / 1600 + link / 4800) + index * cell * (0.012 + repel / 20000);
+      const z = ((index % 5) - 2) * 14 + (hashUnit(node.id, 3) - 0.5) * 10;
+      placed.set(node.id, {
+        id: node.id,
+        x: home.x + Math.cos(angle) * radius,
+        y: home.y + Math.sin(angle) * radius * 0.84,
+        z: home.z + z,
+      });
+    });
   }
 
   const pad = 36;
   const zLimit = Math.min(width, height) * 0.48;
-  for (const point of points) {
+  const points = nodes.map((node) => {
+    const point = placed.get(node.id) ?? { id: node.id, x: width / 2, y: height / 2, z: 0 };
     point.x = Math.min(width - pad, Math.max(pad, point.x));
     point.y = Math.min(height - pad, Math.max(pad, point.y));
     point.z = clamp(point.z, -zLimit, zLimit);
-  }
+    return point;
+  });
   pinAnchors(points, nodes, pad, width, height);
   return points;
+}
+
+function placeLoose(nodes: LayoutNode[], repel: number, link: number, width: number, height: number): LayoutPoint[] {
+  const sorted = [...nodes].sort((a, b) => a.id.localeCompare(b.id));
+  const gap = link * 0.55 + repel * 0.15;
+  const span = gap * Math.max(sorted.length - 1, 1);
+  const start = width / 2 - span / 2;
+  const byId = new Map<string, LayoutPoint>();
+  sorted.forEach((node, index) => {
+    byId.set(node.id, {
+      id: node.id,
+      x: start + index * gap,
+      y: height / 2 + ((index % 2) - 0.5) * gap * 0.12,
+      z: (index - (sorted.length - 1) / 2) * 28,
+    });
+  });
+  return nodes.map((node) => byId.get(node.id) ?? { id: node.id, x: width / 2, y: height / 2, z: 0 });
 }
 
 const SSOT_GAP = 48;
@@ -397,10 +423,10 @@ export function labelEligible(
   zoom: number,
   showAll: boolean,
 ): boolean {
-  void zoom;
   if (showAll) return true;
-  if (flags.depth < 0.4 && !flags.selected && !flags.hover) return false;
-  return true;
+  if (flags.hub || flags.ssot || flags.hover || flags.selected || flags.onPath || flags.neighbor || flags.match) return true;
+  if (flags.depth < 0.4) return false;
+  return zoom >= 1.2;
 }
 
 /** CSS cubic-bezier(.22, 1, .36, 1) sampled over 0–1. Focus, zoom, and re-form use this. */

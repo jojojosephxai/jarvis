@@ -644,6 +644,49 @@ html[data-boot="done"] .boot-screen {
   cursor: grab;
 }
 
+.graph-node-core {
+  animation: graph-shimmer 6s ease-in-out infinite;
+}
+
+.graph-link {
+  animation: graph-link-pulse 6s ease-in-out infinite;
+}
+
+.graph-link-arc {
+  animation-duration: 7.5s;
+}
+
+.graph-link.is-hot {
+  animation: none;
+}
+
+@keyframes graph-shimmer {
+  0%,
+  100% {
+    opacity: 0.78;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+@keyframes graph-link-pulse {
+  0%,
+  100% {
+    stroke-opacity: 0.62;
+  }
+  50% {
+    stroke-opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .graph-node-core,
+  .graph-link {
+    animation: none;
+  }
+}
+
 .graph-svg.is-grabbing,
 .graph-svg.is-grabbing .graph-grab,
 .graph-svg.is-grabbing .graph-node {

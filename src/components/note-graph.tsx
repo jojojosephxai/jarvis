@@ -155,9 +155,10 @@ function displayTitle(node: GraphNode): string {
   return `${title.slice(0, 35)}...`;
 }
 
-function nodeRadiusUser(node: GraphNode, fitScale: number, currentScale: number): number {
-  const onScreen = (nodeDiameterPx(node) / fitScale) * currentScale;
-  return (onScreen < 10 ? 10 : nodeDiameterPx(node)) / 2 / (onScreen < 10 ? currentScale : fitScale);
+function nodeRadiusUser(node: GraphNode, fitScale: number, currentScale: number, areaHub = false): number {
+  const diameter = areaHub ? 22 : nodeDiameterPx(node);
+  const onScreen = (diameter / fitScale) * currentScale;
+  return (onScreen < 10 ? 10 : diameter) / 2 / (onScreen < 10 ? currentScale : fitScale);
 }
 
 /** Plate rect in graph space. Collision uses this same box, not the node center. */
@@ -656,6 +657,7 @@ function GraphReady({
           showEdges={showEdges}
           frameToken={frameToken}
           zoomCommand={zoomCommand}
+          inspector={selected !== null}
           onSelect={openNote}
           onClear={clearFocus}
         />
@@ -721,6 +723,34 @@ function stableFrame(points: LayoutPoint[]): Frame {
   };
 }
 
+/** Fit the points into the open part of the screen, clear of the column, Filter, orb, and inspector. */
+function frameInSafe(content: Frame, view: { w: number; h: number }, inspector: boolean): Frame {
+  const viewW = Math.max(view.w, 320);
+  const viewH = Math.max(view.h, 240);
+  const left = Math.min(0.36, (16 + 232 + 36) / viewW);
+  const right = Math.min(0.48, ((inspector ? 192 + 300 : 16 + 200) + 48) / viewW);
+  const top = Math.min(0.18, 72 / viewH);
+  const bottom = Math.min(0.24, 140 / viewH);
+  const innerW = Math.max(0.34, 1 - left - right);
+  const innerH = Math.max(0.36, 1 - top - bottom);
+  const aspect = viewW / viewH;
+  const needW = Math.max(content.w, 80) / innerW;
+  const needH = Math.max(content.h, 60) / innerH;
+  const wide = needW / needH > aspect;
+  const boxW = wide ? needW : needH * aspect;
+  const boxH = wide ? needW / aspect : needH;
+  const safeW = innerW * boxW;
+  const safeH = innerH * boxH;
+  const centerX = content.x + content.w / 2;
+  const centerY = content.y + content.h / 2;
+  return {
+    x: centerX - (left * boxW + safeW / 2),
+    y: centerY - (top * boxH + safeH / 2),
+    w: boxW,
+    h: boxH,
+  };
+}
+
 function wirePath(from: LayoutPoint, to: LayoutPoint, arc: boolean, camera: Camera): string {
   const origin = layoutOrigin(WIDTH, HEIGHT);
   const unit = cageRadius(WIDTH, HEIGHT);
@@ -737,6 +767,28 @@ function wirePath(from: LayoutPoint, to: LayoutPoint, arc: boolean, camera: Came
   return `M ${start.x.toFixed(1)} ${start.y.toFixed(1)} Q ${control.x.toFixed(1)} ${control.y.toFixed(1)} ${end.x.toFixed(1)} ${end.y.toFixed(1)}`;
 }
 
+function areaOf(node: GraphNode | undefined, id: string): string {
+  if (!node || node.kind === "folder" || node.nodeType === "hub") return id;
+  return node.hubs[0] ?? id;
+}
+
+function hubArcs(
+  edges: GraphEdge[],
+  nodes: Map<string, GraphNode>,
+): { id: string; from: string; to: string }[] {
+  const pairs = new Map<string, { id: string; from: string; to: string }>();
+  for (const edge of edges) {
+    if (sameCluster(edge, nodes)) continue;
+    const from = areaOf(nodes.get(edge.from), edge.from);
+    const to = areaOf(nodes.get(edge.to), edge.to);
+    if (from === to) continue;
+    const [left, right] = from < to ? [from, to] : [to, from];
+    const key = `${left}|${right}`;
+    if (!pairs.has(key)) pairs.set(key, { id: `hub-arc:${key}`, from: left, to: right });
+  }
+  return [...pairs.values()];
+}
+
 function sameCluster(edge: GraphEdge, nodes: Map<string, GraphNode>): boolean {
   if (edge.reason === "tag" || edge.reason === "folder") return true;
   const from = nodes.get(edge.from);
@@ -744,11 +796,6 @@ function sameCluster(edge: GraphEdge, nodes: Map<string, GraphNode>): boolean {
   if (!from || !to) return false;
   if (from.kind === "folder" || to.kind === "folder") return true;
   return from.hubs.some((hub) => to.hubs.includes(hub));
-}
-
-function meetScale(svg: SVGSVGElement | null, frame: Frame): number {
-  if (!svg || svg.clientWidth <= 0 || svg.clientHeight <= 0) return 0.8;
-  return Math.min(svg.clientWidth / Math.max(frame.w, 1), svg.clientHeight / Math.max(frame.h, 1));
 }
 
 function GalaxyScene({
@@ -768,6 +815,7 @@ function GalaxyScene({
   showEdges,
   frameToken,
   zoomCommand,
+  inspector,
   onSelect,
   onClear,
 }: {
@@ -787,6 +835,7 @@ function GalaxyScene({
   showEdges: boolean;
   frameToken: string;
   zoomCommand: ZoomCommand;
+  inspector: boolean;
   onSelect: (id: string, shift: boolean) => void;
   onClear: () => void;
 }) {
@@ -824,8 +873,8 @@ function GalaxyScene({
     }
   }
   const camera = turnedCamera(restCamera(), spin);
-  const [pxPerUnit, setPxPerUnit] = useState(0.8);
   const [hoverId, setHoverId] = useState<string | null>(null);
+  const [viewSize, setViewSize] = useState({ w: 1920, h: 1080 });
   useEffect(() => {
     const svg = svgRef.current;
     if (!svg) return;
@@ -847,14 +896,16 @@ function GalaxyScene({
     const svg = svgRef.current;
     if (!svg) return;
     const measure = () => {
-      const next = meetScale(svg, stableFrame(points));
-      if (next > 0) setPxPerUnit(next);
+      setViewSize({
+        w: svg.clientWidth || 1920,
+        h: svg.clientHeight || 1080,
+      });
     };
     measure();
     const observer = new ResizeObserver(measure);
     observer.observe(svg);
     return () => observer.disconnect();
-  }, [points]);
+  }, []);
   const origin = layoutOrigin(WIDTH, HEIGHT);
   const unit = cageRadius(WIDTH, HEIGHT);
   const pointById = new Map(points.map((point) => [point.id, point]));
@@ -862,14 +913,16 @@ function GalaxyScene({
     points.map((point) => [point.id, projectSpace(point, camera, origin, unit)] as const),
   );
   const visibleProjected = nodes
+    .filter((node) => visibleIds.has(node.id))
     .map((node) => projected.get(node.id))
     .filter((point): point is NonNullable<typeof point> => Boolean(point));
 
-  let frame: Frame;
+  let content: Frame;
   switch (frameMode) {
     case "node": {
       const point = selectedId ? projected.get(selectedId) : undefined;
-      frame = point && selectedId && visibleIds.has(selectedId) ? frameAroundPoint(point, 620, 440) : stableFrame(points);
+      content =
+        point && selectedId && visibleIds.has(selectedId) ? frameAroundPoint(point, 620, 440) : stableFrame(points);
       break;
     }
     case "path": {
@@ -877,7 +930,7 @@ function GalaxyScene({
         .map((id) => projected.get(id))
         .filter((point): point is NonNullable<typeof point> => Boolean(point));
       if (pathPoints.length === 0) {
-        frame = stableFrame(points);
+        content = stableFrame(points);
         break;
       }
       const tight = frameAroundPoints(pathPoints, 150, 120);
@@ -885,7 +938,7 @@ function GalaxyScene({
       const cy = tight.y + tight.h / 2;
       const w = Math.max(tight.w, 640);
       const h = Math.max(tight.h, 440);
-      frame = { x: cx - w / 2, y: cy - h / 2, w, h };
+      content = { x: cx - w / 2, y: cy - h / 2, w, h };
       break;
     }
     case "matches": {
@@ -893,7 +946,7 @@ function GalaxyScene({
         .filter((node) => matchIds.has(node.id))
         .map((node) => projected.get(node.id))
         .filter((point): point is NonNullable<typeof point> => Boolean(point));
-      frame = frameAroundPoints(matched.length > 0 ? matched : visibleProjected, 140, 110);
+      content = frameAroundPoints(matched.length > 0 ? matched : visibleProjected, 140, 110);
       break;
     }
     case "cluster": {
@@ -901,17 +954,22 @@ function GalaxyScene({
         .filter((node) => node.id === clusterId || (clusterId !== null && node.hubs.includes(clusterId)))
         .map((node) => projected.get(node.id))
         .filter((point): point is NonNullable<typeof point> => Boolean(point));
-      frame = frameAroundPoints(members.length > 0 ? members : visibleProjected, 140, 110);
+      content = frameAroundPoints(members.length > 0 ? members : visibleProjected, 140, 110);
       break;
     }
     case "fit":
-      frame = stableFrame(points.filter((point) => visibleIds.has(point.id)));
+      content = frameAroundPoints(
+        visibleProjected.length > 0 ? visibleProjected : [{ x: origin.x, y: origin.y }],
+        72,
+        56,
+      );
       break;
     default: {
       const neverMode: never = frameMode;
-      frame = neverMode;
+      content = neverMode;
     }
   }
+  const frame = frameInSafe(content, viewSize, inspector);
 
   const shifted = frameAtZoom(frame, zoom);
   const motionKey = `${frameToken}|${zoom}`;
@@ -956,11 +1014,23 @@ function GalaxyScene({
   const shown = motionTick >= 0 ? displayRef.current : shifted;
   frameWidthRef.current = shown.w;
   const showAllLabels = false;
-  const fitScale = Math.max(pxPerUnit, 0.05);
-  const currentScale = Math.max(meetScale(svgRef.current, shown) || fitScale * zoom, 0.05);
+  const fitContent = frameAroundPoints(
+    visibleProjected.length > 0 ? visibleProjected : [{ x: origin.x, y: origin.y }],
+    72,
+    56,
+  );
+  const fitFrame = frameInSafe(fitContent, viewSize, false);
+  const fitScale = Math.max(Math.min(viewSize.w / Math.max(fitFrame.w, 1), viewSize.h / Math.max(fitFrame.h, 1)), 0.05);
+  const currentScale = Math.max(Math.min(viewSize.w / Math.max(shown.w, 1), viewSize.h / Math.max(shown.h, 1)), 0.05);
   const fontUser = 12 / currentScale;
   const linkWidth = 2 / fitScale;
   const nodeById = new Map(nodes.map((node) => [node.id, node]));
+  const areaHubIds = new Set<string>();
+  for (const node of nodes) {
+    if (node.kind === "folder" || node.nodeType === "hub") continue;
+    const home = node.hubs[0];
+    if (home) areaHubIds.add(home);
+  }
   const labelBoxes: LabelCandidate[] = [];
   for (const node of nodes) {
     const point = projected.get(node.id);
@@ -974,7 +1044,7 @@ function GalaxyScene({
     const flags = {
       selected: node.id === selectedId,
       hover: node.id === hoverId,
-      hub: node.kind === "folder" || node.nodeType === "hub",
+      hub: areaHubIds.has(node.id),
       ssot: node.ssot,
       onPath: routeIds?.has(node.id) ?? false,
       neighbor,
@@ -986,7 +1056,8 @@ function GalaxyScene({
     if (!showLabels || !labelEligible(flags, zoom, showAllLabels || inCluster)) continue;
     const rank = labelRank(flags);
     const text = displayTitle(node);
-    const plate = labelPlate(point.x, point.y, nodeRadiusUser(node, fitScale, currentScale), text, fontUser, shown);
+    const areaHub = areaHubIds.has(node.id);
+    const plate = labelPlate(point.x, point.y, nodeRadiusUser(node, fitScale, currentScale, areaHub), text, fontUser, shown);
     labelBoxes.push({
       id: node.id,
       x: plate.x + plate.w / 2,
@@ -1001,14 +1072,16 @@ function GalaxyScene({
   const placedLabels = new Map(pickLabels(labelBoxes).map((label) => [label.id, label]));
   const hover = nodes.find((node) => node.id === hoverId) ?? null;
   const hoverPoint = hover ? projected.get(hover.id) : undefined;
-  const drawnEdges = (showEdges ? edges : [])
-    .filter((edge) => visibleIds.has(edge.from) && visibleIds.has(edge.to))
+  const visibleEdges = (showEdges ? edges : []).filter((edge) => visibleIds.has(edge.from) && visibleIds.has(edge.to));
+  const drawnEdges = visibleEdges
+    .filter((edge) => sameCluster(edge, nodeById))
     .map((edge) => {
       const from = projected.get(edge.from);
       const to = projected.get(edge.to);
       return { edge, depth: ((from?.depth ?? 0) + (to?.depth ?? 0)) / 2 };
     })
     .sort((a, b) => a.depth - b.depth);
+  const drawnArcs = hubArcs(visibleEdges, nodeById);
   const hubTitles = nodes.filter((node) => node.kind === "folder" || node.nodeType === "hub").map((node) => node.title);
   const drawnNodes = [...nodes]
     .filter((node) => visibleIds.has(node.id))
@@ -1081,6 +1154,44 @@ function GalaxyScene({
           onClear();
         }}
       />
+      {drawnArcs.map((arc) => {
+        const from = pointById.get(arc.from);
+        const to = pointById.get(arc.to);
+        if (!from || !to) return null;
+        const quiet =
+          (searching && !matchIds.has(arc.from) && !matchIds.has(arc.to)) ||
+          (clusterId !== null && arc.from !== clusterId && arc.to !== clusterId);
+        return (
+          <path
+            key={arc.id}
+            className="graph-link graph-link-arc"
+            d={wirePath(from, to, true, camera)}
+            fill="none"
+            stroke={LINK_COLOR}
+            strokeWidth={linkWidth}
+            opacity={quiet ? 0.12 : 0.46}
+          />
+        );
+      })}
+      {routeOn
+        ? visibleEdges
+            .filter((edge) => onRoute(edge, route) && !sameCluster(edge, nodeById))
+            .map((edge) => {
+              const from = pointById.get(edge.from);
+              const to = pointById.get(edge.to);
+              if (!from || !to) return null;
+              return (
+                <path
+                  key={`route:${edge.id}`}
+                  className="graph-link is-hot"
+                  d={wirePath(from, to, true, camera)}
+                  fill="none"
+                  stroke={LINK_HOT}
+                  strokeWidth={linkWidth * 1.4}
+                />
+              );
+            })
+        : null}
       {drawnEdges.map(({ edge }) => {
         const from = pointById.get(edge.from);
         const to = pointById.get(edge.to);
@@ -1093,7 +1204,8 @@ function GalaxyScene({
         return (
           <path
             key={edge.id}
-            d={wirePath(from, to, !sameCluster(edge, nodeById), camera)}
+            className={hot ? "graph-link is-hot" : "graph-link"}
+            d={wirePath(from, to, false, camera)}
             fill="none"
             stroke={hot ? LINK_HOT : LINK_COLOR}
             strokeWidth={hot ? linkWidth * 1.4 : linkWidth}
@@ -1109,7 +1221,7 @@ function GalaxyScene({
         const degree = degreeOf(node.id, edges);
         const onPath = frameMode === "path" && (routeIds?.has(node.id) ?? false);
         const label = placedLabels.get(node.id);
-        const radius = nodeRadiusUser(node, fitScale, currentScale);
+        const radius = nodeRadiusUser(node, fitScale, currentScale, areaHubIds.has(node.id));
         const inCluster = clusterId !== null && (node.id === clusterId || node.hubs.includes(clusterId));
         const clusterDim = frameMode === "cluster" && !inCluster && !onPath;
         const pathDim = frameMode === "path" && routeOn && !onPath && !active;
@@ -1139,8 +1251,15 @@ function GalaxyScene({
             }}
           >
             <circle cx={point.x} cy={point.y} r={radius + 14} fill="transparent" />
-            <circle cx={point.x} cy={point.y} r={radius * 2.2} fill={color} opacity={0.18} />
-            <circle cx={point.x} cy={point.y} r={radius} fill={color} />
+            <circle cx={point.x} cy={point.y} r={radius * 2.2} fill={color} opacity={0.16} />
+            <circle
+              className="graph-node-core"
+              cx={point.x}
+              cy={point.y}
+              r={radius}
+              fill={color}
+              style={{ animationDelay: `${(node.title.length % 8) * 0.35}s` }}
+            />
             {active || onPath ? (
               <circle
                 cx={point.x}

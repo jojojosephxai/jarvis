@@ -150,7 +150,7 @@ describe("graph labels", () => {
     );
   });
 
-  it("shows an ordinary title at rest and hides the far side unless showAll", () => {
+  it("keeps hub labels on and shows note labels on hover, focus, or zoom", () => {
     const placed = pickLabels([
       { id: "far", x: 0, y: 0, w: 20, h: 12, depth: 0.1, priority: 10, protected: false },
     ]);
@@ -165,12 +165,12 @@ describe("graph labels", () => {
       match: false,
       depth: 0.7,
     };
-    assert.equal(labelEligible(quiet, 1, false), true);
+    assert.equal(labelEligible(quiet, 1, false), false);
     assert.equal(labelEligible(quiet, 1.4, false), true);
-    assert.equal(labelEligible({ ...quiet, depth: 0.1 }, 1, false), false);
+    assert.equal(labelEligible({ ...quiet, depth: 0.1 }, 1.4, false), false);
     assert.equal(labelEligible({ ...quiet, depth: 0.1 }, 1, true), true);
-    assert.equal(labelEligible({ ...quiet, hub: true, depth: 0.1 }, 1, false), false);
-    assert.equal(labelEligible({ ...quiet, hub: true, depth: 0.8 }, 1, false), true);
+    assert.equal(labelEligible({ ...quiet, hover: true, depth: 0.1 }, 1, false), true);
+    assert.equal(labelEligible({ ...quiet, hub: true, depth: 0.1 }, 1, false), true);
     assert.equal(labelEligible({ ...quiet, ssot: true, depth: 0.8 }, 1, false), true);
   });
 
