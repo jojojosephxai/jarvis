@@ -56,19 +56,21 @@ export function ForceScene({
     onSelect,
     onClear,
   });
-  stateRef.current = {
-    nodes,
-    edges,
-    points,
-    visibleIds,
-    selectedId,
-    clusterId,
-    route,
-    showLabels,
-    showEdges,
-    onSelect,
-    onClear,
-  };
+  useEffect(() => {
+    stateRef.current = {
+      nodes,
+      edges,
+      points,
+      visibleIds,
+      selectedId,
+      clusterId,
+      route,
+      showLabels,
+      showEdges,
+      onSelect,
+      onClear,
+    };
+  });
 
   const apiRef = useRef<{ fit: () => void; zoom: (kind: ZoomKind) => void; rebuild: () => void } | null>(null);
   const stopRef = useRef<(() => void) | null>(null);
@@ -171,7 +173,7 @@ export function ForceScene({
           if (mesh.geometry && mesh.geometry !== sphere) mesh.geometry.dispose();
           const material = mesh.material;
           if (Array.isArray(material)) material.forEach((item) => item.dispose());
-          else if (material && material !== sharedLine) material.dispose();
+          else if (material && material !== sharedLine && material !== hotLine) material.dispose();
         });
         group = null;
         meshes.length = 0;
@@ -180,7 +182,55 @@ export function ForceScene({
       const sharedLine = new THREE.LineBasicMaterial({ color: LINK, transparent: true, opacity: 0.12 });
       const hotLine = new THREE.LineBasicMaterial({ color: LINK, transparent: true, opacity: 0.92 });
 
+      let labelStamp = "";
+      let generation = 0;
+
+      const paintLabelsIfNeeded = () => {
+        const current = stateRef.current;
+        const stamp = [
+          generation,
+          yaw.toFixed(2),
+          pitch.toFixed(2),
+          dist.toFixed(0),
+          target.x.toFixed(0),
+          target.y.toFixed(0),
+          hoverId,
+          current.selectedId ?? "",
+          current.clusterId ?? "",
+          current.showLabels ? "1" : "0",
+          (current.route ?? []).join(","),
+        ].join("|");
+        if (stamp === labelStamp) return;
+        labelStamp = stamp;
+        paintLabels();
+      };
+
+      const draw = (now: number) => {
+        if (!reduced) {
+          const t = now / 1000;
+          for (const entry of meshes) {
+            const material = entry.mesh.material as THREE_NS.MeshBasicMaterial;
+            material.opacity = entry.base * (0.9 + Math.sin(t * 1.3 + entry.seed) * 0.08);
+          }
+        }
+        placeCamera();
+        renderer.render(scene, camera);
+        paintLabelsIfNeeded();
+      };
+
+      const tick = (now: number) => {
+        if (dead) return;
+        frame = requestAnimationFrame(tick);
+        draw(now);
+      };
+
+      const requestDraw = () => {
+        if (reduced) draw(performance.now());
+      };
+
       const rebuild = () => {
+        generation += 1;
+        labelStamp = "";
         disposeGroup();
         const current = stateRef.current;
         const pointOf = new Map(current.points.map((point) => [point.id, point]));
@@ -409,21 +459,6 @@ export function ForceScene({
         }
       };
 
-      const tick = (now: number) => {
-        if (dead) return;
-        frame = requestAnimationFrame(tick);
-        if (!reduced) {
-          const t = now / 1000;
-          for (const entry of meshes) {
-            const material = entry.mesh.material as THREE_NS.MeshBasicMaterial;
-            material.opacity = entry.base * (0.9 + Math.sin(t * 1.3 + entry.seed) * 0.08);
-          }
-        }
-        placeCamera();
-        renderer.render(scene, camera);
-        paintLabels();
-      };
-
       const hit = (event: PointerEvent) => {
         const rect = renderer.domElement.getBoundingClientRect();
         pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
@@ -437,13 +472,25 @@ export function ForceScene({
       const onDown = (event: PointerEvent) => {
         drag = { x: event.clientX, y: event.clientY, button: event.button, shift: event.shiftKey };
         moved = false;
+        window.addEventListener("pointermove", onDrag);
+        window.addEventListener("pointerup", onUp);
       };
-      const onMove = (event: PointerEvent) => {
-        if (!drag) {
-          hoverId = hit(event);
-          host.style.cursor = hoverId ? "pointer" : "grab";
-          return;
-        }
+      const onHover = (event: PointerEvent) => {
+        if (drag) return;
+        const next = hit(event);
+        if (next === hoverId) return;
+        hoverId = next;
+        host.style.cursor = hoverId ? "pointer" : "grab";
+        requestDraw();
+      };
+      const onLeave = () => {
+        if (drag || !hoverId) return;
+        hoverId = "";
+        host.style.cursor = "grab";
+        requestDraw();
+      };
+      const onDrag = (event: PointerEvent) => {
+        if (!drag) return;
         const dx = event.clientX - drag.x;
         const dy = event.clientY - drag.y;
         if (Math.hypot(dx, dy) > 3) moved = true;
@@ -457,8 +504,11 @@ export function ForceScene({
         }
         drag.x = event.clientX;
         drag.y = event.clientY;
+        requestDraw();
       };
       const onUp = (event: PointerEvent) => {
+        window.removeEventListener("pointermove", onDrag);
+        window.removeEventListener("pointerup", onUp);
         if (!drag) return;
         const shift = drag.shift || event.shiftKey;
         drag = null;
@@ -473,29 +523,49 @@ export function ForceScene({
       const onWheel = (event: WheelEvent) => {
         event.preventDefault();
         dist = Math.max(80, Math.min(4000, dist * (event.deltaY > 0 ? 1.08 : 0.92)));
+        requestDraw();
+      };
+      const onKey = (event: KeyboardEvent) => {
+        if (event.key === "ArrowLeft") yaw -= 0.08;
+        else if (event.key === "ArrowRight") yaw += 0.08;
+        else if (event.key === "ArrowUp") pitch = Math.max(-1.1, pitch - 0.06);
+        else if (event.key === "ArrowDown") pitch = Math.min(1.1, pitch + 0.06);
+        else if (event.key === "+" || event.key === "=") dist = Math.max(80, dist * 0.9);
+        else if (event.key === "-" || event.key === "_") dist = Math.min(4000, dist * 1.1);
+        else return;
+        event.preventDefault();
+        requestDraw();
       };
 
       const onMenu = (event: Event) => event.preventDefault();
       renderer.domElement.addEventListener("pointerdown", onDown);
-      window.addEventListener("pointermove", onMove);
-      window.addEventListener("pointerup", onUp);
+      renderer.domElement.addEventListener("pointermove", onHover);
+      renderer.domElement.addEventListener("pointerleave", onLeave);
       renderer.domElement.addEventListener("wheel", onWheel, { passive: false });
       renderer.domElement.addEventListener("contextmenu", onMenu);
-      const observer = new ResizeObserver(() => size());
+      host.addEventListener("keydown", onKey);
+      const observer = new ResizeObserver(() => {
+        size();
+        requestDraw();
+      });
       observer.observe(host);
       const stop = () => {
         cancelAnimationFrame(frame);
         observer.disconnect();
         renderer.domElement.removeEventListener("pointerdown", onDown);
-        window.removeEventListener("pointermove", onMove);
+        renderer.domElement.removeEventListener("pointermove", onHover);
+        renderer.domElement.removeEventListener("pointerleave", onLeave);
+        window.removeEventListener("pointermove", onDrag);
         window.removeEventListener("pointerup", onUp);
         renderer.domElement.removeEventListener("wheel", onWheel);
         renderer.domElement.removeEventListener("contextmenu", onMenu);
+        host.removeEventListener("keydown", onKey);
         disposeGroup();
         sphere.dispose();
         sharedLine.dispose();
         hotLine.dispose();
         renderer.dispose();
+        renderer.forceContextLoss();
         renderer.domElement.remove();
       };
       stopRef.current = stop;
@@ -528,7 +598,8 @@ export function ForceScene({
           if (kind === "out") dist = Math.min(4000, dist * 1.22);
         },
       };
-      frame = requestAnimationFrame(tick);
+      if (reduced) draw(performance.now());
+      else frame = requestAnimationFrame(tick);
 
       host.dataset.scene = "ready";
     });
@@ -553,7 +624,14 @@ export function ForceScene({
   }, [zoomToken, zoomKind]);
 
   return (
-    <div ref={hostRef} className="force-scene" data-ready="false">
+    <div
+      ref={hostRef}
+      className="force-scene"
+      data-ready="false"
+      tabIndex={0}
+      role="application"
+      aria-label="Note graph. Arrow keys turn the view. Plus and minus zoom."
+    >
       <div ref={labelRef} className="force-labels" />
     </div>
   );

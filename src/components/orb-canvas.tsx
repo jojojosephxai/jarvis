@@ -117,8 +117,10 @@ export function OrbCanvas({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const modeRef = useRef(mode);
   const failRef = useRef(onFail);
-  modeRef.current = mode;
-  failRef.current = onFail;
+  useEffect(() => {
+    modeRef.current = mode;
+    failRef.current = onFail;
+  });
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -133,11 +135,32 @@ export function OrbCanvas({
     let frame = 0;
     let dead = false;
     let renderer: Renderer | null = null;
+    let observer: ResizeObserver | null = null;
+    let onLost: ((event: Event) => void) | null = null;
+    let schedule: ((now: number) => void) | null = null;
+    const onReduce = () => {
+      if (dead || reducedQuery.matches || frame !== 0 || !schedule) return;
+      frame = requestAnimationFrame(schedule);
+    };
+
+    const release = () => {
+      dead = true;
+      cancelAnimationFrame(frame);
+      frame = 0;
+      observer?.disconnect();
+      observer = null;
+      if (onLost) canvas.removeEventListener("webglcontextlost", onLost);
+      reducedQuery.removeEventListener("change", onReduce);
+      const gl = renderer?.gl;
+      if (gl && !gl.isContextLost()) gl.getExtension("WEBGL_lose_context")?.loseContext();
+      renderer = null;
+    };
 
     const fail = (reason: string) => {
       if (dead) return;
       dead = true;
       cancelAnimationFrame(frame);
+      frame = 0;
       console.error(reason);
       failRef.current(reason);
     };
@@ -159,7 +182,7 @@ export function OrbCanvas({
       const gl = renderer.gl;
       if (!gl || gl.isContextLost()) {
         fail("WebGL context was missing or already lost after Renderer setup.");
-        return;
+        return release;
       }
       gl.clearColor(0, 0, 0, 0);
       const program = new Program(gl, {
@@ -187,7 +210,7 @@ export function OrbCanvas({
         const frag = program.fragmentShader ? shaderLog(gl, program.fragmentShader, "fragment") : "";
         const link = (gl.getProgramInfoLog(program.program) ?? "").trim();
         fail(["Particle program did not link.", vert, frag, link].filter(Boolean).join(" "));
-        return;
+        return release;
       }
       const mesh = new Mesh(gl, { geometry: particleGeometry(gl, particleBudget()), program, mode: gl.POINTS });
 
@@ -204,7 +227,7 @@ export function OrbCanvas({
         program.uniforms.uPoint.value = Math.max(1.05, minSide / 150);
       };
       resize();
-      const observer = new ResizeObserver(resize);
+      observer = new ResizeObserver(resize);
       if (canvas.parentElement) observer.observe(canvas.parentElement);
 
       let ackStart = 0;
@@ -218,7 +241,9 @@ export function OrbCanvas({
       const started = performance.now();
       const tick = (now: number) => {
         if (dead || !renderer) return;
-        frame = requestAnimationFrame(tick);
+        const reduced = reducedQuery.matches;
+        if (reduced) frame = 0;
+        else frame = requestAnimationFrame(tick);
         if (gl.isContextLost()) {
           fail("WebGL context lost.");
           return;
@@ -235,7 +260,6 @@ export function OrbCanvas({
           }
           lastMode = modeId;
         }
-        const reduced = reducedQuery.matches;
         const span = reduced ? 1 : Math.min(1, (now - morphStart) / 600);
         morph = morphFrom + (morphTo - morphFrom) * easeFrame(span);
         const target = levelRef.current ?? 0;
@@ -251,23 +275,21 @@ export function OrbCanvas({
         program.uniforms.uMorph.value = morph;
         renderer.render({ scene: mesh });
       };
+      schedule = tick;
       frame = requestAnimationFrame(tick);
 
-      const onLost = () => {
+      onLost = (event: Event) => {
+        event.preventDefault();
         fail("WebGL context lost.");
       };
       canvas.addEventListener("webglcontextlost", onLost);
-
-      return () => {
-        dead = true;
-        cancelAnimationFrame(frame);
-        observer.disconnect();
-        canvas.removeEventListener("webglcontextlost", onLost);
-      };
+      reducedQuery.addEventListener("change", onReduce);
+      return release;
     } catch (error) {
       const reason = error instanceof Error ? error.stack ?? error.message : String(error);
       fail(`Orb renderer threw. ${reason}`);
     }
+    return release;
   }, [levelRef]);
 
   return <canvas ref={canvasRef} className="orb-canvas" aria-hidden="true" />;

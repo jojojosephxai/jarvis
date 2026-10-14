@@ -24,7 +24,9 @@ const POINTS = Array.from({ length: COUNT }, (_, index) => {
 export function OrbFallback({ mode, levelRef }: { mode: OrbMode; levelRef: RefObject<number> }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const modeRef = useRef(mode);
-  modeRef.current = mode;
+  useEffect(() => {
+    modeRef.current = mode;
+  });
 
   useEffect(() => {
     const canvas = canvasRef.current;

@@ -152,6 +152,7 @@ export function Face() {
   const chatRef = useRef<HTMLDivElement>(null);
   const bootTimer = useRef<number | null>(null);
   const ackTimer = useRef<number | null>(null);
+  const fadeTimer = useRef<number | null>(null);
   const pendingRef = useRef(false);
   const jobGen = useRef(0);
   const userSpoke = useRef(false);
@@ -194,14 +195,17 @@ export function Face() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const face = params.get("face");
-    if (face === "listening" || face === "speaking" || face === "working") {
-      if (face === "working") previewStarted.current = performance.now();
-      setPreview(face);
-    }
     const hub = params.get("hub");
-    if (!hub) return;
-    cueToken.current += 1;
-    setCue({ token: cueToken.current, focusHub: hub });
+    const timer = window.setTimeout(() => {
+      if (face === "listening" || face === "speaking" || face === "working") {
+        if (face === "working") previewStarted.current = performance.now();
+        setPreview(face);
+      }
+      if (!hub) return;
+      cueToken.current += 1;
+      setCue({ token: cueToken.current, focusHub: hub });
+    }, 0);
+    return () => window.clearTimeout(timer);
   }, []);
 
   useEffect(() => {
@@ -215,6 +219,7 @@ export function Face() {
       window.cancelAnimationFrame(frame);
       if (bootTimer.current !== null) window.clearTimeout(bootTimer.current);
       if (ackTimer.current !== null) window.clearTimeout(ackTimer.current);
+      if (fadeTimer.current !== null) window.clearTimeout(fadeTimer.current);
     };
   }, []);
 
@@ -318,7 +323,9 @@ export function Face() {
     const ending = jobRef.current;
     if (ending) {
       setTaskFade(ending);
-      window.setTimeout(() => {
+      if (fadeTimer.current !== null) window.clearTimeout(fadeTimer.current);
+      fadeTimer.current = window.setTimeout(() => {
+        fadeTimer.current = null;
         setTaskFade((shown) => (shown && shown.id === ending.id ? null : shown));
       }, 280);
     }

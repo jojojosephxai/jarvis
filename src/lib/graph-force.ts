@@ -179,7 +179,7 @@ export function layoutForce(nodes: LayoutNode[], edges: LayoutEdge[], options: G
         if (!b) continue;
         let dx = a.x - b.x;
         let dy = a.y - b.y;
-        let dz = a.z - b.z;
+        const dz = a.z - b.z;
         let dist = Math.hypot(dx, dy, dz);
         if (dist < 12) {
           dist = 12;

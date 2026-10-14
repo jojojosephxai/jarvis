@@ -148,9 +148,18 @@
   outline: none;
 }
 
-.face-search input {
-  height: 28px;
-  border-bottom: 1px solid rgba(73, 212, 255, 0.35);
+.face-search input:focus-visible,
+.face-ask input:focus-visible,
+.hub-list button:focus-visible,
+.filter-list button:focus-visible,
+.chat-tabs button:focus-visible,
+.ask-go:focus-visible,
+.work-stop:focus-visible,
+.inspector-back:focus-visible,
+.graph-tools button:focus-visible,
+.force-scene:focus-visible {
+  outline: 1px solid #49d4ff;
+  outline-offset: 2px;
 }
 
 .face-hint,
