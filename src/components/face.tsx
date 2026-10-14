@@ -92,8 +92,7 @@ function voiceName(mouth: MouthKind | "unknown"): string {
   }
 }
 
-function orbPlace(working: boolean, mode: OrbMode): OrbPlace {
-  if (working) return "corner";
+function orbPlace(mode: OrbMode): OrbPlace {
   if (mode === "listening" || mode === "speaking") return "center";
   return "dock";
 }
@@ -107,6 +106,7 @@ export function Face() {
   const [skill, setSkill] = useState<string | null>(null);
   const [cue, setCue] = useState<GraphCue | null>(null);
   const [job, setJob] = useState<Job | null>(null);
+  const [taskFade, setTaskFade] = useState<Job | null>(null);
   const [tab, setTab] = useState<LogTab>("chat");
   const [intro, setIntro] = useState<"in" | "out">("in");
   const [wake, setWake] = useState(false);
@@ -135,7 +135,10 @@ export function Face() {
     thinking: pending && !speaking,
     ack: ackOn,
   });
-  const place = orbPlace(working, orb);
+  const place = orbPlace(orb);
+  const jobRef = useRef<Job | null>(null);
+  jobRef.current = job;
+  const shownTask = job ?? taskFade;
 
   useEffect(() => {
     const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -248,6 +251,13 @@ export function Face() {
 
   function finishJob(id?: number) {
     if (id !== undefined && id !== jobGen.current) return;
+    const ending = jobRef.current;
+    if (ending) {
+      setTaskFade(ending);
+      window.setTimeout(() => {
+        setTaskFade((shown) => (shown && shown.id === ending.id ? null : shown));
+      }, 280);
+    }
     pendingRef.current = false;
     setPending(false);
     setWorking(false);
@@ -312,7 +322,7 @@ export function Face() {
     setItems((current) => [...current, { kind: "you" as const, id: makeId("you"), text: trimmed, at }].slice(-40));
     setDraft("");
     setTab("chat");
-    const { abort, id } = beginWork(trimmed, "Asking Brain");
+    const { abort, id } = beginWork(trimmed, "Thinking");
     let spoken = "";
     try {
       const response = await fetch("/api/chat", {
@@ -495,11 +505,8 @@ export function Face() {
           Online
         </p>
       </header>
-      {working && job ? (
-        <WorkingPanel job={job} onStop={stopWork} />
-      ) : (
-        <>
-          <div className="face-dock face-chrome">
+      {shownTask ? <WorkingPanel job={shownTask} leaving={job === null} onStop={stopWork} /> : null}
+      <div className="face-dock face-chrome">
           <div className="face-bottom">
             {wake ? <p className="wake-hint">click to wake Jarvis</p> : null}
             {caption ? <p className="face-caption">{caption}</p> : null}
@@ -586,45 +593,27 @@ export function Face() {
               <p>{voiceName(voice.mouth)}</p>
             </aside>
           ) : null}
-        </>
-      )}
     </div>
   );
 }
 
-function WorkingPanel({ job, onStop }: { job: Job; onStop: () => void }) {
+function WorkingPanel({ job, leaving, onStop }: { job: Job; leaving: boolean; onStop: () => void }) {
   const [now, setNow] = useState(() => performance.now());
-  const running = job.steps.some((step) => step.state === "running");
+  const running = !leaving && job.steps.some((step) => step.state === "running");
   useEffect(() => {
     if (!running) return;
-    const timer = window.setInterval(() => setNow(performance.now()), 100);
+    const timer = window.setInterval(() => setNow(performance.now()), 200);
     return () => window.clearInterval(timer);
   }, [running]);
-  const percent =
-    job.progress !== null && job.progress >= 0 && job.progress <= 1 ? `${Math.round(job.progress * 100)}%` : null;
+  const started = job.steps[0]?.startedAt ?? now;
+  const ended = running ? now : job.steps.reduce((latest, step) => Math.max(latest, step.endedAt ?? started), started);
+  const seconds = Math.max(0, (ended - started) / 1000);
 
   return (
-    <section className="face-work glass" aria-label="Task">
-      <p className="work-kicker">Task</p>
-      <h2 className="work-title">{job.objective}</h2>
-      <ul className="work-steps">
-        {job.steps.map((step) => {
-          const end = step.endedAt ?? now;
-          const seconds = Math.max(0, (end - step.startedAt) / 1000);
-          return (
-            <li key={step.id}>
-              <span>{step.label}</span>
-              <span>
-                {step.state === "running" ? "running" : "done"} {seconds.toFixed(1)}s
-              </span>
-            </li>
-          );
-        })}
-      </ul>
-      {job.context.length > 0 ? <p className="work-context">Context {job.context.join(", ")}</p> : null}
-      {job.model ? <p className="work-context">Model {job.model}</p> : null}
-      <div className="work-foot">
-        <p className="work-kicker">{percent ?? "Working"}</p>
+    <section className={leaving ? "face-task glass is-leaving" : "face-task glass"} aria-label="Task">
+      <p className="face-task-title">{job.objective}</p>
+      <div className="face-task-row">
+        <p>{seconds.toFixed(1)}s</p>
         <button type="button" className="work-stop" onClick={onStop}>
           Stop
         </button>
@@ -924,6 +913,6 @@ function handStepLabel(plan: HandPlan): string {
     case "notes.recall":
       return "Searching notes";
     default:
-      return "Asking Brain";
+      return "Working";
   }
 }

@@ -589,15 +589,60 @@
   text-transform: uppercase;
 }
 
-.face-work {
-  top: 50%;
-  left: 50%;
-  width: min(920px, calc(100% - 560px));
-  max-height: min(640px, calc(100% - 160px));
-  overflow: auto;
-  padding: 16px 18px 14px;
-  transform: translate(-50%, -42%);
-  animation: work-up 700ms cubic-bezier(0.22, 1, 0.36, 1) 150ms both;
+.face-task {
+  position: absolute;
+  z-index: 7;
+  top: calc(46% + 112px);
+  right: 16px;
+  width: 200px;
+  padding: 10px 12px 8px;
+  animation: task-in 300ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.face-task.is-leaving {
+  animation: task-out 280ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+  pointer-events: none;
+}
+
+@keyframes task-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes task-out {
+  to {
+    opacity: 0;
+  }
+}
+
+.face-task-title {
+  display: -webkit-box;
+  margin: 0;
+  overflow: hidden;
+  color: #cfefff;
+  font-size: 13px;
+  letter-spacing: 0.04em;
+  line-height: 1.35;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.face-task-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 8px;
+  color: #6fa9bf;
+  font-size: 12px;
+  letter-spacing: 0.04em;
+}
+
+.face-task-row p {
+  margin: 0;
 }
 
 @keyframes work-up {

@@ -379,12 +379,12 @@ html[data-boot="done"] .boot-screen {
 }
 
 .orb-ticks-fine line {
-  stroke: rgba(73, 212, 255, 0.62);
-  stroke-width: 1px;
+  stroke: rgba(73, 212, 255, 0.84);
+  stroke-width: 1.15px;
 }
 
 .orb-ticks-fine line[data-long="true"] {
-  stroke: rgba(73, 212, 255, 0.9);
+  stroke: rgba(73, 212, 255, 0.95);
 }
 
 .orb-dial[data-mode="listening"] .orb-mark path,
