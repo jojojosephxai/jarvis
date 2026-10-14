@@ -4,9 +4,8 @@ import { useEffect, useRef, useState, type RefObject } from "react";
 
 import { OrbCanvas } from "@/components/orb-canvas";
 import { OrbFallback } from "@/components/orb-fallback";
+import { OrbMark } from "@/components/orb-mark";
 import { orbStatusWord, type OrbMode } from "@/lib/orb-mode";
-
-const TICKS = 72;
 
 export type OrbPlace = "center" | "dock" | "corner";
 
@@ -77,7 +76,6 @@ export function OrbStage({
       >
         <div className="orb-dial-ring">
           <div ref={glowRef} className="orb-glow" />
-          <OrbTicks listening={mode === "listening"} speaking={mode === "speaking"} />
           {glError ? (
             <OrbFallback mode={mode} levelRef={levelRef} />
           ) : (
@@ -91,6 +89,7 @@ export function OrbStage({
               }}
             />
           )}
+          <OrbMark mode={mode} />
         </div>
         {word ? (
           <p className="orb-status">
@@ -100,36 +99,5 @@ export function OrbStage({
         ) : null}
       </div>
     </div>
-  );
-}
-
-function OrbTicks({ listening, speaking }: { listening: boolean; speaking: boolean }) {
-  const ticks = [];
-  for (let index = 0; index < TICKS; index += 1) {
-    const angle = (index / TICKS) * Math.PI * 2 - Math.PI / 2;
-    const long = index % 6 === 0;
-    const inner = long ? 45.4 : 46.5;
-    const outer = 47.3;
-    const round = (value: number) => Math.round(value * 1000) / 1000;
-    ticks.push(
-      <line
-        key={index}
-        x1={round(50 + Math.cos(angle) * inner)}
-        y1={round(50 + Math.sin(angle) * inner)}
-        x2={round(50 + Math.cos(angle) * outer)}
-        y2={round(50 + Math.sin(angle) * outer)}
-      />,
-    );
-  }
-  return (
-    <svg
-      className="orb-ticks"
-      viewBox="0 0 100 100"
-      data-listening={listening ? "true" : "false"}
-      data-speaking={speaking ? "true" : "false"}
-      aria-hidden="true"
-    >
-      {ticks}
-    </svg>
   );
 }

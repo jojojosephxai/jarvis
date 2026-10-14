@@ -4,34 +4,23 @@ import { useEffect, useRef, type RefObject } from "react";
 
 import { easeFrame } from "@/lib/graph-layout";
 import type { OrbMode } from "@/lib/orb-mode";
+import { hash01, ORB_PARTICLE_KEEP, shellPoint, shellRadius } from "@/lib/orb-shell";
 
-const COUNT = 8000;
-
-function shell(index: number, count: number): [number, number, number] {
-  const y = 1 - (index / Math.max(count - 1, 1)) * 2;
-  const ring = Math.sqrt(Math.max(0, 1 - y * y));
-  const theta = Math.PI * (1 + Math.sqrt(5)) * index;
-  return [Math.cos(theta) * ring, y, Math.sin(theta) * ring];
-}
-
-function hash01(index: number): number {
-  const value = Math.sin(index * 127.1 + 311.7) * 43758.5453;
-  return value - Math.floor(value);
-}
+const COUNT = Math.round(8000 * ORB_PARTICLE_KEEP);
 
 const POINTS = Array.from({ length: COUNT }, (_, index) => {
-  const point = shell(index, COUNT);
+  const point = shellPoint(index, COUNT);
   const seed = hash01(index);
   return {
     x: point[0],
     y: point[1],
     z: point[2],
     seed,
-    radial: Math.pow(0.015 + seed * 0.985, 0.34),
+    radial: shellRadius(seed),
   };
 });
 
-/** Dense particle sphere used only when WebGL cannot start. */
+/** Same thin shell as the WebGL orb, used only when WebGL cannot start. */
 export function OrbFallback({ mode, levelRef }: { mode: OrbMode; levelRef: RefObject<number> }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const modeRef = useRef(mode);
@@ -90,40 +79,35 @@ export function OrbFallback({ mode, levelRef }: { mode: OrbMode; levelRef: RefOb
       const listening = modeNow === "listening";
       const speaking = modeNow === "speaking";
       const breath = !reduced ? Math.sin(time * 1.04719755) * 0.01 * (1 - morph) : 0;
-      const bright = !reduced ? 1 + Math.sin(time * 1.04719755) * 0.06 : 1;
       const voice = speaking ? smoothLevel : 0;
       const listen = listening ? smoothLevel : 0;
-      const yaw = time * 0.16 * (reduced ? 0 : 1);
+      const yaw = time * 0.045 * (reduced ? 0 : 1) * (1 - morph);
       const cy = Math.cos(yaw);
       const sy = Math.sin(yaw);
-      const spin = time * 0.1 * (reduced ? 0 : 1);
-      const scale = Math.min(width, height) * 0.4 * (1 + breath + voice * 0.05 + listen * 0.03);
+      const scale = Math.min(width, height) * 0.36 * (1 + breath + voice * 0.035 + listen * 0.02);
       context.clearRect(0, 0, width, height);
       context.globalCompositeOperation = "lighter";
       for (const point of POINTS) {
-        const theta = Math.atan2(point.y, point.x) + spin;
-        const tube = (point.seed - 0.5) * 0.22;
+        const theta = Math.atan2(point.y, point.x) + point.seed * 0.15;
+        const tube = (point.seed - 0.5) * 0.03;
         const sphereX = point.x * point.radial;
         const sphereY = point.y * point.radial;
         const sphereZ = point.z * point.radial;
         const spunX = sphereX * cy + sphereZ * sy;
         const spunZ = -sphereX * sy + sphereZ * cy;
-        const donutX = Math.cos(theta) * (0.62 + tube);
-        const donutY = Math.sin(theta) * (0.62 + tube);
-        const donutZ = (point.radial - 0.5) * 0.18;
-        const x1 = spunX + (donutX - spunX) * morph;
-        const y0 = sphereY + (donutY - sphereY) * morph;
-        const z1 = spunZ + (donutZ - spunZ) * morph;
-        const pulse = speaking || listening ? 0.35 + (Math.sin(time * 7.4 + point.seed * 6.2831853) * 0.5 + 0.5) * 0.65 : 0;
-        const core = Math.pow(1 - point.radial, 0.5);
-        const facing = 0.5 + Math.max(0, z1) * 0.65;
+        const ringX = Math.cos(theta) * (0.76 + tube);
+        const ringY = Math.sin(theta) * (0.76 + tube);
+        const ringZ = (point.seed - 0.5) * 0.018;
+        const x1 = spunX + (ringX - spunX) * morph;
+        const y0 = sphereY + (ringY - sphereY) * morph;
+        const z1 = spunZ + (ringZ - spunZ) * morph;
+        const shell = point.radial > 0.9 ? 1 : 0.45;
+        const facing = 0.55 + Math.max(0, z1) * 0.45;
         const x = width / 2 + x1 * scale;
         const y = height / 2 - y0 * scale;
-        const radius = Math.max(0.7, (width / 240) * (0.65 + point.seed * 0.7) * (0.8 + facing) * (1 + core * 0.25) * (1 + voice * 0.4));
-        const energy = bright * (0.42 + core * 0.9) * (0.55 + facing) * (1 + voice * 0.65 + listen * 0.4 + pulse * (voice + listen) * 0.3) * (1 - morph * 0.42);
-        const alpha = Math.max(0.04, Math.min(0.42, 0.1 * energy));
-        const hot = Math.round(40 + core * 160);
-        context.fillStyle = `rgba(${hot}, ${Math.round(184 + core * 55)}, 255, ${alpha})`;
+        const radius = Math.max(0.4, (width / 420) * (0.55 + point.seed * 0.4) * facing);
+        const alpha = Math.max(0.02, Math.min(0.16, 0.045 * shell * facing * (1 + voice * 0.4 + listen * 0.25)));
+        context.fillStyle = `rgba(73, 212, 255, ${alpha.toFixed(3)})`;
         context.beginPath();
         context.arc(x, y, radius, 0, Math.PI * 2);
         context.fill();

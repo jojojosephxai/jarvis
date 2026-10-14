@@ -345,30 +345,131 @@ html[data-boot="done"] .boot-screen {
 
 .orb-glow {
   position: absolute;
-  inset: 18%;
+  inset: 10%;
   z-index: 0;
   border-radius: 50%;
   background: radial-gradient(
     circle,
-    rgba(210, 248, 255, 0.55) 0%,
-    rgba(73, 212, 255, 0.28) 34%,
-    rgba(73, 212, 255, 0.08) 60%,
-    transparent 78%
+    transparent 0 46%,
+    rgba(73, 212, 255, 0.16) 62%,
+    transparent 76%
   );
-  filter: blur(16px);
+  filter: blur(10px);
   pointer-events: none;
 }
 
-.orb-dial[data-mode="working"] .orb-glow {
-  inset: 8%;
-  background: radial-gradient(
-    circle,
-    transparent 36%,
-    rgba(73, 212, 255, 0.16) 48%,
-    rgba(198, 244, 255, 0.48) 57%,
-    rgba(73, 212, 255, 0.12) 66%,
-    transparent 78%
-  );
+.orb-mark {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+  transform-origin: 50% 50%;
+}
+
+.orb-mark path,
+.orb-mark line {
+  fill: none;
+  stroke: rgba(73, 212, 255, 0.78);
+  stroke-width: 1.25px;
+  stroke-linecap: butt;
+  vector-effect: non-scaling-stroke;
+}
+
+.orb-ticks-fine line {
+  stroke: rgba(73, 212, 255, 0.62);
+  stroke-width: 1px;
+}
+
+.orb-ticks-fine line[data-long="true"] {
+  stroke: rgba(73, 212, 255, 0.9);
+}
+
+.orb-dial[data-mode="listening"] .orb-mark path,
+.orb-dial[data-mode="listening"] .orb-mark line,
+.orb-dial[data-mode="speaking"] .orb-mark path,
+.orb-dial[data-mode="speaking"] .orb-mark line {
+  stroke: rgba(73, 212, 255, 0.95);
+}
+
+.orb-dial[data-mode="listening"] .orb-arc-a {
+  animation: orb-spin 26s linear infinite;
+}
+
+.orb-dial[data-mode="speaking"] .orb-arc-a {
+  animation: orb-spin 16s linear infinite;
+}
+
+.orb-dial[data-mode="speaking"] .orb-arc-b {
+  animation: orb-spin 11s linear infinite reverse;
+}
+
+.orb-dial[data-mode="speaking"] .orb-arc-c {
+  animation: orb-spin 19s linear infinite;
+}
+
+.orb-dial[data-mode="working"] .orb-arc-a {
+  animation: orb-spin 5s linear infinite;
+}
+
+.orb-dial[data-mode="working"] .orb-arc-b {
+  animation: orb-spin 7.5s linear infinite reverse;
+}
+
+.orb-dial[data-mode="working"] .orb-arc-c {
+  animation: orb-spin 4.2s linear infinite;
+}
+
+.orb-core {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  z-index: 3;
+  width: 8%;
+  height: 8%;
+  border-radius: 50%;
+  background: #d9f6ff;
+  box-shadow:
+    0 0 10px 4px rgba(73, 212, 255, 0.75),
+    0 0 22px 10px rgba(73, 212, 255, 0.35);
+  pointer-events: none;
+  transform: translate(-50%, -50%);
+  animation: orb-core-breath 6s ease-in-out infinite;
+}
+
+.orb-dial[data-mode="speaking"] .orb-core {
+  animation: none;
+  transform: translate(-50%, -50%) scale(calc(1 + var(--level, 0) * 0.45));
+  box-shadow:
+    0 0 12px 5px rgba(73, 212, 255, calc(0.55 + var(--level, 0) * 0.4)),
+    0 0 26px 12px rgba(73, 212, 255, calc(0.25 + var(--level, 0) * 0.35));
+}
+
+@keyframes orb-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes orb-core-breath {
+  0%,
+  100% {
+    opacity: 0.82;
+    transform: translate(-50%, -50%) scale(0.99);
+  }
+  50% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1.01);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .orb-arc,
+  .orb-core {
+    animation: none;
+  }
 }
 
 .orb-ticks {

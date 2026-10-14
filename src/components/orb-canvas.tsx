@@ -5,14 +5,15 @@ import { Geometry, Mesh, Program, Renderer, type OGLRenderingContext } from "ogl
 
 import { easeFrame } from "@/lib/graph-layout";
 import { orbModeIndex, type OrbMode } from "@/lib/orb-mode";
+import { hash01, ORB_PARTICLE_KEEP, shellPoint, shellRadius } from "@/lib/orb-shell";
 
-/** Filled sphere. Fewer points on high-DPI and small CPUs so the fill stays near 60fps. */
+/** About a fifth of the old filled sphere, so the shell can stay near 60fps. */
 function particleBudget(): number {
   const dpr = window.devicePixelRatio || 1;
   const cores = navigator.hardwareConcurrency || 8;
   let count = dpr >= 1.75 ? 32000 : dpr >= 1.25 ? 42000 : 56000;
   if (cores <= 4) count = Math.round(count * 0.65);
-  return count;
+  return Math.round(count * ORB_PARTICLE_KEEP);
 }
 
 const VERT = `
@@ -29,7 +30,6 @@ uniform float uReduced;
 uniform float uPoint;
 uniform float uMorph;
 varying float vBright;
-varying float vCore;
 void main() {
   float listening = step(0.5, uMode) * step(uMode, 1.5);
   float speaking = step(1.5, uMode) * step(uMode, 2.5);
@@ -39,69 +39,46 @@ void main() {
   float breath = sin(uTime * 1.04719755) * 0.01 * motion * (1.0 - morph);
   float voice = speaking * level;
   float listen = listening * level;
-  float pulse = sin(uTime * 7.4 + aSeed * 6.2831853) * 0.5 + 0.5;
-  float voicePulse = (voice + listen) * (0.35 + pulse * 0.65);
 
   vec3 sphere = position * aRadial;
-  float yaw = uTime * 0.16 * motion;
-  float cy = cos(yaw);
-  float sy = sin(yaw);
+  float drift = uTime * 0.045 * motion * (1.0 - morph);
+  float cy = cos(drift);
+  float sy = sin(drift);
   sphere = vec3(sphere.x * cy + sphere.z * sy, sphere.y, -sphere.x * sy + sphere.z * cy);
-  float theta = atan(position.y, position.x) + uTime * 0.1 * motion;
-  float tube = (aSeed - 0.5) * 0.22;
-  float major = 0.62;
-  vec3 donut = vec3(cos(theta) * (major + tube), sin(theta) * (major + tube), (aRadial - 0.5) * 0.18);
-  vec3 p = mix(sphere, donut, morph);
-  p *= 1.0 + breath + voice * 0.05 + listen * 0.03 + voicePulse * 0.025;
 
-  float fit = 0.84;
+  float theta = atan(position.y, position.x) + aSeed * 0.15;
+  float tube = (aSeed - 0.5) * 0.03;
+  float major = 0.76;
+  vec3 ring = vec3(cos(theta) * (major + tube), sin(theta) * (major + tube), (aSeed - 0.5) * 0.018);
+  vec3 p = mix(sphere, ring, morph);
+  p *= 1.0 + breath + voice * 0.035 + listen * 0.02;
+
+  float fit = 0.78;
   vec2 aspect = vec2(uResolution.y / max(uResolution.x, 1.0), 1.0);
   gl_Position = vec4(p.xy * fit * aspect, 0.0, 1.0);
 
-  float facing = 0.45 + clamp(p.z, 0.0, 1.0) * 0.7;
-  float core = pow(clamp(1.0 - aRadial, 0.0, 1.0), 0.72);
-  core = mix(core, 0.8, morph);
-  vCore = core;
-  gl_PointSize = max(
-    1.5,
-    uPoint * (0.62 + aSeed * 0.7) * (0.78 + facing) * (1.0 + core * 0.28) * (1.0 + voice * 0.45 + listen * 0.22)
-  );
-  float idleBright = 1.0 + sin(uTime * 1.04719755) * 0.06 * motion;
-  float loud = 1.0 + voice * 0.7 + listen * 0.42 + uFlash * 0.45 + voicePulse * 0.28;
-  vBright = loud * idleBright * (0.42 + core * 0.95) * (0.55 + facing) * mix(1.0, 0.58, morph);
+  float facing = 0.55 + clamp(p.z, 0.0, 1.0) * 0.45;
+  float shell = smoothstep(0.7, 0.96, aRadial);
+  gl_PointSize = max(1.0, uPoint * (0.45 + aSeed * 0.35) * (0.85 + facing * 0.25) * (1.0 + voice * 0.15));
+  float idleBright = 1.0 + sin(uTime * 1.04719755 + aSeed) * 0.06 * motion;
+  float loud = 1.0 + voice * 0.45 + listen * 0.28 + uFlash * 0.35;
+  vBright = loud * idleBright * (0.28 + shell * 0.72) * facing * mix(1.0, 0.85, morph);
 }
 `;
 
 const FRAG = `
 precision mediump float;
 varying float vBright;
-varying float vCore;
 void main() {
   vec2 uv = gl_PointCoord - vec2(0.5);
   float d = length(uv);
   if (d > 0.5) discard;
-  float glow = smoothstep(0.5, 0.0, d);
-  float hot = smoothstep(0.22, 0.0, d);
-  vec3 cyan = vec3(0.16, 0.72, 1.0);
-  vec3 white = vec3(0.78, 0.94, 1.0);
-  float energy = clamp(vBright, 0.0, 1.45);
-  vec3 color = mix(cyan, white, clamp(hot * 0.45 + vCore * 0.82, 0.0, 1.0));
-  float alpha = glow * (0.14 + hot * 0.2) * energy;
-  gl_FragColor = vec4(color * alpha, alpha);
+  float glow = smoothstep(0.5, 0.05, d);
+  vec3 cyan = vec3(0.286, 0.831, 1.0);
+  float alpha = glow * 0.055 * clamp(vBright, 0.0, 1.15);
+  gl_FragColor = vec4(cyan * alpha, alpha);
 }
 `;
-
-function shellPoint(index: number, count: number): [number, number, number] {
-  const y = 1 - (index / Math.max(count - 1, 1)) * 2;
-  const ring = Math.sqrt(Math.max(0, 1 - y * y));
-  const theta = Math.PI * (1 + Math.sqrt(5)) * index;
-  return [Math.cos(theta) * ring, y, Math.sin(theta) * ring];
-}
-
-function hash01(index: number): number {
-  const value = Math.sin(index * 127.1 + 311.7) * 43758.5453;
-  return value - Math.floor(value);
-}
 
 function particleGeometry(gl: OGLRenderingContext, count: number): Geometry {
   const position = new Float32Array(count * 3);
@@ -114,7 +91,7 @@ function particleGeometry(gl: OGLRenderingContext, count: number): Geometry {
     position[index * 3 + 2] = point[2];
     const unit = hash01(index);
     seed[index] = unit;
-    radial[index] = Math.pow(0.015 + unit * 0.985, 0.34);
+    radial[index] = shellRadius(unit);
   }
   return new Geometry(gl, {
     position: { size: 3, data: position },
@@ -199,7 +176,7 @@ export function OrbCanvas({
           uLevel: { value: 0 },
           uFlash: { value: 0 },
           uReduced: { value: 0 },
-          uPoint: { value: 3 },
+          uPoint: { value: 1.6 },
           uMorph: { value: 0 },
         },
       });
@@ -224,7 +201,7 @@ export function OrbCanvas({
         renderer.setSize(width, height);
         program.uniforms.uResolution.value = [gl.drawingBufferWidth, gl.drawingBufferHeight];
         const minSide = Math.min(gl.drawingBufferWidth, gl.drawingBufferHeight);
-        program.uniforms.uPoint.value = Math.max(1.8, minSide / 86);
+        program.uniforms.uPoint.value = Math.max(1.05, minSide / 150);
       };
       resize();
       const observer = new ResizeObserver(resize);
