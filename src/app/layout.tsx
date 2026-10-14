@@ -41,7 +41,7 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="en" className={`${geistSans.variable} ${jetbrains.variable} dark h-full antialiased`}>
+    <html lang="en" suppressHydrationWarning className={`${geistSans.variable} ${jetbrains.variable} dark h-full antialiased`}>
       <body className="min-h-full">
         <Script id="jarvis-boot" strategy="beforeInteractive">
           {`try{if(sessionStorage.getItem("jarvis-boot")==="1"){document.documentElement.dataset.boot="done"}}catch(e){}`}

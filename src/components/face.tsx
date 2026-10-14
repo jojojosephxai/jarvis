@@ -21,6 +21,40 @@ import { butlerSpeech } from "@/lib/voice/policy";
 
 const BOOT_KEY = "jarvis-boot";
 const EXAMPLES = ["remind me…", "good morning", "show swim times"] as const;
+const CALENDAR_NOTICE = "Calendar isn't connected yet";
+
+function calendarOnly(text: string): boolean {
+  const trimmed = text.trim().replace(/[.!]+$/g, "");
+  return /^calendar (isn'?t|is not|not) connected( yet)?$/i.test(trimmed);
+}
+
+function rememberLog(current: LogItem[], extra: LogItem[]): LogItem[] {
+  const merged = [...current];
+  for (const item of extra) {
+    if (item.kind === "jarvis" && calendarOnly(item.text)) {
+      if (merged.some((row) => row.kind === "jarvis" && calendarOnly(row.text))) continue;
+      merged.push({ ...item, text: CALENDAR_NOTICE });
+      continue;
+    }
+    merged.push(item);
+  }
+  return merged.slice(-40);
+}
+
+function collapseCalendar(items: LogItem[]): LogItem[] {
+  let seen = false;
+  const rows: LogItem[] = [];
+  for (const item of items) {
+    if (item.kind === "jarvis" && calendarOnly(item.text)) {
+      if (seen) continue;
+      seen = true;
+      rows.push({ ...item, text: CALENDAR_NOTICE });
+      continue;
+    }
+    rows.push(item);
+  }
+  return rows;
+}
 
 let greetedThisLoad = false;
 
@@ -111,7 +145,7 @@ export function Face() {
   const [intro, setIntro] = useState<"in" | "out">("in");
   const [wake, setWake] = useState(false);
   const [liveLine, setLiveLine] = useState("");
-  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [preview, setPreview] = useState<"" | "listening" | "speaking" | "working">("");
   const [pending, setPending] = useState(false);
   const cueToken = useRef(0);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -128,17 +162,47 @@ export function Face() {
   });
   const speakRef = useRef(voice.speak);
   speakRef.current = voice.speak;
-  const orb = resolveOrbMode({
+  const liveOrb = resolveOrbMode({
     speaking,
     working: working && Boolean(skill),
     listening: voice.listening,
     thinking: pending && !speaking,
     ack: ackOn,
   });
+  const orb: OrbMode =
+    preview === "listening" ? "listening" : preview === "speaking" ? "speaking" : preview === "working" ? "working" : liveOrb;
+  const shownSkill = preview === "working" ? skill ?? "calendar" : skill;
   const place = orbPlace(orb);
   const jobRef = useRef<Job | null>(null);
   jobRef.current = job;
-  const shownTask = job ?? taskFade;
+  const previewAbort = useRef(new AbortController());
+  const previewStarted = useRef(0);
+  const previewJob: Job | null =
+    preview === "working"
+      ? {
+          id: -1,
+          objective: "Check the calendar",
+          steps: [{ id: "preview", label: "Working", state: "running", startedAt: previewStarted.current || performance.now(), endedAt: null }],
+          context: [],
+          model: null,
+          progress: null,
+          abort: previewAbort.current,
+        }
+      : null;
+  const shownTask = job ?? taskFade ?? previewJob;
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const face = params.get("face");
+    if (face === "listening" || face === "speaking" || face === "working") {
+      if (face === "working") previewStarted.current = performance.now();
+      setPreview(face);
+    }
+    const hub = params.get("hub");
+    if (!hub) return;
+    cueToken.current += 1;
+    setCue({ token: cueToken.current, focusHub: hub });
+  }, []);
 
   useEffect(() => {
     const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -475,10 +539,9 @@ export function Face() {
 
   function showCalendar() {
     const at = new Date().toISOString();
-    const text = "Calendar not connected";
     setTab("chat");
-    setItems((current) => [...current, { kind: "jarvis" as const, id: makeId("cal"), text, at }].slice(-40));
-    setLiveLine(text);
+    setItems((current) => rememberLog(current, [{ kind: "jarvis", id: makeId("cal"), text: CALENDAR_NOTICE, at }]));
+    setLiveLine(CALENDAR_NOTICE);
   }
 
   const micHint = voice.notice && /microphone/i.test(voice.notice) ? voice.notice : "";
@@ -491,9 +554,9 @@ export function Face() {
     <div className="face" data-intro={intro}>
       <div className="face-stage" data-orb={place}>
         <NoteGraph cue={cue} suspendEscape={working} />
-        <OrbStage mode={orb} levelRef={voice.levelRef} skill={skill} place={place} onCornerClick={stopWork} />
+        <OrbStage mode={orb} levelRef={voice.levelRef} skill={shownSkill} place={place} onCornerClick={stopWork} />
       </div>
-      <header className="face-header face-chrome">
+      <header className="face-header face-chrome" data-region="header">
         <p className="face-brand">JARVIS</p>
         <p className="face-product">NEURAL OPERATING SYSTEM · v1</p>
         <p className="face-meta">
@@ -505,13 +568,14 @@ export function Face() {
           Online
         </p>
       </header>
-      {shownTask ? <WorkingPanel job={shownTask} leaving={job === null} onStop={stopWork} /> : null}
+      {shownTask ? <WorkingPanel job={shownTask} leaving={job === null && preview !== "working"} onStop={stopWork} /> : null}
       <div className="face-dock face-chrome">
           <div className="face-bottom">
             {wake ? <p className="wake-hint">click to wake Jarvis</p> : null}
             {caption ? <p className="face-caption">{caption}</p> : null}
             <form
               className="face-ask glass"
+              data-region="ask"
               onSubmit={(event) => {
                 event.preventDefault();
                 void send(draft);
@@ -559,7 +623,7 @@ export function Face() {
                 <VaultIcon />
               </ToolButton>
               <ToolButton
-                label="Voice"
+                label={`Voice · ${voiceName(voice.mouth)}`}
                 on={voice.listening}
                 onClick={() => {
                   voice.pressMic((text, isFinal) => {
@@ -573,7 +637,7 @@ export function Face() {
               >
                 <MicIcon />
               </ToolButton>
-              <ToolButton label="Settings" on={settingsOpen} onClick={() => setSettingsOpen((open) => !open)}>
+              <ToolButton label="Settings" onClick={() => undefined}>
                 <GearIcon />
               </ToolButton>
             </div>
@@ -586,13 +650,7 @@ export function Face() {
             onTab={setTab}
             onDecide={(id, plan, choice) => void decide(id, plan, choice)}
           />
-          </div>
-          {settingsOpen ? (
-            <aside className="face-settings glass" aria-label="Settings">
-              <p>Voice</p>
-              <p>{voiceName(voice.mouth)}</p>
-            </aside>
-          ) : null}
+      </div>
     </div>
   );
 }
@@ -638,7 +696,7 @@ function ChatCard({
   onDecide: (id: string, plan: HandPlan, choice: "yes" | "no") => void;
 }) {
   return (
-    <section className="face-chat glass face-chrome" aria-label="Chat">
+    <section className="face-chat glass face-chrome" aria-label="Chat" data-region="chat">
       <div className="chat-tabs" role="tablist">
         {(["chat", "tasks", "log"] as const).map((name) => (
           <button key={name} type="button" role="tab" data-active={tab === name ? "true" : "false"} onClick={() => onTab(name)}>
@@ -656,7 +714,7 @@ function ChatCard({
 }
 
 function ChatLines({ items }: { items: LogItem[] }) {
-  const rows = items.filter((item) => item.kind === "you" || item.kind === "jarvis" || item.kind === "hand");
+  const rows = collapseCalendar(items.filter((item) => item.kind === "you" || item.kind === "jarvis" || item.kind === "hand"));
   if (rows.length === 0) return <p className="face-hint">Ask when you are ready.</p>;
   return (
     <>
@@ -736,10 +794,11 @@ function TaskLines({
 }
 
 function LogLines({ items }: { items: LogItem[] }) {
-  if (items.length === 0) return <p className="face-hint">Nothing yet.</p>;
+  const rows = collapseCalendar(items);
+  if (rows.length === 0) return <p className="face-hint">Nothing yet.</p>;
   return (
     <>
-      {items.map((item) => {
+      {rows.map((item) => {
         const text = item.kind === "you" ? item.text : item.kind === "jarvis" ? item.text : item.reply;
         const who = item.kind === "you" ? "You" : "Jarvis";
         return (
@@ -767,8 +826,11 @@ function ToolButton({
   children: ReactNode;
 }) {
   return (
-    <button type="button" className="tool-btn" aria-label={label} title={label} data-on={on ? "true" : "false"} onClick={onClick}>
+    <button type="button" className="tool-btn" aria-label={label} data-on={on ? "true" : "false"} onClick={onClick}>
       {children}
+      <span className="tool-tip" role="tooltip">
+        {label}
+      </span>
     </button>
   );
 }

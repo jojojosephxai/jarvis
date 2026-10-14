@@ -62,7 +62,7 @@
   height: 32px;
   grid-template-columns: 1fr auto 1fr;
   align-items: center;
-  padding: 0 16px;
+  padding: 0 72px 0 16px;
   pointer-events: none;
 }
 
@@ -344,7 +344,9 @@
   z-index: 7;
   top: 48px;
   right: 16px;
-  width: 200px;
+  width: 188px;
+  max-height: calc(46vh - 148px);
+  overflow: auto;
   padding: 12px;
 }
 
@@ -364,13 +366,51 @@
   bottom: auto;
   left: auto;
   width: auto;
-  max-height: 168px;
+  max-height: 200px;
   overflow: auto;
   border: 0;
   border-radius: 0;
   background: transparent;
   padding: 0;
   backdrop-filter: none;
+}
+
+.inspector-body {
+  display: block;
+  overflow: visible;
+  white-space: normal;
+  line-clamp: unset;
+  -webkit-line-clamp: unset;
+}
+
+.inspector-body h4,
+.inspector-body p,
+.inspector-body li {
+  margin: 0 0 6px;
+  color: #cfefff;
+  font-size: 12px;
+  letter-spacing: 0.03em;
+  line-height: 1.4;
+  white-space: normal;
+}
+
+.inspector-body h4 {
+  color: #49d4ff;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.inspector-body ul {
+  margin: 0 0 6px;
+  padding-left: 16px;
+}
+
+.inspector-body code {
+  color: #9fd4ea;
+}
+
+.inspector-more {
+  color: #6fa9bf;
 }
 
 .force-scene {
@@ -473,6 +513,14 @@
   min-width: 0;
   height: 34px;
   flex: 1;
+  color: #cfefff;
+  font-size: 13px;
+  line-height: 34px;
+}
+
+.face-ask input::placeholder {
+  color: #b7dff0;
+  opacity: 1;
 }
 
 .face-ask input:placeholder-shown {
@@ -493,6 +541,7 @@
 }
 
 .tool-btn {
+  position: relative;
   display: grid;
   width: 36px;
   height: 36px;
@@ -500,6 +549,28 @@
   border: 1px solid rgba(73, 212, 255, 0.35);
   border-radius: 50%;
   color: #49d4ff;
+}
+
+.tool-tip {
+  position: absolute;
+  z-index: 9;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  padding: 4px 6px;
+  border: 1px solid rgba(73, 212, 255, 0.35);
+  background: rgba(5, 14, 28, 0.94);
+  color: #cfefff;
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateX(-50%);
+}
+
+.tool-btn:hover .tool-tip,
+.tool-btn:focus-visible .tool-tip {
+  opacity: 1;
 }
 
 .tool-btn[data-on="true"],

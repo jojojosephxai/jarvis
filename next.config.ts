@@ -5,6 +5,9 @@ const nextConfig: NextConfig = {
   // Next only allows localhost unless those hosts are listed.
   // 127.0.0.1 is a different host from localhost, so it is listed too.
   allowedDevOrigins: ["127.0.0.1", "*.*.*.*"],
+  devIndicators: {
+    position: "bottom-left",
+  },
 };
 
 export default nextConfig;

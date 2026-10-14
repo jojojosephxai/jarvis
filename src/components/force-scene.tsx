@@ -140,16 +140,17 @@ export function ForceScene({
           maxZ = Math.max(maxZ, point.z);
         }
         const { width, height } = size();
-        const padTop = 96;
-        const padLeft = 280;
+        const padTop = 110;
+        const padLeft = 292;
         const padRight = 248;
-        const padBottom = 188;
+        const padBottom = 200;
         const availW = Math.max(220, width - padLeft - padRight);
         const availH = Math.max(220, height - padTop - padBottom);
         target.set((minX + maxX) / 2, (minY + maxY) / 2, (minZ + maxZ) / 2);
-        const radius = Math.max(maxX - minX, maxY - minY, maxZ - minZ, 80) * 0.62 + 48;
+        const span = Math.max(maxX - minX, maxY - minY, maxZ - minZ, 160);
         const fov = (camera.fov * Math.PI) / 180;
-        dist = (radius / Math.tan(fov / 2)) * (height / availH) * 1.28;
+        const half = span * 0.58 + 64;
+        dist = (half / Math.tan(fov / 2)) * Math.max(height / availH, (width / availW) * 0.85) * 1.22;
         fitDist = dist;
         yaw = 0.62;
         pitch = 0.38;
