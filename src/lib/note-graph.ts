@@ -139,19 +139,19 @@ export function nodeTypeLabel(type: GraphNodeType): string {
   return GRAPH_NODE_TYPES.find((entry) => entry.type === type)?.label ?? "Markdown note";
 }
 
-/** Screen diameter at the default Fit zoom. Hubs scale 10–14px, leaves 4–6px. */
+/** Screen diameter at the default Fit zoom. Hubs scale 12–16px, leaves 5–7px. */
 export function nodeDiameterPx(
   node: Pick<GraphNode, "kind" | "nodeType" | "ssot" | "title"> & { root?: boolean },
   degree = 0,
 ): number {
   const links = Math.max(0, degree);
-  if (node.root) return 14;
+  if (node.root) return 16;
   if (node.kind === "folder" || node.nodeType === "hub") {
     const span = Math.min(1, links / 12);
-    return Math.round(10 + span * 4);
+    return Math.round(12 + span * 4);
   }
   const span = Math.min(1, links / 6);
-  return Math.round(4 + span * 2);
+  return Math.round(5 + span * 2);
 }
 
 export function chooseRootPath(paths: readonly string[]): string {
@@ -547,6 +547,7 @@ export function buildNoteGraph(files: NoteSourceFile[]): NoteGraphPayload {
     }
     const area = areaOf.get(source.id);
     headingsIn(item.body, item.title).forEach((heading, index) => {
+      if (AREAS.some((area) => hubNameKey(area.title) === hubNameKey(heading))) return;
       const id = `heading:${source.id}:${index}:${slug(heading)}`;
       nodes.push({
         id,

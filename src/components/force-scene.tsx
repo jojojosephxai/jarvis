@@ -148,9 +148,13 @@ export function ForceScene({
         const padBottom = 200;
         const availW = Math.max(220, width - padLeft - padRight);
         const availH = Math.max(220, height - padTop - padBottom);
-        const midX = (minX + maxX) / 2;
-        const midY = (minY + maxY) / 2;
-        const midZ = (minZ + maxZ) / 2;
+        const framing = stateRef.current;
+        const rootPoint = framing.clusterId
+          ? undefined
+          : list.find((point) => framing.nodes.some((node) => node.id === point.id && node.root));
+        const midX = rootPoint ? rootPoint.x : (minX + maxX) / 2;
+        const midY = rootPoint ? rootPoint.y : (minY + maxY) / 2;
+        const midZ = rootPoint ? rootPoint.z : (minZ + maxZ) / 2;
         target.set(midX, midY, midZ);
         const fov = (camera.fov * Math.PI) / 180;
         yaw = 0.62;
@@ -205,8 +209,8 @@ export function ForceScene({
           return { w: (hiX - loX) * width * 0.5, h: (hiY - loY) * height * 0.5 };
         };
         dist = Math.max(distNeeded, 160);
-        const goalW = availW * 0.75;
-        const goalH = availH * 0.75;
+        const goalW = availW * 0.65;
+        const goalH = availH * 0.65;
         for (let pass = 0; pass < 4; pass += 1) {
           const span = spanAt(dist);
           const scale = Math.max(span.w / goalW, span.h / goalH);
@@ -247,7 +251,7 @@ export function ForceScene({
         meshes.length = 0;
       };
 
-      const sharedLine = new THREE.LineBasicMaterial({ color: LINK, transparent: true, opacity: 0.16 });
+      const sharedLine = new THREE.LineBasicMaterial({ color: LINK, transparent: true, opacity: 0.3 });
       const spineLine = new THREE.LineBasicMaterial({ color: LINK, transparent: true, opacity: 0.62 });
       const hotLine = new THREE.LineBasicMaterial({ color: LINK, transparent: true, opacity: 0.92 });
       const haloMat = new THREE.MeshBasicMaterial({
@@ -388,16 +392,18 @@ export function ForceScene({
               varying vec3 vView;
               void main() {
                 vec3 normal = normalize(vNormal);
-                float shade = 0.42 + 0.58 * max(dot(normal, normalize(vec3(0.2, 0.7, 0.65))), 0.0);
+                float shade = 0.78 + 0.22 * max(dot(normal, normalize(vec3(0.35, 0.75, 0.55))), 0.0);
                 float rim = pow(1.0 - max(dot(normal, normalize(vView)), 0.0), 2.1);
-                vec3 color = uColor * shade + vec3(0.72, 0.95, 1.0) * rim * 0.55;
-                gl_FragColor = vec4(color, (0.78 + rim * 0.22) * uDim);
+                float luma = dot(uColor, vec3(0.299, 0.587, 0.114));
+                vec3 saturated = clamp(mix(vec3(luma), uColor, 1.4), 0.0, 1.0);
+                vec3 color = saturated * shade + vec3(0.9, 0.98, 1.0) * rim * 0.28;
+                gl_FragColor = vec4(color, (0.94 + rim * 0.06) * uDim);
               }
             `,
           });
           const mesh = new THREE.Mesh(sphere, material);
           mesh.position.set(point.x, point.y, point.z);
-          mesh.scale.setScalar(Math.max(1.5, px * 0.46));
+          mesh.scale.setScalar(Math.max(1.05, px * 0.32));
           mesh.userData.id = node.id;
           group.add(mesh);
           meshes.push({ mesh, id: node.id, baseScale: mesh.scale.x });
@@ -429,12 +435,12 @@ export function ForceScene({
             maxY = Math.max(maxY, point.y);
             maxZ = Math.max(maxZ, point.z);
           }
-          const span = Math.max(maxX - minX, maxZ - minZ, 480);
-          const floor = new THREE.GridHelper(span * 1.35, 22, 0x1c4a60, 0x123040);
+          const span = Math.max(maxX - minX, maxZ - minZ, 220);
+          const floor = new THREE.GridHelper(span * 1.2, 18, 0x143848, 0x0c2834);
           const floorMaterial = floor.material;
           const fade = (item: THREE_NS.Material) => {
             item.transparent = true;
-            item.opacity = 0.28;
+            item.opacity = 0.05;
           };
           if (Array.isArray(floorMaterial)) floorMaterial.forEach(fade);
           else fade(floorMaterial);

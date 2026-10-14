@@ -53,7 +53,7 @@ describe("layoutGalaxy", () => {
     assert.equal(meanDistance(long) > meanDistance(short), true);
   });
 
-  it("spreads hubs across the frame", () => {
+  it("keeps hubs in one short cluster", () => {
     const width = 1400;
     const height = 900;
     const placed = layoutGalaxy(
@@ -73,19 +73,17 @@ describe("layoutGalaxy", () => {
     const byId = new Map(placed.map((point) => [point.id, point]));
     const hubs = ["tag:school", "tag:swim", "tag:people"].map((id) => byId.get(id));
     assert.equal(hubs.every(Boolean), true);
-    let total = 0;
-    let count = 0;
-    for (let i = 0; i < hubs.length; i += 1) {
-      for (let j = i + 1; j < hubs.length; j += 1) {
-        const a = hubs[i];
-        const b = hubs[j];
-        if (!a || !b) continue;
-        total += Math.hypot(a.x - b.x, a.y - b.y);
-        count += 1;
-      }
-    }
-    const mean = total / count;
-    assert.equal(mean > Math.min(width, height) * 0.28, true);
+    const radii = hubs.flatMap((hub) => (hub ? [Math.hypot(hub.x - width / 2, hub.y - height / 2)] : []));
+    assert.equal(Math.max(...radii) < Math.min(width, height) * 0.28, true);
+    assert.equal(Math.min(...radii) > 40, true);
+    const school = byId.get("School.md");
+    const schoolHub = byId.get("tag:school");
+    const swimHub = byId.get("tag:swim");
+    assert.ok(school && schoolHub && swimHub);
+    const home = Math.hypot(school.x - schoolHub.x, school.y - schoolHub.y);
+    const other = Math.hypot(school.x - swimHub.x, school.y - swimHub.y);
+    assert.equal(home < 48, true);
+    assert.equal(home < other, true);
   });
 });
 
@@ -222,7 +220,7 @@ describe("source of truth root", () => {
     assert.equal(Math.hypot(root.x - 500, root.y - 320) < 40, true);
     const radii = [school, swim, people].map((hub) => Math.hypot(hub.x - root.x, hub.y - root.y));
     const spread = Math.max(...radii) - Math.min(...radii);
-    assert.equal(spread > 20, true);
+    assert.equal(spread > 8, true);
     const meetDist = Math.hypot(meet.x - swim.x, meet.y - swim.y);
     const schoolDist = Math.hypot(meet.x - school.x, meet.y - school.y);
     assert.equal(meetDist < schoolDist, true);

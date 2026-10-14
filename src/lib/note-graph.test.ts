@@ -110,11 +110,11 @@ describe("buildNoteGraph", () => {
     assert.equal(graph.legend.find((entry) => entry.type === "person")?.count, 1);
     assert.equal(graph.legend.find((entry) => entry.type === "person")?.color, "#F5C451");
     assert.equal(graph.legend.some((entry) => entry.type === "hub" && entry.count > 0), true);
-    assert.equal(nodeDiameterPx({ kind: "folder", nodeType: "hub", ssot: false, title: "School" }), 10);
-    assert.equal(nodeDiameterPx({ kind: "folder", nodeType: "hub", ssot: false, title: "School" }, 12), 14);
-    assert.equal(nodeDiameterPx({ kind: "note", nodeType: "note", ssot: true, title: "School schedule" }), 4);
-    assert.equal(nodeDiameterPx({ kind: "note", nodeType: "note", ssot: false, title: "About" }, 6), 6);
-    assert.equal(nodeDiameterPx({ kind: "note", nodeType: "hub", ssot: true, title: "Me / Jarvis", root: true }), 14);
+    assert.equal(nodeDiameterPx({ kind: "folder", nodeType: "hub", ssot: false, title: "School" }), 12);
+    assert.equal(nodeDiameterPx({ kind: "folder", nodeType: "hub", ssot: false, title: "School" }, 12), 16);
+    assert.equal(nodeDiameterPx({ kind: "note", nodeType: "note", ssot: true, title: "School schedule" }), 5);
+    assert.equal(nodeDiameterPx({ kind: "note", nodeType: "note", ssot: false, title: "About" }, 6), 7);
+    assert.equal(nodeDiameterPx({ kind: "note", nodeType: "hub", ssot: true, title: "Me / Jarvis", root: true }), 16);
   });
 
   it("merges a source-of-truth note into the hub that already has its name", () => {
@@ -143,6 +143,20 @@ describe("buildNoteGraph", () => {
       ),
       true,
     );
+  });
+
+  it("folds a heading that repeats a hub name into its note", () => {
+    const people = "# People\n\n## School\n\nClassmates.\n\n## Classmates\n\nNames.\n";
+    const graph = buildNoteGraph([
+      { path: "People.md", text: people },
+      { path: "School.md", text: "---\nssot: true\ntags:\n  - school\n---\n# School\n\nClass.\n" },
+    ]);
+    assert.equal(
+      graph.nodes.some((node) => node.nodeType === "heading" && node.title === "School"),
+      false,
+    );
+    assert.equal(graph.nodes.some((node) => node.anchor === "Classmates"), true);
+    assert.match(graph.nodes.find((node) => node.id === "People.md")?.text ?? "", /## School/);
   });
 
   it("returns no nodes for an empty list", () => {
