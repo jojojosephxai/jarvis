@@ -125,35 +125,34 @@ export function NoteReader({
   docked?: boolean;
 }) {
   const color = nodeColor(node.nodeType);
-  const [markdown, setMarkdown] = useState(node.file ? "" : node.text);
-  const [missing, setMissing] = useState(false);
+  const [loaded, setLoaded] = useState<{ id: string; text: string } | null>(null);
+  const [missingId, setMissingId] = useState("");
+  const markdown = node.file ? (loaded?.id === node.id ? loaded.text : "") : node.text;
+  const missing = missingId === node.id;
   const tracing = path.length > 1;
   useEffect(() => {
-    if (!node.file) {
-      setMarkdown(node.text);
-      setMissing(false);
-      return;
-    }
+    if (!node.file) return;
     let cancelled = false;
-    setMissing(false);
-    fetch(`/api/note?path=${encodeURIComponent(node.file)}`)
+    const file = node.file;
+    const id = node.id;
+    fetch(`/api/note?path=${encodeURIComponent(file)}`)
       .then((response) => (response.ok ? response.json() : Promise.reject(new Error("missing"))))
       .then((body: unknown) => {
         if (cancelled) return;
         const text = body && typeof body === "object" ? (body as { markdown?: unknown }).markdown : "";
         if (typeof text !== "string") {
-          setMissing(true);
+          setMissingId(id);
           return;
         }
-        setMarkdown(text);
+        setLoaded({ id, text });
       })
       .catch(() => {
-        if (!cancelled) setMissing(true);
+        if (!cancelled) setMissingId(id);
       });
     return () => {
       cancelled = true;
     };
-  }, [node.file, node.id, node.text]);
+  }, [node.file, node.id]);
   return (
     <aside className={docked ? "graph-inspector is-docked" : "graph-inspector glass"} aria-label="Inspector">
       <div className="inspector-head">

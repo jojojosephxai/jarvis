@@ -41,10 +41,6 @@ export const GRAPH_NODE_TYPES: readonly { type: GraphNodeType; label: string; co
   { type: "project", label: "Project", color: "#FFB347" },
 ];
 
-const TOP_HUB_NAMES = new Set(["school", "swim", "jarvis", "people", "journal", "decisions", "unsorted"]);
-
-const NODE_DIAMETER = { hub: 22, sub: 16, ssot: 14, note: 12 } as const;
-
 export type GraphNode = {
   id: string;
   title: string;
@@ -143,15 +139,6 @@ export function nodeTypeLabel(type: GraphNodeType): string {
   return GRAPH_NODE_TYPES.find((entry) => entry.type === type)?.label ?? "Markdown note";
 }
 
-export function sizeTier(node: Pick<GraphNode, "kind" | "nodeType" | "ssot" | "title">): keyof typeof NODE_DIAMETER {
-  if (node.kind === "folder" || node.nodeType === "hub") {
-    return TOP_HUB_NAMES.has(node.title.trim().toLowerCase()) ? "hub" : "sub";
-  }
-  if (node.ssot) return "ssot";
-  return "note";
-}
-
-/** Screen diameter at the default Fit zoom. Never under 10px. */
 /** Screen diameter at the default Fit zoom. Hubs scale 10–14px, leaves 4–6px. */
 export function nodeDiameterPx(
   node: Pick<GraphNode, "kind" | "nodeType" | "ssot" | "title"> & { root?: boolean },
