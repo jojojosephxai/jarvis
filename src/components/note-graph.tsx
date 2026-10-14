@@ -270,6 +270,7 @@ function GraphReady({
         (node) => node.kind === "folder" && (node.id.toLowerCase() === wanted || node.title.toLowerCase() === wanted),
       );
       setQuery("");
+      setFilterId(null);
       setPathFromId("");
       setPathToId("");
       if (!hub) {

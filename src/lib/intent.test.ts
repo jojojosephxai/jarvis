@@ -61,6 +61,25 @@ describe("parseIntent", () => {
   });
 
   it("leaves ordinary chat alone", () => {
+    const swim = parseIntent("show me my swim notes");
+    assert.equal(swim.kind, "graph");
+    if (swim.kind === "graph") {
+      assert.equal(swim.command.action, "filter");
+      if (swim.command.action === "filter") assert.equal(swim.command.hub, "Swim");
+    }
+    const school = parseIntent("filter to School");
+    assert.equal(school.kind, "graph");
+    if (school.kind === "graph" && school.command.action === "filter") assert.equal(school.command.hub, "School");
+    const search = parseIntent("search for breaststroke");
+    assert.equal(search.kind, "graph");
+    if (search.kind === "graph" && search.command.action === "search") assert.equal(search.command.query, "breaststroke");
+    const people = parseIntent("focus on People");
+    assert.equal(people.kind, "graph");
+    if (people.kind === "graph" && people.command.action === "focus") assert.equal(people.command.target, "People");
+    const cleared = parseIntent("clear filter");
+    assert.equal(cleared.kind, "graph");
+    if (cleared.kind === "graph") assert.equal(cleared.command.action, "clear");
+
     assert.equal(parseIntent("Who are you?").kind, "chat");
     assert.equal(parseIntent("what do you call this light?").kind, "chat");
   });

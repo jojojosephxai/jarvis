@@ -102,6 +102,10 @@ export type ChatResponse = {
   notice?: string;
   sources?: string[];
   brief?: MorningBrief;
+  graph?: {
+    action: "filter" | "search" | "focus" | "clear";
+    value: string;
+  };
 };
 
 export type CalendarEvent = {

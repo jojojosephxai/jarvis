@@ -3,7 +3,9 @@ import { CALL_REFUSAL } from "./demo-brain";
 import { answerFromVault, type AnswerOptions, type GroundedAnswer } from "./grounded-answer";
 import { brainMode } from "./grok";
 import { resolveHand } from "./hands";
+import { describeGraphCommand } from "./graph-command";
 import { mentionsCalendar, parseIntent } from "./intent";
+import { loadVaultGraph } from "./note-graph.server";
 import { isMorningBriefRequest, morningBriefResponse } from "./morning-brief";
 import type { ChatMessageInput, ChatResponse } from "./types";
 import { resolveVaultPath } from "./vault-read";
@@ -61,6 +63,14 @@ export async function think(
         mode: brainMode(),
         receipts: [],
       };
+    case "graph": {
+      const graph = await loadVaultGraph(vaultDir);
+      const described = describeGraphCommand(parsed.command, graph.nodes);
+      return finish(
+        { reply: described.reply, mode: brainMode(), receipts: [], graph: described.directive },
+        root,
+      );
+    }
     case "tool": {
       if (parsed.request.tool === "notes.recall") {
         const query = parsed.request.input.query?.trim() ?? "";

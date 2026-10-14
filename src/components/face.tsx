@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 
 import { NoteGraph, type GraphCue } from "@/components/note-graph";
+import { parseGraphCommand } from "@/lib/graph-command";
 import { OrbStage, type OrbPlace } from "@/components/orb-stage";
 import { useVoice } from "@/components/use-voice";
 import { makeId } from "@/lib/ids";
@@ -394,7 +395,8 @@ export function Face() {
     setItems((current) => [...current, { kind: "you" as const, id: makeId("you"), text: trimmed, at }].slice(-40));
     setDraft("");
     setTab("chat");
-    const { abort, id } = beginWork(trimmed, "Thinking");
+    const graphAsk = parseGraphCommand(trimmed);
+    const { abort, id } = beginWork(trimmed, graphAsk ? "Graph" : "Thinking", graphAsk ? "graph" : null);
     let spoken = "";
     try {
       const response = await fetch("/api/chat", {
@@ -420,6 +422,16 @@ export function Face() {
         return;
       }
       settleJob(id, loadedContext(payload), payload.mode === "grok" ? "grok-4.7" : null);
+      const graph = payload.graph;
+      if (graph && (graph.action === "filter" || graph.action === "search" || graph.action === "focus" || graph.action === "clear")) {
+        setSkill("graph");
+        if (graph.action === "clear") pushCue({ clear: true });
+        else if (graph.action === "filter") pushCue({ filterHub: graph.value });
+        else if (graph.action === "search") pushCue({ search: graph.value });
+        else if (["School", "Swim", "Jarvis", "Health", "People", "Journal", "Projects", "Me"].includes(graph.value)) {
+          pushCue({ focusHub: graph.value });
+        } else pushCue({ focusQuery: graph.value });
+      }
       if (isHandsTurn(payload)) {
         setItems((current) =>
           [

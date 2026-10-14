@@ -1,8 +1,10 @@
+import { parseGraphCommand, type GraphCommand } from "./graph-command";
 import { safeHttpUrl } from "./http-url";
 import { isToolName, type ToolRequest } from "./types";
 
 export type ParsedTurn =
   | { kind: "tool"; request: ToolRequest }
+  | { kind: "graph"; command: GraphCommand }
   | { kind: "refuse-call" }
   | { kind: "changes" }
   | { kind: "chat" };
@@ -193,6 +195,8 @@ export function parseIntent(text: string): ParsedTurn {
 
   if (PHONE_RE.test(clean)) return { kind: "refuse-call" };
   if (CHANGES_RE.test(clean)) return { kind: "changes" };
+  const graph = parseGraphCommand(clean);
+  if (graph) return { kind: "graph", command: graph };
 
   const keep = KEEP_RE.exec(clean);
   if (keep?.[1]) {
