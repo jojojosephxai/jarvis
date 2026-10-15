@@ -91,6 +91,25 @@ for (const size of sizes) {
   });
 }
 
+test("speaking orb stays off the ask bar", async ({ page }) => {
+  for (const size of sizes) {
+    await page.setViewportSize(size);
+    await openFace(page, "/?face=speaking");
+    await page.waitForSelector(".orb-dial[data-place='center']");
+    await page.waitForSelector(".speech-caption[data-on='true']");
+    await expect.poll(async () => page.evaluate(panelOverlaps), { timeout: 15000 }).toEqual([]);
+    const gap = await page.evaluate(() => {
+      const caption = document.querySelector(".speech-caption");
+      const ask = document.querySelector("[data-region='ask']");
+      if (!caption || !ask) return -1;
+      const spoken = caption.getBoundingClientRect();
+      const bar = ask.getBoundingClientRect();
+      return bar.top - spoken.bottom;
+    });
+    expect(gap).toBeGreaterThan(12);
+  }
+});
+
 test("working card stays off the other panels", async ({ page }) => {
   await page.setViewportSize({ width: 1920, height: 1080 });
   await openFace(page, "/?face=working");
@@ -103,9 +122,13 @@ test("screenshots of the face", async ({ page }) => {
   await mkdir(dir, { recursive: true });
   const shots = [
     ["1280-idle", { width: 1280, height: 800 }, "/"],
+    ["1280-speaking", { width: 1280, height: 800 }, "/?face=speaking"],
+    ["1280-inspector", { width: 1280, height: 800 }, "/?hub=School"],
     ["1280-working", { width: 1280, height: 800 }, "/?face=working"],
     ["1280-hub", { width: 1280, height: 800 }, "/?hub=School"],
     ["1920-idle", { width: 1920, height: 1080 }, "/"],
+    ["1920-speaking", { width: 1920, height: 1080 }, "/?face=speaking"],
+    ["1920-inspector", { width: 1920, height: 1080 }, "/?hub=School"],
     ["1920-working", { width: 1920, height: 1080 }, "/?face=working"],
     ["1920-hub", { width: 1920, height: 1080 }, "/?hub=School"],
   ];
@@ -113,6 +136,7 @@ test("screenshots of the face", async ({ page }) => {
     await page.setViewportSize(size);
     await openFace(page, path);
     if (String(path).includes("hub")) await page.waitForSelector(".graph-inspector");
+    if (String(path).includes("speaking")) await page.waitForSelector(".orb-dial[data-place='center']");
     if (String(path).includes("working")) await page.waitForSelector(".face-task");
     await expect.poll(async () => page.evaluate(panelOverlaps), { timeout: 15000 }).toEqual([]);
     await page.screenshot({ path: `${dir}/${name}.png`, fullPage: false });

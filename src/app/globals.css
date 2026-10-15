@@ -313,18 +313,18 @@ html[data-boot="done"] .boot-screen {
 }
 
 .orb-dial[data-place="dock"] {
-  top: 50%;
-  left: calc(100% - 188px);
-  width: 160px;
-  transform: translateY(-50%);
+  top: calc(46vh - 76px);
+  left: calc(100% - 126px);
+  width: 220px;
+  transform: translate(-50%, 0);
 }
 
 .orb-dial[data-place="center"] {
-  top: 46%;
+  top: 40%;
   left: 50%;
-  width: min(72vmin, 680px);
+  width: min(48vmin, 440px);
   transform: translate(-50%, -50%);
-  transition-duration: 600ms;
+  transition-duration: 700ms;
 }
 
 .orb-dial-ring {

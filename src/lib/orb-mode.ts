@@ -39,7 +39,7 @@ function statusWord(mode: OrbMode): string {
 export function orbStatusWord(mode: OrbMode, skill: string | null): string {
   const word = statusWord(mode);
   const name = skill?.trim();
-  if (name && (mode === "working" || mode === "thinking" || mode === "ack")) return `${word} · ${name}`;
+  if (name && mode !== "standby") return `${word} · ${name}`;
   return word;
 }
 

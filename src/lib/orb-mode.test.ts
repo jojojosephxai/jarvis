@@ -45,7 +45,9 @@ describe("orbStatusWord", () => {
   it("names the live state and the skill on one line", () => {
     assert.equal(orbStatusWord("standby", null), "Idle");
     assert.equal(orbStatusWord("listening", null), "Listening");
-    assert.equal(orbStatusWord("speaking", "calendar"), "Speaking");
+    assert.equal(orbStatusWord("listening", "brain"), "Listening · brain");
+    assert.equal(orbStatusWord("speaking", "calendar"), "Speaking · calendar");
+    assert.equal(orbStatusWord("speaking", "brain"), "Speaking · brain");
     assert.equal(orbStatusWord("ack", null), "Thinking");
     assert.equal(orbStatusWord("thinking", null), "Thinking");
     assert.equal(orbStatusWord("thinking", "calendar"), "Thinking · calendar");

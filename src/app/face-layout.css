@@ -375,13 +375,14 @@
   bottom: auto;
   left: auto;
   width: auto;
-  max-height: 200px;
+  max-height: 260px;
   overflow: auto;
   border: 0;
   border-radius: 0;
   background: transparent;
-  padding: 0;
+  padding: 0 0 8px;
   backdrop-filter: none;
+  animation: status-fade 400ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .inspector-body {
@@ -437,6 +438,15 @@
 .force-scene {
   position: absolute;
   inset: 0;
+  transition: opacity 700ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.graph-stage[data-voice="live"] .force-scene {
+  opacity: 0.15;
+}
+
+.graph-stage[data-voice="live"] .force-labels {
+  opacity: 0;
 }
 
 .force-scene canvas {
@@ -450,6 +460,7 @@
   inset: 0;
   overflow: hidden;
   pointer-events: none;
+  transition: opacity 700ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .graph-orbit-hint {
@@ -511,6 +522,7 @@
   flex-direction: column;
   align-items: center;
   gap: 12px;
+  padding-right: 264px;
 }
 
 .face-caption {
@@ -654,13 +666,14 @@
 }
 
 .face-chat {
-  position: relative;
-  right: auto;
-  bottom: auto;
+  position: absolute;
+  right: 0;
+  bottom: 0;
   display: flex;
-  width: 280px;
-  max-height: min(240px, 32vh);
-  flex: 0 0 280px;
+  width: 248px;
+  height: calc(54vh - 210px);
+  min-height: 168px;
+  max-height: calc(100vh - 46vh - 250px);
   flex-direction: column;
   padding: 8px 10px 10px;
 }
@@ -721,8 +734,8 @@
 .face-task {
   position: absolute;
   z-index: 7;
-  top: calc(46% + 112px);
-  right: 16px;
+  top: calc(46vh - 12px);
+  right: 280px;
   width: 200px;
   padding: 10px 12px 8px;
   animation: task-in 300ms cubic-bezier(0.22, 1, 0.36, 1);
@@ -845,18 +858,47 @@
 }
 
 .orb-dial[data-place="dock"] {
-  top: 46%;
-  left: calc(100% - 96px);
-  width: 160px;
-  transform: translate(-50%, -50%);
+  top: calc(46vh - 76px);
+  left: calc(100% - 126px);
+  width: 220px;
+  transform: translate(-50%, 0);
 }
 
 .orb-dial[data-place="center"] {
-  top: 42%;
+  top: 40%;
   left: 50%;
-  width: min(64vmin, 560px);
+  width: min(48vmin, 440px);
   transform: translate(-50%, -50%);
-  transition-duration: 600ms;
+  transition-duration: 700ms;
+}
+
+.speech-caption {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 50%;
+  width: min(520px, 68vw);
+  margin: 0;
+  overflow: hidden;
+  color: #8aa0ae;
+  font-size: 14px;
+  line-height: 1.35;
+  letter-spacing: 0.02em;
+  text-align: center;
+  pointer-events: none;
+  transform: translateX(-50%);
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  max-height: 0;
+  opacity: 0;
+  transition:
+    opacity 600ms cubic-bezier(0.22, 1, 0.36, 1),
+    max-height 600ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.speech-caption[data-on="true"] {
+  max-height: 2.8em;
+  opacity: 1;
 }
 
 .orb-dial[data-place="corner"] {
@@ -884,15 +926,14 @@
 @media (max-width: 1180px) {
   .face-dock {
     left: 16px;
-    flex-direction: column;
-    align-items: stretch;
+  }
+
+  .face-bottom {
+    padding-right: 260px;
   }
 
   .face-chat {
-    order: -1;
-    width: 100%;
-    max-height: 148px;
-    flex-basis: auto;
+    width: 240px;
   }
 }
 
@@ -901,7 +942,11 @@
   .face[data-intro="out"] .stage-orb,
   .face[data-intro="out"] .graph-stage,
   .face-work,
-  .orb-dial {
+  .orb-dial,
+  .speech-caption,
+  .force-scene,
+  .force-labels,
+  .graph-inspector.is-docked {
     animation: none;
     transition: none;
   }

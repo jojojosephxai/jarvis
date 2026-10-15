@@ -81,7 +81,7 @@ export function useVoice(onSpeakingChange: (active: boolean) => void): {
   mouth: MouthKind | "unknown";
   ears: EarsKind | "unknown";
   notice: string | null;
-  speak: (text: string) => Promise<{ played: boolean; blocked: boolean }>;
+  speak: (text: string, hooks?: { onStart?: () => void }) => Promise<{ played: boolean; blocked: boolean }>;
   pressMic: (onText: (text: string, isFinal: boolean) => void) => void;
   stop: () => void;
   levelRef: RefObject<number>;
@@ -175,12 +175,13 @@ export function useVoice(onSpeakingChange: (active: boolean) => void): {
     onSpeakingChangeRef.current(false);
   }, [disarmMeter]);
 
-  const speak = useCallback(async (text: string): Promise<{ played: boolean; blocked: boolean }> => {
+  const speak = useCallback(async (text: string, hooks?: { onStart?: () => void }): Promise<{ played: boolean; blocked: boolean }> => {
     setNotice(null);
     levelRef.current = 0;
     try {
       const result = await speakAloud(text, {
         onStart: () => {
+          hooks?.onStart?.();
           onSpeakingChangeRef.current(true);
         },
         onLevel: (level) => {

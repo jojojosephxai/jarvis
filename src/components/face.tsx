@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, type ReactNode, type RefObject } from "rea
 
 import { NoteGraph, type GraphCue } from "@/components/note-graph";
 import { parseGraphCommand } from "@/lib/graph-command";
+import { mentionsCalendar } from "@/lib/intent";
 import { OrbStage, type OrbPlace } from "@/components/orb-stage";
 import { useVoice } from "@/components/use-voice";
 import { makeId } from "@/lib/ids";
@@ -147,6 +148,7 @@ export function Face() {
   const [intro, setIntro] = useState<"in" | "out">("in");
   const [wake, setWake] = useState(false);
   const [liveLine, setLiveLine] = useState("");
+  const [captionHold, setCaptionHold] = useState("");
   const [preview, setPreview] = useState<"" | "listening" | "speaking" | "working">("");
   const [pending, setPending] = useState(false);
   const cueToken = useRef(0);
@@ -174,7 +176,12 @@ export function Face() {
   });
   const orb: OrbMode =
     preview === "listening" ? "listening" : preview === "speaking" ? "speaking" : preview === "working" ? "working" : liveOrb;
-  const shownSkill = preview === "working" ? skill ?? "calendar" : skill;
+  const shownSkill =
+    preview === "working"
+      ? skill ?? "calendar"
+      : preview === "speaking" || preview === "listening"
+        ? skill ?? "brain"
+        : skill;
   const place = orbPlace(orb);
   const jobRef = useRef<Job | null>(null);
   jobRef.current = job;
@@ -201,6 +208,7 @@ export function Face() {
     const timer = window.setTimeout(() => {
       if (face === "listening" || face === "speaking" || face === "working") {
         if (face === "working") previewStarted.current = performance.now();
+        if (face === "speaking") setLiveLine("It is evening on the Eastern clock.");
         setPreview(face);
       }
       if (!hub) return;
@@ -396,17 +404,72 @@ export function Face() {
     setDraft("");
     setTab("chat");
     const graphAsk = parseGraphCommand(trimmed);
-    const { abort, id } = beginWork(trimmed, graphAsk ? "Graph" : "Thinking", graphAsk ? "graph" : null);
+    const skillName = graphAsk ? "graph" : mentionsCalendar(trimmed) ? "calendar" : "brain";
+    const { abort, id } = beginWork(trimmed, graphAsk ? "Graph" : "Thinking", skillName);
     let spoken = "";
+    let heard = 0;
+    const askedAt = performance.now();
+    let loggedWord = false;
+    const queue: string[] = [];
+    let streamDone = false;
+    const gate: { wake: (() => void) | null } = { wake: null };
+    const speaker = (async () => {
+      let count = 0;
+      while (count < 2) {
+        if (queue.length === 0) {
+          if (streamDone) return;
+          await new Promise<void>((resolve) => {
+            gate.wake = resolve;
+          });
+          continue;
+        }
+        const sentence = queue.shift();
+        if (!sentence || id !== jobGen.current || abort.signal.aborted) return;
+        setLiveLine(sentence);
+        count += 1;
+        const first = count === 1;
+        await speakRef.current(
+          sentence,
+          first
+            ? {
+                onStart: () => {
+                  if (loggedWord) return;
+                  loggedWord = true;
+                  console.info(`time-to-first-word ${Math.round(performance.now() - askedAt)}`);
+                },
+              }
+            : undefined,
+        );
+      }
+    })();
+    const pushSentence = (text: string) => {
+      const clean = text.trim();
+      if (!clean || heard >= 2) return;
+      heard += 1;
+      queue.push(clean);
+      const resume = gate.wake;
+      gate.wake = null;
+      resume?.();
+    };
     try {
       const response = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: [{ role: "user", content: trimmed }] }),
+        body: JSON.stringify({ messages: [{ role: "user", content: trimmed }], stream: true }),
         signal: abort.signal,
       });
-      const payload: unknown = await response.json();
-      if (!response.ok || !isChatResponse(payload)) {
+      const contentType = response.headers.get("content-type") ?? "";
+      let payload: ChatResponse | null = null;
+      if (response.ok && contentType.includes("ndjson") && response.body) {
+        for await (const event of readNdjson(response.body)) {
+          if (isSentenceEvent(event)) pushSentence(event.text);
+          else if (isDoneEvent(event)) payload = event.response;
+        }
+      } else if (response.ok) {
+        const json: unknown = await response.json();
+        if (isChatResponse(json)) payload = json;
+      }
+      if (!payload) {
         setItems((current) =>
           [
             ...current,
@@ -447,7 +510,7 @@ export function Face() {
           ].slice(-40),
         );
         if (payload.plan?.state === "waiting" && payload.plan.tool && !STUB_TASKS.has(payload.plan.tool)) setTab("tasks");
-        spoken = butlerSpeech(payload.reply);
+        if (heard === 0) spoken = butlerSpeech(payload.reply);
         return;
       }
       const brief = payload.brief;
@@ -464,7 +527,7 @@ export function Face() {
             },
           ].slice(-40),
         );
-        spoken = brief.spoken;
+        if (heard === 0) spoken = brief.spoken;
         return;
       }
       setItems((current) =>
@@ -479,7 +542,7 @@ export function Face() {
           },
         ].slice(-40),
       );
-      spoken = butlerSpeech(payload.reply);
+      if (heard === 0) spoken = butlerSpeech(payload.reply);
     } catch (error) {
       if (abort.signal.aborted || (error instanceof DOMException && error.name === "AbortError")) {
         setItems((current) =>
@@ -508,6 +571,11 @@ export function Face() {
         ].slice(-40),
       );
     } finally {
+      streamDone = true;
+      const resume = gate.wake;
+      gate.wake = null;
+      resume?.();
+      await speaker;
       await speakThenFinish(id, abort, spoken);
     }
   }
@@ -565,7 +633,8 @@ export function Face() {
   }
 
   const micHint = voice.notice && /microphone/i.test(voice.notice) ? voice.notice : "";
-  const caption = voice.listening ? draft : speaking ? liveLine : micHint;
+  const speechLine = orb === "listening" ? draft : orb === "speaking" ? liveLine : "";
+  if (speechLine && speechLine !== captionHold) setCaptionHold(speechLine);
   const waitingHand = items.find(
     (item) => item.kind === "hand" && !item.cancelled && item.plan?.state === "waiting" && item.plan.gate === "confirm",
   );
@@ -573,8 +642,16 @@ export function Face() {
   return (
     <div className="face" data-intro={intro}>
       <div className="face-stage" data-orb={place}>
-        <NoteGraph cue={cue} suspendEscape={working} />
-        <OrbStage mode={orb} levelRef={voice.levelRef} skill={shownSkill} place={place} onCornerClick={stopWork} />
+        <NoteGraph cue={cue} suspendEscape={working} voiceLive={place === "center"} />
+        <OrbStage
+          mode={orb}
+          levelRef={voice.levelRef}
+          skill={shownSkill}
+          place={place}
+          caption={captionHold}
+          captionOn={Boolean(speechLine)}
+          onCornerClick={stopWork}
+        />
       </div>
       <header className="face-header face-chrome" data-region="header">
         <p className="face-brand">JARVIS</p>
@@ -592,7 +669,7 @@ export function Face() {
       <div className="face-dock face-chrome">
           <div className="face-bottom">
             {wake ? <p className="wake-hint">click to wake Jarvis</p> : null}
-            {caption ? <p className="face-caption">{caption}</p> : null}
+            {micHint && !speechLine ? <p className="face-caption">{micHint}</p> : null}
             <form
               className="face-ask glass"
               data-region="ask"
@@ -933,6 +1010,47 @@ function GearIcon() {
       <path d="M8 2.2v1.6M8 12.2v1.6M2.2 8h1.6M12.2 8h1.6M4 4l1.1 1.1M10.9 10.9 12 12M12 4l-1.1 1.1M5.1 10.9 4 12" />
     </svg>
   );
+}
+
+async function* readNdjson(body: ReadableStream<Uint8Array>): AsyncGenerator<unknown> {
+  const reader = body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split("\n");
+    buffer = lines.pop() ?? "";
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+      try {
+        yield JSON.parse(trimmed) as unknown;
+      } catch {
+        // Skip a broken line and keep reading.
+      }
+    }
+  }
+  const tail = buffer.trim();
+  if (!tail) return;
+  try {
+    yield JSON.parse(tail) as unknown;
+  } catch {
+    // The last line was not JSON.
+  }
+}
+
+function isSentenceEvent(value: unknown): value is { type: "sentence"; text: string } {
+  if (!value || typeof value !== "object") return false;
+  const record = value as { type?: unknown; text?: unknown };
+  return record.type === "sentence" && typeof record.text === "string";
+}
+
+function isDoneEvent(value: unknown): value is { type: "done"; response: ChatResponse } {
+  if (!value || typeof value !== "object") return false;
+  const record = value as { type?: unknown; response?: unknown };
+  return record.type === "done" && isChatResponse(record.response);
 }
 
 function isChatResponse(value: unknown): value is ChatResponse {

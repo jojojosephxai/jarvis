@@ -14,12 +14,16 @@ export function OrbStage({
   levelRef,
   skill,
   place,
+  caption,
+  captionOn,
   onCornerClick,
 }: {
   mode: OrbMode;
   levelRef: RefObject<number>;
   skill: string | null;
   place: OrbPlace;
+  caption: string;
+  captionOn: boolean;
   onCornerClick?: () => void;
 }) {
   const dialRef = useRef<HTMLDivElement>(null);
@@ -94,6 +98,9 @@ export function OrbStage({
         <p className="orb-status" key={word}>
           <span className="orb-status-dot" />
           {word}
+        </p>
+        <p className="speech-caption" data-on={captionOn ? "true" : "false"}>
+          {caption}
         </p>
       </div>
     </div>
