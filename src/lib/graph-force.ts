@@ -87,18 +87,19 @@ export function layoutForce(nodes: LayoutNode[], edges: LayoutEdge[], options: G
   const cy = height / 2;
   const depth = Math.min(width, height) * 0.62;
   const folderIds = new Set(nodes.filter((node) => node.kind === "folder").map((node) => node.id));
+  const root = nodes.find((node) => node.root);
   const homeOf = new Map<string, string | undefined>();
   for (const node of nodes) {
     if (node.kind === "folder") {
       homeOf.set(node.id, node.id);
       continue;
     }
-    const home = node.hubId && folderIds.has(node.hubId) ? node.hubId : undefined;
+    const home =
+      node.hubId && (folderIds.has(node.hubId) || node.hubId === root?.id) ? node.hubId : undefined;
     homeOf.set(node.id, home);
   }
 
   const bodies = new Map<string, Body>();
-  const root = nodes.find((node) => node.root);
   if (root) {
     bodies.set(root.id, {
       id: root.id,
@@ -117,15 +118,17 @@ export function layoutForce(nodes: LayoutNode[], edges: LayoutEdge[], options: G
   }
   const hubIds = nodes.filter((node) => node.kind === "folder").map((node) => node.id);
   const ordered = orderHubs(hubIds, edges, homeOf);
-  const hubScale = 0.35;
+  const hubScale = 0.62;
   const hubRadiusX = (width * 0.5 - 72) * (0.72 + repel / 900) * hubScale;
   const hubRadiusY = (height * 0.5 - 64) * (0.78 + repel / 900) * hubScale;
-  ordered.forEach((id) => {
-    const angle = hashAngle(id);
-    const reach = 0.58 + hashUnit(id, 4) * 0.42;
+  ordered.forEach((id, index) => {
+    const count = Math.max(ordered.length, 1);
+    const jitter = (hashUnit(id, 2) - 0.5) * ((Math.PI * 2) / count) * 0.32;
+    const angle = -Math.PI / 2 + (index / count) * Math.PI * 2 + jitter;
+    const reach = 0.74 + hashUnit(id, 4) * 0.26;
     const x = cx + Math.cos(angle) * hubRadiusX * reach;
-    const y = cy + Math.sin(angle) * hubRadiusY * (0.66 + hashUnit(id, 5) * 0.48);
-    const z = (hashUnit(id, 6) - 0.5) * 28;
+    const y = cy + Math.sin(angle) * hubRadiusY * reach;
+    const z = (hashUnit(id, 6) - 0.5) * 110;
     bodies.set(id, {
       id,
       x,
@@ -181,22 +184,68 @@ export function layoutForce(nodes: LayoutNode[], edges: LayoutEdge[], options: G
     });
   }
   const free = [...loose].sort((a, b) => a.id.localeCompare(b.id));
-  free.forEach((node, index) => {
-    const angle = index * Math.PI * (3 - Math.sqrt(5));
-    const radius = Math.min(hubRadiusX * 0.82, 28 + index * 2.4);
-    const z = (hashUnit(node.id, 8) - 0.5) * 20;
+  const parked = new Map<string, number>();
+  free.forEach((node) => {
+    let homeId = "";
+    for (const edge of edges) {
+      const other = edge.from === node.id ? edge.to : edge.to === node.id ? edge.from : "";
+      if (!other) continue;
+      if (bodies.has(other) && (folderIds.has(other) || other === root?.id)) {
+        homeId = other;
+        break;
+      }
+      const via = homeOf.get(other);
+      if (via && bodies.has(via)) {
+        homeId = via;
+        break;
+      }
+    }
+    if (!homeId) homeId = root?.id ?? ordered[0] ?? "";
+    const home = homeId ? bodies.get(homeId) : undefined;
+    if (!home || !homeId) {
+      const index = parked.get("*") ?? 0;
+      parked.set("*", index + 1);
+      const angle = hashAngle(node.id) + index * 0.7;
+      const radius = 48 + index * 20;
+      const z = (hashUnit(node.id, 8) - 0.5) * 24;
+      const x = cx + Math.cos(angle) * radius;
+      const y = cy + Math.sin(angle) * radius * 0.86;
+      bodies.set(node.id, {
+        id: node.id,
+        x,
+        y,
+        z,
+        vx: 0,
+        vy: 0,
+        vz: 0,
+        hub: false,
+        root: false,
+        ox: x,
+        oy: y,
+        oz: z,
+      });
+      return;
+    }
+    const index = parked.get(homeId) ?? 0;
+    parked.set(homeId, index + 1);
+    const angle = index * Math.PI * (3 - Math.sqrt(5)) + hashAngle(node.id) * 0.2;
+    const radius = Math.min(42, 34 + index * 1.4);
+    const z = home.z + (hashUnit(node.id, 8) - 0.5) * 18;
+    const x = home.x + Math.cos(angle) * radius;
+    const y = home.y + Math.sin(angle) * radius * 0.86;
     bodies.set(node.id, {
       id: node.id,
-      x: cx + Math.cos(angle) * radius,
-      y: cy + Math.sin(angle) * radius * 0.72,
+      x,
+      y,
       z,
       vx: 0,
       vy: 0,
       vz: 0,
       hub: false,
       root: false,
-      ox: cx + Math.cos(angle) * radius,
-      oy: cy + Math.sin(angle) * radius * 0.72,
+      home: homeId,
+      ox: x,
+      oy: y,
       oz: z,
     });
   });
@@ -256,8 +305,8 @@ export function layoutForce(nodes: LayoutNode[], edges: LayoutEdge[], options: G
       let rest = link * 0.62;
       let localK = springK;
       if (a.root || b.root) {
-        rest = Math.max(48, Math.min(width, height) * 0.1);
-        localK = springK * 0.05;
+        rest = Math.max(96, Math.min(width, height) * 0.18);
+        localK = springK * 0.04;
       } else if (a.hub && b.hub) {
         rest = Math.max(56, Math.min(width, height) * 0.12);
       } else if (cross) {
@@ -310,7 +359,7 @@ export function layoutForce(nodes: LayoutNode[], edges: LayoutEdge[], options: G
     }
   }
 
-  const clusterReach = 40;
+  const clusterReach = 44;
   for (const body of list) {
     if (!body.home) continue;
     const home = bodies.get(body.home);
@@ -318,12 +367,17 @@ export function layoutForce(nodes: LayoutNode[], edges: LayoutEdge[], options: G
     const dx = body.x - home.x;
     const dy = body.y - home.y;
     const dist = Math.hypot(dx, dy);
+    const clusterGap = Math.min(clusterReach - 4, 28 + repel / 40);
     if (dist > clusterReach) {
       body.x = home.x + (dx / dist) * clusterReach;
       body.y = home.y + (dy / dist) * clusterReach;
+    } else if (dist < clusterGap) {
+      const angle = dist === 0 ? hashAngle(body.id) : Math.atan2(dy, dx);
+      body.x = home.x + Math.cos(angle) * clusterGap;
+      body.y = home.y + Math.sin(angle) * clusterGap;
     }
     const dz = body.z - home.z;
-    if (Math.abs(dz) > 14) body.z = home.z + Math.sign(dz) * 14;
+    if (Math.abs(dz) > 28) body.z = home.z + Math.sign(dz) * 28;
   }
 
   const pad = 36;
@@ -348,7 +402,19 @@ export function layoutForce(nodes: LayoutNode[], edges: LayoutEdge[], options: G
     point.z = hub.z;
   }
   const zLimit = depth;
+  const reachLimit = Math.min(width, height) * 0.44;
   for (const point of points) {
+    if (root && point.id === root.id) {
+      point.z = clamp(point.z, -zLimit, zLimit);
+      continue;
+    }
+    const dx = point.x - cx;
+    const dy = point.y - cy;
+    const dist = Math.hypot(dx, dy);
+    if (dist > reachLimit && dist > 0) {
+      point.x = cx + (dx / dist) * reachLimit;
+      point.y = cy + (dy / dist) * reachLimit;
+    }
     point.x = Math.min(width - pad, Math.max(pad, point.x));
     point.y = Math.min(height - pad, Math.max(pad, point.y));
     point.z = clamp(point.z, -zLimit, zLimit);

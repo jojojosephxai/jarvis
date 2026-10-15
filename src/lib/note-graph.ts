@@ -513,13 +513,21 @@ export function buildNoteGraph(files: NoteSourceFile[]): NoteGraphPayload {
     edges.push({ id, from, to, reason });
   }
 
+  const rootedId = nodes.find((node) => node.root)?.id ?? "";
   const areaOf = new Map<string, (typeof AREAS)[number]>();
   for (const note of nodes) {
     if (note.root) continue;
     areaOf.set(note.id, areaFor(note));
   }
+  function areaHome(area: (typeof AREAS)[number]): string {
+    if (area.id === "area:me" && rootedId) return rootedId;
+    return area.id;
+  }
   const usedAreas = new Map<string, (typeof AREAS)[number]>();
-  for (const area of areaOf.values()) usedAreas.set(area.id, area);
+  for (const area of areaOf.values()) {
+    if (area.id === "area:me" && rootedId) continue;
+    usedAreas.set(area.id, area);
+  }
 
   for (const note of nodes) {
     if (note.root) {
@@ -528,11 +536,12 @@ export function buildNoteGraph(files: NoteSourceFile[]): NoteGraphPayload {
     }
     const area = areaOf.get(note.id);
     if (!area) continue;
-    note.hubs = [area.id];
-    addEdge(note.id, area.id, "folder");
+    const home = areaHome(area);
+    note.hubs = [home];
+    addEdge(note.id, home, "folder");
     for (const tag of note.tags) {
       const other = areaByKey(tag);
-      if (other && other.id !== area.id) addEdge(note.id, other.id, "tag");
+      if (other && other.id !== area.id) addEdge(note.id, areaHome(other), "tag");
     }
   }
 
@@ -559,7 +568,7 @@ export function buildNoteGraph(files: NoteSourceFile[]): NoteGraphPayload {
         kind: "note",
         nodeType: "heading",
         ssot: false,
-        hubs: area ? [area.id] : [],
+        hubs: area ? [areaHome(area)] : [],
         root: false,
         file: source.id,
         anchor: heading,
@@ -579,7 +588,7 @@ export function buildNoteGraph(files: NoteSourceFile[]): NoteGraphPayload {
         kind: "note",
         nodeType: attachment.kind === "file" ? "file" : "link",
         ssot: false,
-        hubs: area ? [area.id] : [],
+        hubs: area ? [areaHome(area)] : [],
         root: false,
         file: "",
         anchor: "",

@@ -191,6 +191,7 @@ export type LabelCandidate = {
 export type PlacedLabel = {
   id: string;
   opacity: number;
+  x: number;
   y: number;
 };
 
@@ -281,20 +282,29 @@ export function pickLabels(candidates: LabelCandidate[]): PlacedLabel[] {
   for (const label of ordered) {
     const parked = label.protected ? nudgeLabel(label, placed) : label;
     const hits = placed.some((other) => labelBoxesOverlap(parked, other));
-    if (!parked.protected && hits) continue;
+    if (hits && label.priority < 100) continue;
     const opacity = parked.protected ? 1 : parked.depth < 0.32 ? 0.45 : Math.min(1, 0.55 + parked.depth * 0.45);
     placed.push(parked);
-    out.push({ id: parked.id, opacity, y: parked.y });
+    out.push({ id: parked.id, opacity, x: parked.x, y: parked.y });
   }
   return out;
 }
 
 function nudgeLabel(label: LabelCandidate, placed: LabelCandidate[]): LabelCandidate {
-  let y = label.y;
-  for (let step = 0; step < 12; step += 1) {
-    const trial = { ...label, y };
+  const shifts: Array<[number, number]> = [
+    [0, 0],
+    [0, 36],
+    [0, -36],
+    [0, 54],
+    [0, -54],
+    [Math.round(label.w * 0.7), 28],
+    [-Math.round(label.w * 0.7), 28],
+    [Math.round(label.w), 0],
+    [-Math.round(label.w), 0],
+  ];
+  for (const [dx, dy] of shifts) {
+    const trial = { ...label, x: label.x + dx, y: label.y + dy };
     if (!placed.some((other) => labelBoxesOverlap(trial, other))) return trial;
-    y += 8;
   }
   return label;
 }

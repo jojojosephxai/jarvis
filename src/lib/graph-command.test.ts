@@ -29,4 +29,18 @@ describe("describeGraphCommand", () => {
     assert.equal(described.reply, "Showing 3 Swim notes");
     assert.deepEqual(described.directive, { action: "filter", value: "Swim" });
   });
+
+  it("treats Me as the center hub", () => {
+    const graph = buildNoteGraph([
+      { path: "About.md", text: "# About me\n\nJoseph.\n" },
+      { path: "Loose.md", text: "# Loose\n\nNo tag.\n" },
+    ]);
+    const command = parseGraphCommand("filter to Me");
+    assert.ok(command);
+    const described = describeGraphCommand(command, graph.nodes);
+    assert.equal(described.directive.action, "filter");
+    assert.equal(described.directive.value, "Me / Jarvis");
+    assert.match(described.reply, /Me \/ Jarvis/);
+    assert.equal(graph.nodes.some((node) => node.title === "Me" && node.kind === "folder"), false);
+  });
 });

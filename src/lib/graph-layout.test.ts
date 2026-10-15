@@ -74,7 +74,9 @@ describe("layoutGalaxy", () => {
     const hubs = ["tag:school", "tag:swim", "tag:people"].map((id) => byId.get(id));
     assert.equal(hubs.every(Boolean), true);
     const radii = hubs.flatMap((hub) => (hub ? [Math.hypot(hub.x - width / 2, hub.y - height / 2)] : []));
-    assert.equal(Math.max(...radii) < Math.min(width, height) * 0.28, true);
+    const span = Math.min(width, height);
+    assert.equal(Math.max(...radii) > span * 0.2, true);
+    assert.equal(Math.max(...radii) < span * 0.46, true);
     assert.equal(Math.min(...radii) > 40, true);
     const school = byId.get("School.md");
     const schoolHub = byId.get("tag:school");
@@ -84,6 +86,26 @@ describe("layoutGalaxy", () => {
     const other = Math.hypot(school.x - swimHub.x, school.y - swimHub.y);
     assert.equal(home < 48, true);
     assert.equal(home < other, true);
+  });
+
+  it("parks a loose note on its hub instead of the corner", () => {
+    const placed = layoutGalaxy(
+      [
+        { id: "About.md", kind: "note", root: true },
+        { id: "area:school", kind: "folder" },
+        { id: "Stray.md", kind: "note" },
+      ],
+      [
+        { from: "About.md", to: "area:school" },
+        { from: "Stray.md", to: "area:school" },
+      ],
+      { repel: 180, link: 160, width: 1000, height: 640 },
+    );
+    const stray = placed.find((point) => point.id === "Stray.md");
+    const school = placed.find((point) => point.id === "area:school");
+    assert.ok(stray && school);
+    assert.equal(stray.x > 80 && stray.y > 80, true);
+    assert.equal(Math.hypot(stray.x - school.x, stray.y - school.y) < 80, true);
   });
 });
 

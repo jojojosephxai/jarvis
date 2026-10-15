@@ -141,9 +141,11 @@ function isPayload(value: unknown): value is NoteGraphPayload {
 export function NoteGraph({
   cue = null,
   suspendEscape = false,
+  voiceLive = false,
 }: {
   cue?: GraphCue | null;
   suspendEscape?: boolean;
+  voiceLive?: boolean;
 }) {
   const [payload, setPayload] = useState<NoteGraphPayload | null>(null);
   const [failed, setFailed] = useState(false);
@@ -191,7 +193,7 @@ export function NoteGraph({
     case "empty":
       return <GraphEmpty payload={payload} />;
     case "ready":
-      return <GraphReady payload={payload} cue={cue} suspendEscape={suspendEscape} />;
+      return <GraphReady payload={payload} cue={cue} suspendEscape={suspendEscape} voiceLive={voiceLive} />;
     default: {
       const neverStatus: never = payload.status;
       return neverStatus;
@@ -210,14 +212,27 @@ function GraphEmpty({ payload }: { payload: NoteGraphPayload }) {
   );
 }
 
+function matchHub(nodes: GraphNode[], wanted: string): GraphNode | undefined {
+  const key = wanted.trim().toLowerCase();
+  if (key === "me" || key === "me / jarvis") {
+    const root = nodes.find((node) => node.root);
+    if (root) return root;
+  }
+  return nodes.find(
+    (node) => node.kind === "folder" && (node.title.toLowerCase() === key || node.id.toLowerCase() === key),
+  );
+}
+
 function GraphReady({
   payload,
   cue,
   suspendEscape,
+  voiceLive,
 }: {
   payload: NoteGraphPayload;
   cue: GraphCue | null;
   suspendEscape: boolean;
+  voiceLive: boolean;
 }) {
   const [query, setQuery] = useState("");
   const [pathFromId, setPathFromId] = useState("");
@@ -233,7 +248,7 @@ function GraphReady({
   const [showHubs, setShowHubs] = useState(true);
   const [showLabels, setShowLabels] = useState(true);
   const [showEdges, setShowEdges] = useState(true);
-  const [hiddenTypes, setHiddenTypes] = useState<GraphNodeType[]>([]);
+  const [hiddenTypes, setHiddenTypes] = useState<GraphNodeType[]>(["heading"]);
   const [filterId, setFilterId] = useState<string | null>(null);
 
   if (cue && cue.token !== seenCue) {
@@ -249,7 +264,7 @@ function GraphReady({
       setHomeToken((token) => token + 1);
     } else if (cue.filterHub) {
       const wanted = cue.filterHub.trim().toLowerCase();
-      const hub = payload.nodes.find((node) => node.kind === "folder" && node.title.toLowerCase() === wanted);
+      const hub = matchHub(payload.nodes, wanted);
       setQuery("");
       setPathFromId("");
       setPathToId("");
@@ -266,9 +281,7 @@ function GraphReady({
       }
     } else if (cue.focusHub) {
       const wanted = cue.focusHub.trim().toLowerCase();
-      const hub = payload.nodes.find(
-        (node) => node.kind === "folder" && (node.id.toLowerCase() === wanted || node.title.toLowerCase() === wanted),
-      );
+      const hub = matchHub(payload.nodes, wanted);
       setQuery("");
       setFilterId(null);
       setPathFromId("");
@@ -366,15 +379,23 @@ function GraphReady({
   }, [payload.edges, pathFromId, pathToId]);
   const visibleIds = useMemo(() => {
     const hidden = new Set(hiddenTypes);
+    const selectedNode = payload.nodes.find((node) => node.id === selectedId);
+    const focusedFile = selectedNode?.file || (selectedNode && selectedNode.id.endsWith(".md") ? selectedNode.id : "");
     const ids = new Set<string>();
     for (const node of payload.nodes) {
-      if (hidden.has(node.nodeType)) continue;
+      if (node.nodeType === "heading") {
+        const shown =
+          !hidden.has("heading") || node.id === selectedId || (focusedFile !== "" && node.file === focusedFile);
+        if (!shown) continue;
+      } else if (hidden.has(node.nodeType)) {
+        continue;
+      }
       if (!showHubs && node.kind === "folder") continue;
       if (filterId && node.id !== filterId && !node.root && !node.hubs.includes(filterId)) continue;
       ids.add(node.id);
     }
     return ids;
-  }, [payload.nodes, hiddenTypes, showHubs, filterId]);
+  }, [payload.nodes, hiddenTypes, showHubs, filterId, selectedId]);
   const selected = payload.nodes.find((node) => node.id === selectedId) ?? null;
   const noteLinks: NoteLink[] = selected
     ? payload.edges.flatMap((edge) => {
@@ -468,7 +489,7 @@ function GraphReady({
   }
 
   return (
-    <div className={selected ? "graph-stage has-note" : "graph-stage"}>
+    <div className={selected ? "graph-stage has-note" : "graph-stage"} data-voice={voiceLive ? "live" : "idle"}>
       <aside className="face-column glass" aria-label="Graph" data-region="left">
         <label className="face-search" htmlFor="graph-search">
           <span className="sr-only">Search notes</span>
@@ -481,23 +502,6 @@ function GraphReady({
           />
         </label>
         <p className="face-hint">Click a node to focus it. Shift-click a second node to trace the path.</p>
-        {selected ? (
-          <NoteReader
-            docked
-            node={selected}
-            links={noteLinks}
-            path={pathNodes}
-            members={
-              selected.file
-                ? []
-                : payload.nodes
-                    .filter((node) => node.hubs.includes(selected.id) && node.id.endsWith(".md") && !node.root)
-                    .map((node) => ({ id: node.id, title: node.title }))
-            }
-            onBack={clearFocus}
-            onOpen={(id) => openNote(id)}
-          />
-        ) : null}
         <div className="face-block">
           <div className="face-block-head">
             <p>Top Hubs</p>
@@ -552,6 +556,23 @@ function GraphReady({
             Edges
           </label>
         </div>
+        {selected ? (
+          <NoteReader
+            docked
+            node={selected}
+            links={noteLinks}
+            path={pathNodes}
+            members={
+              selected.file
+                ? []
+                : payload.nodes
+                    .filter((node) => node.hubs.includes(selected.id) && node.id.endsWith(".md") && !node.root)
+                    .map((node) => ({ id: node.id, title: node.title }))
+            }
+            onBack={clearFocus}
+            onOpen={(id) => openNote(id)}
+          />
+        ) : null}
         <p className="face-totals">
           <span>{payload.noteCount} notes</span>
           <span>{payload.connectionCount} links</span>

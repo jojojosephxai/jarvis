@@ -209,8 +209,8 @@ export function ForceScene({
           return { w: (hiX - loX) * width * 0.5, h: (hiY - loY) * height * 0.5 };
         };
         dist = Math.max(distNeeded, 160);
-        const goalW = availW * 0.65;
-        const goalH = availH * 0.65;
+        const goalW = availW * 0.7;
+        const goalH = availH * 0.7;
         for (let pass = 0; pass < 4; pass += 1) {
           const span = spanAt(dist);
           const scale = Math.max(span.w / goalW, span.h / goalH);
@@ -361,11 +361,24 @@ export function ForceScene({
         }
         if (current.route) for (const id of current.route) hot.add(id);
         const dim = hot.size > 0;
+        let nearZ = Infinity;
+        let farZ = -Infinity;
+        for (const node of current.nodes) {
+          if (!current.visibleIds.has(node.id)) continue;
+          const point = pointOf.get(node.id);
+          if (!point) continue;
+          nearZ = Math.min(nearZ, point.z);
+          farZ = Math.max(farZ, point.z);
+        }
+        const zSpan = Math.max(1, farZ - nearZ);
 
         for (const node of current.nodes) {
           if (!current.visibleIds.has(node.id)) continue;
           const point = pointOf.get(node.id);
           if (!point) continue;
+          const closeness = (point.z - nearZ) / zSpan;
+          const depthScale = 0.72 + 0.28 * closeness;
+          const depthDim = 0.42 + 0.58 * closeness;
           const px = nodeDiameterPx(node, degree.get(node.id) ?? 0);
           const color = new THREE.Color(nodeColor(node.nodeType));
           const material = new THREE.ShaderMaterial({
@@ -373,7 +386,7 @@ export function ForceScene({
             depthWrite: false,
             uniforms: {
               uColor: { value: color },
-              uDim: { value: dim && !hot.has(node.id) ? 0.2 : 1 },
+              uDim: { value: (dim && !hot.has(node.id) ? 0.2 : 1) * depthDim },
             },
             vertexShader: `
               varying vec3 vNormal;
@@ -403,8 +416,9 @@ export function ForceScene({
           });
           const mesh = new THREE.Mesh(sphere, material);
           mesh.position.set(point.x, point.y, point.z);
-          mesh.scale.setScalar(Math.max(1.05, px * 0.32));
+          mesh.scale.setScalar(Math.max(1.05, px * 0.32) * depthScale);
           mesh.userData.id = node.id;
+          mesh.userData.closeness = closeness;
           group.add(mesh);
           meshes.push({ mesh, id: node.id, baseScale: mesh.scale.x });
           const major = node.root || node.kind === "folder";
@@ -644,13 +658,14 @@ export function ForceScene({
           const spot = spots.find((item) => !blocked(item.x, item.y, w, h, width, height));
           if (!spot) continue;
           const rank = labelRank(flags);
+          const closeness = typeof entry.mesh.userData.closeness === "number" ? entry.mesh.userData.closeness : 0.8;
           candidates.push({
             id: node.id,
             x: spot.x + w / 2,
             y: spot.y + h / 2,
             w,
             h,
-            depth: 0.8,
+            depth: closeness,
             priority: rank.priority,
             protected: rank.protected || hub,
             title: text,
@@ -664,7 +679,7 @@ export function ForceScene({
           const el = document.createElement("span");
           el.className = "graph-float-label";
           el.textContent = source.title;
-          el.style.left = `${source.x - source.w / 2}px`;
+          el.style.left = `${label.x - source.w / 2}px`;
           el.style.top = `${label.y - source.h / 2}px`;
           el.style.opacity = String(label.opacity);
           labelHost.appendChild(el);

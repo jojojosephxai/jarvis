@@ -48,6 +48,10 @@ export function parseGraphCommand(text: string): GraphCommand | null {
 
 function findHub(nodes: GraphNode[], title: string): GraphNode | undefined {
   const wanted = title.trim().toLowerCase();
+  if (wanted === "me" || wanted === "me / jarvis") {
+    const root = nodes.find((node) => node.root);
+    if (root) return root;
+  }
   return nodes.find((node) => node.kind === "folder" && node.title.toLowerCase() === wanted);
 }
 
