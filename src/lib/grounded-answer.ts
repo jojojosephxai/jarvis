@@ -1,6 +1,7 @@
 import path from "node:path";
 
-import { grokConfigured, grokPhraseNotes, type GrokResult } from "./grok";
+import { clockStamp } from "./clock";
+import { grokConfigured, grokPhraseNotes, grokStreamSentences, type GrokResult } from "./grok";
 import type { BrainMode } from "./types";
 import { loadVaultNotes, resolveVaultPath, type VaultNote } from "./vault-read";
 
@@ -186,6 +187,7 @@ export type AnswerOptions = {
   root?: string;
   vaultPath?: string | null;
   useModel?: boolean;
+  now?: Date;
   complete?: (question: string, packet: string) => Promise<GrokResult>;
 };
 
@@ -302,9 +304,9 @@ function localReading(question: string, picked: ScoredNote[], allTitles: string[
   };
 }
 
-function packetFor(question: string, picked: ScoredNote[]): string {
+function packetFor(question: string, picked: ScoredNote[], now?: Date): string {
   const blocks = picked.map((scored) => `# ${scored.note.title}\n${scored.note.text.trim()}`).join("\n\n");
-  return `Question:\n${question}\n\nNotes:\n${blocks}`;
+  return `Current time: ${clockStamp(now)} (America/New_York).\n\nQuestion:\n${question}\n\nNotes:\n${blocks}`;
 }
 
 function replyWords(text: string): string[] {
@@ -327,17 +329,31 @@ function withSourcesFooter(reply: string, sources: string[]): string {
   return `${reply.trim()}\n\nNotes used: ${joinTitles(sources)}.`;
 }
 
-export async function answerFromVault(question: string, options: AnswerOptions = {}): Promise<GroundedAnswer> {
+type GatheredAnswer = {
+  modelOn: boolean;
+  packet: string;
+  localReply: string;
+  sources: string[];
+  blocked?: GroundedAnswer;
+};
+
+async function gatherAnswer(question: string, options: AnswerOptions): Promise<GatheredAnswer> {
   const root = options.root ?? process.cwd();
   const directory = resolveVaultPath(root, options.vaultPath);
   const loaded = await loadVaultNotes(directory);
 
   if (!loaded.ok) {
     return {
-      reply: `Brain wiring: the vault ${loaded.problem} (${loaded.directory}). Set OBSIDIAN_VAULT_PATH, or keep a vault folder in the project. I did not answer from anywhere else.`,
-      mode: "demo",
+      modelOn: false,
+      packet: "",
+      localReply: "",
       sources: [],
-      notice: "Brain wiring: no vault notes were read.",
+      blocked: {
+        reply: `Brain wiring: the vault ${loaded.problem} (${loaded.directory}). Set OBSIDIAN_VAULT_PATH, or keep a vault folder in the project. I did not answer from anywhere else.`,
+        mode: "demo",
+        sources: [],
+        notice: "Brain wiring: no vault notes were read.",
+      },
     };
   }
 
@@ -357,29 +373,38 @@ export async function answerFromVault(question: string, options: AnswerOptions =
 
   const allTitles = loaded.notes.map((note) => note.title);
   const local = localReading(question, picked, allTitles);
-  const modelOn = options.useModel ?? grokConfigured();
+  const packet =
+    picked.length > 0
+      ? packetFor(question, picked, options.now)
+      : `Current time: ${clockStamp(options.now)} (America/New_York).\n\nQuestion:\n${question}\n\nNotes:\nNo vault note matched. Answer anyway.`;
+  return {
+    modelOn: options.useModel ?? grokConfigured(),
+    packet,
+    localReply: local.reply,
+    sources: local.sources,
+  };
+}
 
-  if (!modelOn) {
+export async function answerFromVault(question: string, options: AnswerOptions = {}): Promise<GroundedAnswer> {
+  const gathered = await gatherAnswer(question, options);
+  if (gathered.blocked) return gathered.blocked;
+  if (!gathered.modelOn) {
     return {
-      reply: local.reply,
+      reply: gathered.localReply,
       mode: "demo",
-      sources: local.sources,
+      sources: gathered.sources,
     };
   }
 
   const complete = options.complete ?? grokPhraseNotes;
-  const packet =
-    picked.length > 0
-      ? packetFor(question, picked)
-      : `Question:\n${question}\n\nNotes:\nNo vault note matched. Answer anyway.`;
-  const result = await complete(question, packet);
+  const result = await complete(question, gathered.packet);
   if (result.ok && result.text.trim()) {
     return {
-      reply: withSourcesFooter(result.text, local.sources),
+      reply: withSourcesFooter(result.text, gathered.sources),
       mode: "grok",
-      sources: local.sources,
+      sources: gathered.sources,
       // Quiet on a miss — shouting “no vault note matched” under hello-style chat feels unfinished.
-      notice: local.sources.length > 0 ? "Notes used as context." : undefined,
+      notice: gathered.sources.length > 0 ? "Notes used as context." : undefined,
     };
   }
 
@@ -387,9 +412,75 @@ export async function answerFromVault(question: string, options: AnswerOptions =
     ? "Grok's reply was empty, so this is the local reading of the vault notes."
     : `Grok did not answer (${result.reason}), so this is the local reading of the vault notes.`;
   return {
-    reply: local.reply,
+    reply: gathered.localReply,
     mode: "demo",
-    sources: local.sources,
+    sources: gathered.sources,
     notice,
+  };
+}
+
+export type StreamedAnswer =
+  | { type: "sentence"; text: string }
+  | { type: "done"; answer: GroundedAnswer };
+
+/** Vault search first, then sentences as the model writes them. */
+export async function* streamAnswerFromVault(
+  question: string,
+  options: AnswerOptions = {},
+): AsyncGenerator<StreamedAnswer> {
+  const gathered = await gatherAnswer(question, options);
+  if (gathered.blocked) {
+    yield { type: "done", answer: gathered.blocked };
+    return;
+  }
+  if (!gathered.modelOn) {
+    yield {
+      type: "done",
+      answer: { reply: gathered.localReply, mode: "demo", sources: gathered.sources },
+    };
+    return;
+  }
+  if (options.complete) {
+    yield { type: "done", answer: await answerFromVault(question, options) };
+    return;
+  }
+
+  let full = "";
+  let count = 0;
+  try {
+    for await (const sentence of grokStreamSentences(question, gathered.packet)) {
+      const clean = sentence.trim();
+      if (!clean) continue;
+      full = full ? `${full} ${clean}` : clean;
+      if (count < 2) {
+        count += 1;
+        yield { type: "sentence", text: clean };
+      }
+    }
+  } catch {
+    full = "";
+  }
+
+  if (!full.trim()) {
+    yield {
+      type: "done",
+      answer: {
+        reply: gathered.localReply,
+        mode: "demo",
+        sources: gathered.sources,
+        notice: "Grok did not answer, so this is the local reading of the vault notes.",
+      },
+    };
+    return;
+  }
+
+  yield {
+    type: "done",
+    answer: {
+      reply: withSourcesFooter(full, gathered.sources),
+      mode: "grok",
+      sources: gathered.sources,
+      notice: gathered.sources.length > 0 ? "Notes used as context." : undefined,
+    },
   };
 }

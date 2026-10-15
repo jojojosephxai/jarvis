@@ -1,13 +1,15 @@
 import { assertNever } from "./assert";
+import { clockStamp, isClockQuestion, isSmallTalk, localClockReply, readySentences } from "./clock";
 import { CALL_REFUSAL } from "./demo-brain";
-import { answerFromVault, type AnswerOptions, type GroundedAnswer } from "./grounded-answer";
-import { brainMode } from "./grok";
+import { answerFromVault, streamAnswerFromVault, type AnswerOptions, type GroundedAnswer } from "./grounded-answer";
+import { brainMode, grokConfigured, grokPhraseNotes } from "./grok";
 import { resolveHand } from "./hands";
 import { describeGraphCommand } from "./graph-command";
 import { mentionsCalendar, parseIntent } from "./intent";
 import { loadVaultGraph } from "./note-graph.server";
 import { isMorningBriefRequest, morningBriefResponse } from "./morning-brief";
 import type { ChatMessageInput, ChatResponse } from "./types";
+import { butlerSpeech } from "./voice/policy";
 import { resolveVaultPath } from "./vault-read";
 import { attachWriteNudge, describeChanges, enrichKeepInput, observeVault, takeNudge } from "./vault-write";
 
@@ -47,7 +49,8 @@ export async function think(
 
   const root = options.root ?? process.cwd();
   const vaultDir = resolveVaultPath(root, options.vaultPath);
-  await observeVault(root, vaultDir);
+  const clockOnly = isClockQuestion(latest.content) !== null;
+  if (!clockOnly) await observeVault(root, vaultDir);
 
   if (isMorningBriefRequest(latest.content)) {
     return finish(await morningBriefResponse(options), root);
@@ -113,6 +116,15 @@ async function finish(response: ChatResponse, root: string): Promise<ChatRespons
 }
 
 async function talk(latest: string, options: AnswerOptions): Promise<ChatResponse> {
+  const clockKind = isClockQuestion(latest);
+  if (clockKind) {
+    return {
+      reply: localClockReply(clockKind, options.now ?? new Date()),
+      mode: brainMode(),
+      receipts: [],
+    };
+  }
+  if (isSmallTalk(latest)) return talkSmall(latest, options);
   if (mentionsCalendar(latest)) {
     return {
       reply:
@@ -123,6 +135,91 @@ async function talk(latest: string, options: AnswerOptions): Promise<ChatRespons
   }
 
   return fromGrounded(await answerFromVault(latest, options));
+}
+
+async function talkSmall(latest: string, options: AnswerOptions): Promise<ChatResponse> {
+  const now = options.now ?? new Date();
+  const modelOn = options.useModel ?? grokConfigured();
+  const packet = `Current time: ${clockStamp(now)} (America/New_York).\n\nQuestion:\n${latest}\n\nNotes:\nNo vault search. Answer in one or two short sentences.`;
+  if (!modelOn && !options.complete) {
+    return { reply: "Hello. I am here.", mode: "demo", receipts: [] };
+  }
+  const complete = options.complete ?? grokPhraseNotes;
+  const result = await complete(latest, packet);
+  if (result.ok && result.text.trim()) {
+    return { reply: result.text.trim(), mode: "grok", receipts: [] };
+  }
+  return { reply: "Hello. I am here.", mode: "demo", receipts: [] };
+}
+
+export type SpeakEvent =
+  | { type: "sentence"; text: string }
+  | { type: "done"; response: ChatResponse };
+
+export async function* streamTurn(
+  messages: ChatMessageInput[],
+  options: AnswerOptions = {},
+): AsyncGenerator<SpeakEvent> {
+  const started = Date.now();
+  let logged = false;
+  const logFirst = () => {
+    if (logged) return;
+    logged = true;
+    console.info(`time-to-first-word ${Date.now() - started}`);
+  };
+  const emitReply = function* (response: ChatResponse): Generator<SpeakEvent> {
+    for (const text of spokenParts(response.reply)) {
+      logFirst();
+      yield { type: "sentence", text };
+    }
+    if (!logged) logFirst();
+    yield { type: "done", response };
+  };
+
+  const latest = messages.at(-1);
+  if (!latest || latest.role !== "user") {
+    yield* emitReply({ reply: "Say that once more?", mode: brainMode(), receipts: [] });
+    return;
+  }
+
+  const clockKind = isClockQuestion(latest.content);
+  if (clockKind || isSmallTalk(latest.content)) {
+    yield* emitReply(await talk(latest.content, options));
+    return;
+  }
+
+  const parsed = parseIntent(latest.content);
+  if (parsed.kind === "chat") {
+    let answerText = "";
+    for await (const event of streamAnswerFromVault(latest.content, options)) {
+      if (event.type === "sentence") {
+        logFirst();
+        answerText = answerText ? `${answerText} ${event.text}` : event.text;
+        yield { type: "sentence", text: event.text };
+        continue;
+      }
+      const response = await finish(fromGrounded(event.answer), options.root ?? process.cwd());
+      if (!answerText) {
+        for (const text of spokenParts(response.reply)) {
+          logFirst();
+          yield { type: "sentence", text };
+        }
+      }
+      if (!logged) logFirst();
+      yield { type: "done", response };
+    }
+    return;
+  }
+
+  yield* emitReply(await think(messages, options));
+}
+
+function spokenParts(text: string): string[] {
+  const spoken = butlerSpeech(text);
+  if (!spoken) return [];
+  const split = readySentences(`${spoken} `);
+  const parts = split.ready.map((sentence) => sentence.trim()).filter((sentence) => sentence.length > 0);
+  return parts.length > 0 ? parts : [spoken];
 }
 
 function fromGrounded(answer: GroundedAnswer): ChatResponse {

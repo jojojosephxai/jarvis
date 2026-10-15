@@ -1,3 +1,4 @@
+import { clockStamp, readySentences } from "./clock";
 import type { BrainMode, ChatMessageInput } from "./types";
 
 /** Butler prompt. Vault notes are context, not a reason to skip the model. */
@@ -130,11 +131,15 @@ function chatBody(
   return body;
 }
 
+function clocked(prompt: string): string {
+  return `${prompt}\n\nCurrent time: ${clockStamp()} (America/New_York). Use this for the date and the time. Do not say you have no clock.`;
+}
+
 export async function grokChat(messages: ChatMessageInput[]): Promise<GrokResult> {
   const model = grokModel();
   return postChat(
     chatBody(model, 0.4, 400, [
-      { role: "system", content: SYSTEM_PROMPT },
+      { role: "system", content: clocked(SYSTEM_PROMPT) },
       ...messages.slice(-8).map((message) => ({
         role: message.role,
         content: message.content.slice(0, 1500),
@@ -148,11 +153,80 @@ export async function grokPhraseNotes(question: string, packet: string): Promise
   const user = (packet.startsWith("Question:") ? packet : `Question:\n${question}\n\n${packet}`).slice(0, 12000);
   return postChat(
     chatBody(model, 0.4, 400, [
-      { role: "system", content: BUTLER_PROMPT },
+      { role: "system", content: clocked(BUTLER_PROMPT) },
       { role: "user", content: user },
     ]),
     45_000,
   );
+}
+
+export async function* grokStreamSentences(question: string, packet: string): AsyncGenerator<string> {
+  const key = process.env.XAI_API_KEY?.trim();
+  if (!key) return;
+  const model = grokModel();
+  const user = (packet.startsWith("Current time:") || packet.startsWith("Question:")
+    ? packet
+    : `Question:\n${question}\n\n${packet}`
+  ).slice(0, 12000);
+  const body = chatBody(model, 0.4, 400, [
+    { role: "system", content: clocked(BUTLER_PROMPT) },
+    { role: "user", content: user },
+  ]);
+  body.stream = true;
+
+  let response: Response;
+  try {
+    response = await fetch("https://api.x.ai/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${key}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(body),
+      cache: "no-store",
+      signal: AbortSignal.timeout(45_000),
+    });
+  } catch {
+    return;
+  }
+  if (!response.ok || !response.body) return;
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let pending = "";
+  let text = "";
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    pending += decoder.decode(value, { stream: true });
+    const lines = pending.split("\n");
+    pending = lines.pop() ?? "";
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed.startsWith("data:")) continue;
+      const data = trimmed.slice(5).trim();
+      if (!data || data === "[DONE]") continue;
+      try {
+        const payload: unknown = JSON.parse(data);
+        text += streamDelta(payload);
+      } catch {
+        // Ignore a partial SSE frame.
+      }
+    }
+    const split = readySentences(text);
+    text = split.rest;
+    for (const sentence of split.ready) yield sentence;
+  }
+  const tail = text.trim();
+  if (tail) yield tail;
+}
+
+function streamDelta(payload: unknown): string {
+  if (!payload || typeof payload !== "object") return "";
+  const choices = (payload as { choices?: unknown }).choices;
+  if (!Array.isArray(choices) || !choices[0] || typeof choices[0] !== "object") return "";
+  const delta = (choices[0] as { delta?: { content?: unknown } }).delta;
+  return messageText(delta?.content);
 }
 
 function readChoice(payload: unknown): string {

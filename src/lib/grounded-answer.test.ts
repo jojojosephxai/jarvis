@@ -191,6 +191,47 @@ describe("think vault answers", () => {
     assert.doesNotMatch(result.reply, /orange/);
   });
 
+  it("answers the clock without searching the vault", async () => {
+    const now = new Date("2026-10-15T03:10:00Z");
+    const result = await think([{ role: "user", content: "what time is it" }], {
+      root: "/tmp/jarvis-no-vault-jos46",
+      vaultPath: "/tmp/jarvis-no-vault-jos46/missing",
+      useModel: false,
+      now,
+    });
+    assert.equal(result.reply, "It's 11:10 PM Eastern.");
+    assert.equal(result.sources?.length ?? 0, 0);
+    assert.doesNotMatch(result.reply, /vault|school|practice/i);
+  });
+
+  it("still searches the vault for a practice time", async () => {
+    const root = await makeVault();
+    const result = await think([{ role: "user", content: "What time is swim practice?" }], {
+      root,
+      vaultPath: path.join(root, "vault"),
+      useModel: false,
+    });
+    assert.match(result.reply, /Notes used:/);
+    assert.match(result.reply, /Swim/);
+  });
+
+  it("sends the current time with a vault question", async () => {
+    const root = await makeVault();
+    let packet = "";
+    await answerFromVault("What grade is Joseph in?", {
+      root,
+      vaultPath: path.join(root, "vault"),
+      useModel: true,
+      now: new Date("2026-10-15T03:10:00Z"),
+      complete: async (_question, text) => {
+        packet = text;
+        return { ok: true, text: "Joseph is in 9th grade (School)." };
+      },
+    });
+    assert.match(packet, /Current time:/);
+    assert.match(packet, /America\/New_York/);
+  });
+
   it("sends a greeting to the model instead of stopping at the vault", async () => {
     const root = await makeVault();
     let calls = 0;
