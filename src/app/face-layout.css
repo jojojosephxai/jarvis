@@ -412,12 +412,29 @@
   line-height: 1.35;
 }
 
+.face-column .graph-inspector.is-docked {
+  flex: 1 1 0%;
+  min-height: 0;
+  overflow: auto;
+}
+
+.face-column .graph-inspector.is-docked .inspector-body {
+  display: block;
+  overflow: visible;
+  max-height: none;
+  white-space: normal;
+  line-clamp: unset;
+  -webkit-line-clamp: unset;
+  -webkit-box-orient: unset;
+}
+
 .inspector-body {
   display: block;
   overflow: visible;
   white-space: normal;
   line-clamp: unset;
   -webkit-line-clamp: unset;
+  -webkit-box-orient: unset;
 }
 
 .inspector-body h4,

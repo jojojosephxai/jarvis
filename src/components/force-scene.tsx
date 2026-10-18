@@ -142,10 +142,10 @@ export function ForceScene({
           maxZ = Math.max(maxZ, point.z);
         }
         const { width, height } = size();
-        const padTop = 110;
-        const padLeft = 292;
-        const padRight = 248;
-        const padBottom = 200;
+        const padTop = 96;
+        const padLeft = 320;
+        const padRight = 260;
+        const padBottom = 188;
         const availW = Math.max(220, width - padLeft - padRight);
         const availH = Math.max(220, height - padTop - padBottom);
         const framing = stateRef.current;
@@ -209,8 +209,8 @@ export function ForceScene({
           return { w: (hiX - loX) * width * 0.5, h: (hiY - loY) * height * 0.5 };
         };
         dist = Math.max(distNeeded, 160);
-        const goalW = availW * 0.7;
-        const goalH = availH * 0.7;
+        const goalW = availW * 0.96;
+        const goalH = availH * 0.96;
         for (let pass = 0; pass < 4; pass += 1) {
           const span = spanAt(dist);
           const scale = Math.max(span.w / goalW, span.h / goalH);
@@ -243,7 +243,8 @@ export function ForceScene({
             material !== crossLine &&
             material !== haloMat &&
             material !== leafHalo &&
-            material !== ringMat
+            material !== ringMat &&
+            material !== glowMat
           ) {
             material.dispose();
           }
@@ -253,7 +254,7 @@ export function ForceScene({
       };
 
       const sharedLine = new THREE.LineBasicMaterial({ color: LINK, transparent: true, opacity: 0.28 });
-      const crossLine = new THREE.LineBasicMaterial({ color: LINK, transparent: true, opacity: 0.1 });
+      const crossLine = new THREE.LineBasicMaterial({ color: LINK, transparent: true, opacity: 0.08 });
       const spineLine = new THREE.LineBasicMaterial({ color: LINK, transparent: true, opacity: 0.62 });
       const hotLine = new THREE.LineBasicMaterial({ color: LINK, transparent: true, opacity: 0.92 });
       const haloMat = new THREE.MeshBasicMaterial({
@@ -274,6 +275,13 @@ export function ForceScene({
         opacity: 0.72,
         side: THREE.DoubleSide,
         depthWrite: false,
+      });
+      const glowMat = new THREE.MeshBasicMaterial({
+        color: 0xc8f6ff,
+        transparent: true,
+        opacity: 0.2,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
       });
 
       let labelStamp = "";
@@ -450,9 +458,14 @@ export function ForceScene({
           });
           const mesh = new THREE.Mesh(sphere, material);
           mesh.position.set(point.x, point.y, point.z);
-          mesh.scale.setScalar(Math.max(1.05, px * 0.32) * depthScale);
+          mesh.scale.setScalar(Math.max(1.7, px * 0.44) * depthScale);
           mesh.userData.id = node.id;
           mesh.userData.closeness = closeness;
+          const glow = new THREE.Mesh(sphere, glowMat);
+          glow.position.copy(mesh.position);
+          glow.scale.setScalar(mesh.scale.x * 2.35);
+          glow.userData.kind = "glow";
+          group.add(glow);
           group.add(mesh);
           meshes.push({ mesh, id: node.id, baseScale: mesh.scale.x });
           if (node.id === current.selectedId) {
@@ -557,10 +570,6 @@ export function ForceScene({
             }
             const homeA = from.kind === "folder" ? from.id : from.hubs[0];
             const homeB = to.kind === "folder" ? to.id : to.hubs[0];
-            if (focusId || routeSet) {
-              push(crossPositions, a, b);
-              continue;
-            }
             if (homeA && homeB && homeA !== homeB) {
               const key = homeA < homeB ? `${homeA}|${homeB}` : `${homeB}|${homeA}`;
               pairs.set(key, { a: homeA, b: homeB });
@@ -568,44 +577,11 @@ export function ForceScene({
               push(positions, a, b);
             }
           }
-          let cx = 0;
-          let cy = 0;
-          let cz = 0;
-          let hubs = 0;
-          for (const node of current.nodes) {
-            if (node.kind !== "folder") continue;
-            const point = pointOf.get(node.id);
-            if (!point) continue;
-            cx += point.x;
-            cy += point.y;
-            cz += point.z;
-            hubs += 1;
-          }
-          if (hubs > 0) {
-            cx /= hubs;
-            cy /= hubs;
-            cz /= hubs;
-          }
           for (const pair of pairs.values()) {
             const a = pointOf.get(pair.a);
             const b = pointOf.get(pair.b);
             if (!a || !b) continue;
-            const mx = (a.x + b.x) / 2;
-            const my = (a.y + b.y) / 2;
-            const mz = (a.z + b.z) / 2;
-            const c = { x: mx + (cx - mx) * 0.45, y: my + (cy - my) * 0.45, z: mz + (cz - mz) * 0.45 };
-            let prev: { x: number; y: number; z: number } = a;
-            for (let step = 1; step <= 12; step += 1) {
-              const t = step / 12;
-              const u = 1 - t;
-              const next = {
-                x: u * u * a.x + 2 * u * t * c.x + t * t * b.x,
-                y: u * u * a.y + 2 * u * t * c.y + t * t * b.y,
-                z: u * u * a.z + 2 * u * t * c.z + t * t * b.z,
-              };
-              push(crossPositions, prev, next);
-              prev = next;
-            }
+            push(crossPositions, a, b);
           }
           if (spinePositions.length > 0) {
             const geometry = new THREE.BufferGeometry();
@@ -811,7 +787,8 @@ export function ForceScene({
       const onWheel = (event: WheelEvent) => {
         pauseSpin();
         event.preventDefault();
-        dist = Math.max(80, Math.min(4000, dist * (event.deltaY > 0 ? 1.08 : 0.92)));
+        const nextDist = dist * (event.deltaY > 0 ? 1.08 : 0.92);
+        dist = Math.max(fitDist, Math.min(4000, nextDist));
         requestDraw();
       };
       const onKey = (event: KeyboardEvent) => {
@@ -819,7 +796,7 @@ export function ForceScene({
         else if (event.key === "ArrowRight") yaw += 0.08;
         else if (event.key === "ArrowUp") pitch = Math.max(-1.1, pitch - 0.06);
         else if (event.key === "ArrowDown") pitch = Math.min(1.1, pitch + 0.06);
-        else if (event.key === "+" || event.key === "=") dist = Math.max(80, dist * 0.9);
+        else if (event.key === "+" || event.key === "=") dist = Math.max(fitDist, dist * 0.9);
         else if (event.key === "-" || event.key === "_") dist = Math.min(4000, dist * 1.1);
         else return;
         pauseSpin();
@@ -859,6 +836,7 @@ export function ForceScene({
         haloMat.dispose();
         leafHalo.dispose();
         ringMat.dispose();
+        glowMat.dispose();
         renderer.dispose();
         renderer.forceContextLoss();
         renderer.domElement.remove();
@@ -889,7 +867,7 @@ export function ForceScene({
         rebuild,
         zoom: (kind) => {
           if (kind === "fit") fit();
-          if (kind === "in") dist = Math.max(80, dist * 0.82);
+          if (kind === "in") dist = Math.max(fitDist, dist * 0.82);
           if (kind === "out") dist = Math.min(4000, dist * 1.22);
         },
       };

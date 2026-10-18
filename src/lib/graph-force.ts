@@ -17,11 +17,26 @@ function hashUnit(id: string, salt: number): number {
 }
 
 function shell(index: number, count: number): { x: number; y: number; z: number } {
-  if (count <= 1) return { x: 0.2, y: 0.1, z: 0.4 };
+  if (count <= 1) return { x: 0.2, y: 0.15, z: 0.55 };
   const y = 1 - (index / (count - 1)) * 2;
   const ring = Math.sqrt(Math.max(0, 1 - y * y));
   const theta = Math.PI * (1 + Math.sqrt(5)) * index;
-  return { x: Math.cos(theta) * ring, y: y * 0.72, z: Math.sin(theta) * ring };
+  return { x: Math.cos(theta) * ring, y, z: Math.sin(theta) * ring };
+}
+
+/** Even 3D scatter inside one cluster. Hash keeps it stable; the sphere keeps it round. */
+function blob(id: string, index: number, count: number): { x: number; y: number; z: number } {
+  const golden = Math.PI * (3 - Math.sqrt(5));
+  const baseY = count <= 1 ? hashUnit(id, 2) * 2 - 1 : 1 - (index / Math.max(count - 1, 1)) * 2;
+  const y = clamp(baseY + (hashUnit(id, 3) - 0.5) * (count > 6 ? 0.22 : 0.4), -1, 1);
+  const ring = Math.sqrt(Math.max(0.08, 1 - y * y));
+  const theta = index * golden + hashUnit(id, 5) * 1.1;
+  const radial = 0.7 + hashUnit(id, 8) * 0.3;
+  return { x: Math.cos(theta) * ring * radial, y: y * radial, z: Math.sin(theta) * ring * radial };
+}
+
+function clusterRadius(count: number, repel: number): number {
+  return 18 + Math.sqrt(Math.max(count, 1)) * (10 + repel / 40);
 }
 
 type Body = {
@@ -61,7 +76,7 @@ export function layoutForce(nodes: LayoutNode[], edges: LayoutEdge[], options: G
     .filter((node) => node.kind === "folder")
     .map((node) => node.id)
     .sort();
-  const reach = Math.min(width, height) * (0.2 + repel / 780);
+  const reach = Math.min(width, height) * (0.1 + repel / 1560);
   hubIds.forEach((id, index) => {
     const point = shell(index, hubIds.length);
     const jitter = 0.86 + hashUnit(id, 4) * 0.28;
@@ -88,14 +103,14 @@ export function layoutForce(nodes: LayoutNode[], edges: LayoutEdge[], options: G
     const home = bodies.get(homeId);
     if (!home) continue;
     const sorted = [...members].sort((a, b) => a.id.localeCompare(b.id));
+    const radius = clusterRadius(sorted.length, repel);
     sorted.forEach((node, index) => {
-      const point = shell(index, Math.max(sorted.length, 2));
-      const radius = 16 + (index % 5) * 4;
+      const point = blob(node.id, index, sorted.length);
       bodies.set(node.id, {
         id: node.id,
         x: home.x + point.x * radius,
         y: home.y + point.y * radius,
-        z: home.z + point.z * 18,
+        z: home.z + point.z * radius,
         vx: 0,
         vy: 0,
         vz: 0,
@@ -142,12 +157,13 @@ export function layoutForce(nodes: LayoutNode[], edges: LayoutEdge[], options: G
     }
     const index = parked.get(home.id) ?? 0;
     parked.set(home.id, index + 1);
-    const point = shell(index + 1, 6);
+    const point = blob(node.id, index, 6);
+    const radius = clusterRadius(4, repel);
     bodies.set(node.id, {
       id: node.id,
-      x: home.x + point.x * 22,
-      y: home.y + point.y * 22,
-      z: home.z + point.z * 16,
+      x: home.x + point.x * radius,
+      y: home.y + point.y * radius,
+      z: home.z + point.z * radius,
       vx: 0,
       vy: 0,
       vz: 0,
@@ -186,7 +202,7 @@ export function layoutForce(nodes: LayoutNode[], edges: LayoutEdge[], options: G
         }
         const same = Boolean(a.home && a.home === b.home);
         const bothHubs = a.hub && b.hub;
-        const push = (repelK * (bothHubs ? 2.4 : same ? 0.12 : 0.45)) / (dist * dist);
+        const push = (repelK * (bothHubs ? 1.15 : same ? 0.9 : 0.35)) / (dist * dist);
         const ux = (dx / dist) * push;
         const uy = (dy / dist) * push;
         const uz = (dz / dist) * push;
@@ -214,7 +230,7 @@ export function layoutForce(nodes: LayoutNode[], edges: LayoutEdge[], options: G
       let rest = link * 0.55;
       let localK = springK;
       if (a.hub && b.hub) {
-        rest = Math.max(link * 0.7, Math.min(width, height) * 0.16);
+        rest = Math.max(link * 0.35, Math.min(width, height) * 0.08);
         localK = springK * 0.04;
       } else if (cross) {
         rest = link * 0.85;
@@ -237,9 +253,9 @@ export function layoutForce(nodes: LayoutNode[], edges: LayoutEdge[], options: G
       if (body.home) {
         const home = bodies.get(body.home);
         if (home) {
-          body.vx += (home.x - body.x) * 0.42 * cool;
-          body.vy += (home.y - body.y) * 0.42 * cool;
-          body.vz += (home.z - body.z) * 0.36 * cool;
+          body.vx += (home.x - body.x) * 0.06 * cool;
+          body.vy += (home.y - body.y) * 0.06 * cool;
+          body.vz += (home.z - body.z) * 0.06 * cool;
         }
       }
       body.vx += (cx - body.x) * 0.004 * cool;
@@ -252,21 +268,24 @@ export function layoutForce(nodes: LayoutNode[], edges: LayoutEdge[], options: G
     }
   }
 
-  const clusterReach = 18 + repel / 28;
-  let depthSlot = 0;
+  const membersByHome = new Map<string, Body[]>();
   for (const body of list) {
     if (!body.home) continue;
-    const home = bodies.get(body.home);
+    const group = membersByHome.get(body.home) ?? [];
+    group.push(body);
+    membersByHome.set(body.home, group);
+  }
+  for (const [homeId, members] of membersByHome) {
+    const home = bodies.get(homeId);
     if (!home) continue;
-    const dx = body.x - home.x;
-    const dy = body.y - home.y;
-    const dist = Math.hypot(dx, dy, body.z - home.z) || 1;
-    const gap = Math.min(clusterReach - 2, 14 + repel / 50);
-    const next = dist > clusterReach ? clusterReach : dist < gap ? gap : dist;
-    body.x = home.x + (dx / dist) * next;
-    body.y = home.y + (dy / dist) * next;
-    body.z = home.z + ((depthSlot % 5) - 2) * 18;
-    depthSlot += 1;
+    const sorted = [...members].sort((a, b) => a.id.localeCompare(b.id));
+    const radius = clusterRadius(sorted.length, repel);
+    sorted.forEach((body, index) => {
+      const point = blob(body.id, index, sorted.length);
+      body.x = home.x + point.x * radius;
+      body.y = home.y + point.y * radius;
+      body.z = home.z + point.z * radius;
+    });
   }
 
   const points: LayoutPoint[] = nodes.map((node) => {
