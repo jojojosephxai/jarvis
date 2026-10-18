@@ -39,8 +39,9 @@ describe("describeGraphCommand", () => {
     assert.ok(command);
     const described = describeGraphCommand(command, graph.nodes);
     assert.equal(described.directive.action, "filter");
-    assert.equal(described.directive.value, "Me / Jarvis");
-    assert.match(described.reply, /Me \/ Jarvis/);
-    assert.equal(graph.nodes.some((node) => node.title === "Me" && node.kind === "folder"), false);
+    assert.equal(described.directive.value, "Me");
+    assert.match(described.reply, /Me/);
+    assert.equal(graph.nodes.some((node) => node.title === "Me" && node.kind === "folder"), true);
+    assert.equal(graph.nodes.some((node) => node.title === "Me / Jarvis"), false);
   });
 });

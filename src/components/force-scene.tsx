@@ -240,6 +240,7 @@ export function ForceScene({
             material !== sharedLine &&
             material !== hotLine &&
             material !== spineLine &&
+            material !== crossLine &&
             material !== haloMat &&
             material !== leafHalo &&
             material !== ringMat
@@ -251,7 +252,8 @@ export function ForceScene({
         meshes.length = 0;
       };
 
-      const sharedLine = new THREE.LineBasicMaterial({ color: LINK, transparent: true, opacity: 0.3 });
+      const sharedLine = new THREE.LineBasicMaterial({ color: LINK, transparent: true, opacity: 0.28 });
+      const crossLine = new THREE.LineBasicMaterial({ color: LINK, transparent: true, opacity: 0.1 });
       const spineLine = new THREE.LineBasicMaterial({ color: LINK, transparent: true, opacity: 0.62 });
       const hotLine = new THREE.LineBasicMaterial({ color: LINK, transparent: true, opacity: 0.92 });
       const haloMat = new THREE.MeshBasicMaterial({
@@ -305,6 +307,39 @@ export function ForceScene({
             const pulse = entry.id === selected ? 1 + Math.sin(t * 2.2) * 0.055 : 1;
             entry.mesh.scale.setScalar(entry.baseScale * pulse);
           }
+        }
+        const flow = group?.children.find((child) => child.userData.flow);
+        const ring = group?.children.find((child) => child.userData.kind === "select-ring");
+        const selectedMesh = meshes.find((entry) => entry.id === stateRef.current.selectedId);
+        if (ring instanceof THREE.Mesh && selectedMesh) {
+          const distance = Math.max(camera.position.distanceTo(selectedMesh.mesh.position), 1);
+          const worldPerPx =
+            (2 * Math.tan((camera.fov * Math.PI) / 360) * distance) / Math.max(host.clientHeight, 1);
+          const outer = selectedMesh.mesh.scale.x * 1.9;
+          const inner = Math.max(outer - 1.5 * worldPerPx, outer * 0.82);
+          const stamp = `${inner.toFixed(3)}|${outer.toFixed(3)}`;
+          if (ring.userData.stamp !== stamp) {
+            ring.geometry.dispose();
+            ring.geometry = new THREE.RingGeometry(inner, outer, 48);
+            ring.userData.stamp = stamp;
+          }
+          ring.position.copy(selectedMesh.mesh.position);
+        }
+        if (flow instanceof THREE.Points) {
+          const raw = flow.userData.flow as number[];
+          const attr = flow.geometry.getAttribute("position");
+          const phase = (now / 1000) % 1;
+          for (let index = 0; index < attr.count; index += 1) {
+            const base = (index % Math.floor(raw.length / 6)) * 6;
+            const t = (phase + index / attr.count) % 1;
+            attr.setXYZ(
+              index,
+              (raw[base] ?? 0) + ((raw[base + 3] ?? 0) - (raw[base] ?? 0)) * t,
+              (raw[base + 1] ?? 0) + ((raw[base + 4] ?? 0) - (raw[base + 1] ?? 0)) * t,
+              (raw[base + 2] ?? 0) + ((raw[base + 5] ?? 0) - (raw[base + 2] ?? 0)) * t,
+            );
+          }
+          attr.needsUpdate = true;
         }
         placeCamera();
         renderer.render(scene, camera);
@@ -378,7 +413,6 @@ export function ForceScene({
           if (!point) continue;
           const closeness = (point.z - nearZ) / zSpan;
           const depthScale = 0.72 + 0.28 * closeness;
-          const depthDim = 0.42 + 0.58 * closeness;
           const px = nodeDiameterPx(node, degree.get(node.id) ?? 0);
           const color = new THREE.Color(nodeColor(node.nodeType));
           const material = new THREE.ShaderMaterial({
@@ -386,7 +420,7 @@ export function ForceScene({
             depthWrite: false,
             uniforms: {
               uColor: { value: color },
-              uDim: { value: (dim && !hot.has(node.id) ? 0.2 : 1) * depthDim },
+              uDim: { value: (dim && !hot.has(node.id) ? 0.35 : 1) * (0.82 + 0.18 * closeness) },
             },
             vertexShader: `
               varying vec3 vNormal;
@@ -421,16 +455,16 @@ export function ForceScene({
           mesh.userData.closeness = closeness;
           group.add(mesh);
           meshes.push({ mesh, id: node.id, baseScale: mesh.scale.x });
-          const major = node.root || node.kind === "folder";
-          const halo = new THREE.Mesh(sphere, major ? haloMat : leafHalo);
-          halo.position.copy(mesh.position);
-          halo.scale.setScalar(mesh.scale.x * (major ? 1.85 : 1.55));
-          group.add(halo);
-          if (major) {
-            const ring = new THREE.Mesh(new THREE.RingGeometry(1.45, 1.58, 64), ringMat);
+          if (node.id === current.selectedId) {
+            const distance = Math.max(camera.position.distanceTo(mesh.position), 1);
+            const worldPerPx =
+              (2 * Math.tan((camera.fov * Math.PI) / 360) * distance) / Math.max(host.clientHeight, 1);
+            const outer = mesh.scale.x * 1.9;
+            const inner = Math.max(outer - 1.5 * worldPerPx, outer * 0.82);
+            const ring = new THREE.Mesh(new THREE.RingGeometry(inner, outer, 48), ringMat);
             ring.position.copy(mesh.position);
-            ring.scale.setScalar(mesh.scale.x * 2.35);
-            ring.rotation.x = Math.PI / 2.6;
+            ring.rotation.x = Math.PI / 2.4;
+            ring.userData.kind = "select-ring";
             group.add(ring);
           }
         }
@@ -490,6 +524,7 @@ export function ForceScene({
           const focusId = current.selectedId;
           const routeSet = current.route ? new Set(current.route) : null;
           const positions: number[] = [];
+          const crossPositions: number[] = [];
           const spinePositions: number[] = [];
           const hotPositions: number[] = [];
           const pairs = new Map<string, { a: string; b: string }>();
@@ -520,9 +555,12 @@ export function ForceScene({
               if (!focusId && !routeSet) push(spinePositions, a, b);
               continue;
             }
-            if (focusId || routeSet) continue;
             const homeA = from.kind === "folder" ? from.id : from.hubs[0];
             const homeB = to.kind === "folder" ? to.id : to.hubs[0];
+            if (focusId || routeSet) {
+              push(crossPositions, a, b);
+              continue;
+            }
             if (homeA && homeB && homeA !== homeB) {
               const key = homeA < homeB ? `${homeA}|${homeB}` : `${homeB}|${homeA}`;
               pairs.set(key, { a: homeA, b: homeB });
@@ -565,7 +603,7 @@ export function ForceScene({
                 y: u * u * a.y + 2 * u * t * c.y + t * t * b.y,
                 z: u * u * a.z + 2 * u * t * c.z + t * t * b.z,
               };
-              push(positions, prev, next);
+              push(crossPositions, prev, next);
               prev = next;
             }
           }
@@ -578,6 +616,28 @@ export function ForceScene({
             const geometry = new THREE.BufferGeometry();
             geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
             group.add(new THREE.LineSegments(geometry, sharedLine));
+          }
+          if (crossPositions.length > 0) {
+            const geometry = new THREE.BufferGeometry();
+            geometry.setAttribute("position", new THREE.Float32BufferAttribute(crossPositions, 3));
+            group.add(new THREE.LineSegments(geometry, crossLine));
+          }
+          if (hotPositions.length >= 6) {
+            const count = Math.min(18, Math.floor(hotPositions.length / 6));
+            const flowGeo = new THREE.BufferGeometry();
+            flowGeo.setAttribute("position", new THREE.BufferAttribute(new Float32Array(count * 3), 3));
+            const flow = new THREE.Points(
+              flowGeo,
+              new THREE.PointsMaterial({
+                color: 0xb7f3ff,
+                size: 2.2,
+                transparent: true,
+                opacity: 0.75,
+                depthWrite: false,
+              }),
+            );
+            flow.userData.flow = hotPositions;
+            group.add(flow);
           }
           if (hotPositions.length > 0) {
             const geometry = new THREE.BufferGeometry();
@@ -595,7 +655,7 @@ export function ForceScene({
         const height = host.clientHeight || 1;
         labelHost.replaceChildren();
         if (!current.showLabels) return;
-        const zoomed = dist < fitDist * 0.72;
+        const zoomed = dist < fitDist * 0.82;
         const routeIndex = new Map((current.route ?? []).map((id, index) => [id, index]));
         const candidates: {
           id: string;
@@ -637,7 +697,7 @@ export function ForceScene({
             depth: 0.8,
             big: links >= 4,
           };
-          if (!labelEligible(flags, zoomed ? 1.4 : 1, false)) continue;
+          if (!labelEligible(flags, zoomed ? 1.7 : 1, false)) continue;
           const vector = entry.mesh.position.clone().project(camera);
           if (vector.z > 1) continue;
           const sx = (vector.x * 0.5 + 0.5) * width;
@@ -793,6 +853,7 @@ export function ForceScene({
         disposeGroup();
         sphere.dispose();
         sharedLine.dispose();
+        crossLine.dispose();
         spineLine.dispose();
         hotLine.dispose();
         haloMat.dispose();

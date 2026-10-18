@@ -304,8 +304,20 @@ function localReading(question: string, picked: ScoredNote[], allTitles: string[
   };
 }
 
+const CONTEXT_NOTES = 3;
+const NOTE_CLIP = 900;
+
+function clipNote(text: string): string {
+  const clean = text.trim();
+  if (clean.length <= NOTE_CLIP) return clean;
+  return `${clean.slice(0, NOTE_CLIP).trim()}…`;
+}
+
 function packetFor(question: string, picked: ScoredNote[], now?: Date): string {
-  const blocks = picked.map((scored) => `# ${scored.note.title}\n${scored.note.text.trim()}`).join("\n\n");
+  const blocks = picked
+    .slice(0, CONTEXT_NOTES)
+    .map((scored) => `# ${scored.note.title}\n${clipNote(scored.note.text)}`)
+    .join("\n\n");
   return `Current time: ${clockStamp(now)} (America/New_York).\n\nQuestion:\n${question}\n\nNotes:\n${blocks}`;
 }
 
@@ -368,7 +380,7 @@ async function gatherAnswer(question: string, options: AnswerOptions): Promise<G
 
   const best = ranked[0];
   const picked = best
-    ? ranked.filter((scored) => scored.score >= best.score * 0.55).slice(0, 3)
+    ? ranked.filter((scored) => scored.score >= best.score * 0.55).slice(0, CONTEXT_NOTES)
     : [];
 
   const allTitles = loaded.notes.map((note) => note.title);

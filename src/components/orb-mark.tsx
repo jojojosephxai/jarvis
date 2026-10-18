@@ -99,23 +99,6 @@ function TickRing() {
   );
 }
 
-function DegreeMarks() {
-  const marks = [];
-  for (let deg = 0; deg < 360; deg += 30) {
-    const point = polar(46.2, deg);
-    marks.push(
-      <text key={deg} x={point.x} y={point.y} textAnchor="middle" dominantBaseline="middle">
-        {deg}
-      </text>,
-    );
-  }
-  return (
-    <svg className="orb-mark orb-degrees" viewBox="0 0 120 120" aria-hidden="true">
-      {marks}
-    </svg>
-  );
-}
-
 function Spokes() {
   const lines = [];
   for (let index = 0; index < 12; index += 1) {
@@ -175,7 +158,6 @@ export function OrbMark({ mode }: { mode: OrbMode }) {
   return (
     <>
       <span className="orb-bloom" />
-      <span className="orb-scan" />
       {RINGS.map((ring) => (
         <svg key={ring.className} className={`orb-mark ${ring.className}`} viewBox="0 0 120 120" data-mode={mode} aria-hidden="true">
           {ring.arcs.map(([start, end]) => (
@@ -184,7 +166,6 @@ export function OrbMark({ mode }: { mode: OrbMode }) {
         </svg>
       ))}
       <TickRing />
-      <DegreeMarks />
       <Spokes />
       <Brackets />
       <HexCore />

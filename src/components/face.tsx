@@ -30,19 +30,6 @@ function calendarOnly(text: string): boolean {
   return /^calendar (isn'?t|is not|not) connected( yet)?$/i.test(trimmed);
 }
 
-function rememberLog(current: LogItem[], extra: LogItem[]): LogItem[] {
-  const merged = [...current];
-  for (const item of extra) {
-    if (item.kind === "jarvis" && calendarOnly(item.text)) {
-      if (merged.some((row) => row.kind === "jarvis" && calendarOnly(row.text))) continue;
-      merged.push({ ...item, text: CALENDAR_NOTICE });
-      continue;
-    }
-    merged.push(item);
-  }
-  return merged.slice(-40);
-}
-
 function collapseCalendar(items: LogItem[]): LogItem[] {
   let seen = false;
   const rows: LogItem[] = [];
@@ -63,7 +50,16 @@ let greetedThisLoad = false;
 type LogItem =
   | { kind: "you"; id: string; text: string; at: string }
   | { kind: "jarvis"; id: string; text: string; at: string; sources?: string[]; failed?: boolean }
-  | { kind: "hand"; id: string; at: string; reply: string; plan?: HandPlan; receipts: Receipt[]; cancelled?: boolean };
+  | { kind: "hand"; id: string; at: string; reply: string; plan?: HandPlan; receipts: Receipt[]; cancelled?: boolean }
+  | { kind: "timing"; id: string; at: string; tokenMs: number; voiceMs: number };
+
+function dropUnaskedCalendar(text: string, asked: boolean): string {
+  if (asked) return text;
+  const parts = text.split(/(?<=[.!?])\s+/).filter((part) => !/calendar (isn'?t|is not|not) connected/i.test(part));
+  const next = parts.join(" ").trim();
+  if (next) return next;
+  return calendarOnly(text) ? "" : text;
+}
 
 type WorkStep = {
   id: string;
@@ -136,6 +132,7 @@ function orbPlace(mode: OrbMode): OrbPlace {
 export function Face() {
   const [items, setItems] = useState<LogItem[]>([]);
   const [draft, setDraft] = useState("");
+  const [toolNote, setToolNote] = useState("");
   const [askFocus, setAskFocus] = useState(false);
   const [speaking, setSpeaking] = useState(false);
   const [ackOn, setAckOn] = useState(false);
@@ -409,6 +406,19 @@ export function Face() {
     let spoken = "";
     let heard = 0;
     const askedAt = performance.now();
+    let tokenAt = 0;
+    let timed = false;
+    const stampTiming = (voiceAt: number | null) => {
+      if (timed) return;
+      timed = true;
+      const now = performance.now();
+      const tokenMs = Math.max(0, Math.round((tokenAt || now) - askedAt));
+      const voiceMs = tokenAt && voiceAt ? Math.max(0, Math.round(voiceAt - tokenAt)) : 0;
+      const at = new Date().toISOString();
+      setItems((current) =>
+        [...current, { kind: "timing" as const, id: makeId("time"), at, tokenMs, voiceMs }].slice(-40),
+      );
+    };
     let loggedWord = false;
     const queue: string[] = [];
     let streamDone = false;
@@ -433,6 +443,8 @@ export function Face() {
           first
             ? {
                 onStart: () => {
+                  if (!tokenAt) tokenAt = performance.now();
+                  stampTiming(performance.now());
                   if (loggedWord) return;
                   loggedWord = true;
                   console.info(`time-to-first-word ${Math.round(performance.now() - askedAt)}`);
@@ -442,10 +454,12 @@ export function Face() {
         );
       }
     })();
+    const askedCalendar = mentionsCalendar(trimmed);
     const pushSentence = (text: string) => {
-      const clean = text.trim();
+      const clean = dropUnaskedCalendar(text.trim(), askedCalendar);
       if (!clean || heard >= 2) return;
       heard += 1;
+      if (!tokenAt) tokenAt = performance.now();
       queue.push(clean);
       const resume = gate.wake;
       gate.wake = null;
@@ -496,21 +510,24 @@ export function Face() {
         } else pushCue({ focusQuery: graph.value });
       }
       if (isHandsTurn(payload)) {
-        setItems((current) =>
-          [
-            ...current,
-            {
-              kind: "hand" as const,
-              id: makeId("hand"),
-              at,
-              reply: payload.reply,
-              plan: payload.plan,
-              receipts: payload.receipts,
-            },
-          ].slice(-40),
-        );
+        const reply = dropUnaskedCalendar(payload.reply, askedCalendar);
+        if (reply || payload.plan) {
+          setItems((current) =>
+            [
+              ...current,
+              {
+                kind: "hand" as const,
+                id: makeId("hand"),
+                at,
+                reply: reply || payload.reply,
+                plan: payload.plan,
+                receipts: payload.receipts,
+              },
+            ].slice(-40),
+          );
+        }
         if (payload.plan?.state === "waiting" && payload.plan.tool && !STUB_TASKS.has(payload.plan.tool)) setTab("tasks");
-        if (heard === 0) spoken = butlerSpeech(payload.reply);
+        if (heard === 0 && reply) spoken = butlerSpeech(reply);
         return;
       }
       const brief = payload.brief;
@@ -530,19 +547,22 @@ export function Face() {
         if (heard === 0) spoken = brief.spoken;
         return;
       }
-      setItems((current) =>
-        [
-          ...current,
-          {
-            kind: "jarvis" as const,
-            id: makeId("ans"),
-            text: payload.reply,
-            sources: payload.sources,
-            at,
-          },
-        ].slice(-40),
-      );
-      if (heard === 0) spoken = butlerSpeech(payload.reply);
+      const reply = dropUnaskedCalendar(payload.reply, askedCalendar);
+      if (reply) {
+        setItems((current) =>
+          [
+            ...current,
+            {
+              kind: "jarvis" as const,
+              id: makeId("ans"),
+              text: reply,
+              sources: payload.sources,
+              at,
+            },
+          ].slice(-40),
+        );
+      }
+      if (heard === 0 && reply) spoken = butlerSpeech(reply);
     } catch (error) {
       if (abort.signal.aborted || (error instanceof DOMException && error.name === "AbortError")) {
         setItems((current) =>
@@ -576,6 +596,7 @@ export function Face() {
       gate.wake = null;
       resume?.();
       await speaker;
+      stampTiming(null);
       await speakThenFinish(id, abort, spoken);
     }
   }
@@ -626,10 +647,7 @@ export function Face() {
   }
 
   function showCalendar() {
-    const at = new Date().toISOString();
-    setTab("chat");
-    setItems((current) => rememberLog(current, [{ kind: "jarvis", id: makeId("cal"), text: CALENDAR_NOTICE, at }]));
-    setLiveLine(CALENDAR_NOTICE);
+    setToolNote("Calendar isn't connected");
   }
 
   const micHint = voice.notice && /microphone/i.test(voice.notice) ? voice.notice : "";
@@ -706,6 +724,9 @@ export function Face() {
                 value={draft}
                 maxLength={2000}
                 autoComplete="off"
+                autoCorrect="off"
+                autoCapitalize="none"
+                spellCheck={false}
                 enterKeyHint="send"
                 placeholder="Ask Jarvis"
                 disabled={pending}
@@ -730,7 +751,7 @@ export function Face() {
               >
                 <HandIcon />
               </ToolButton>
-              <ToolButton label="Calendar" onClick={showCalendar}>
+              <ToolButton label="Calendar isn't connected" onClick={showCalendar}>
                 <CalendarIcon />
               </ToolButton>
               <ToolButton label="School" onClick={() => pushCue({ focusHub: "School" })}>
@@ -758,6 +779,7 @@ export function Face() {
                 <GearIcon />
               </ToolButton>
             </div>
+            {toolNote ? <p className="tool-note">{toolNote}</p> : null}
           </div>
           <ChatCard
             items={items}
@@ -853,12 +875,15 @@ function ChatLines({ items }: { items: LogItem[] }) {
             </article>
           );
         }
-        return (
-          <article key={item.id} className="chat-line">
-            <p className="chat-meta">Jarvis · {formatStamp(item.at)}</p>
-            <p>{item.reply}</p>
-          </article>
-        );
+        if (item.kind === "hand") {
+          return (
+            <article key={item.id} className="chat-line">
+              <p className="chat-meta">Jarvis · {formatStamp(item.at)}</p>
+              <p>{item.reply}</p>
+            </article>
+          );
+        }
+        return null;
       })}
     </>
   );
@@ -916,16 +941,48 @@ function LogLines({ items }: { items: LogItem[] }) {
   return (
     <>
       {rows.map((item) => {
-        const text = item.kind === "you" ? item.text : item.kind === "jarvis" ? item.text : item.reply;
-        const who = item.kind === "you" ? "You" : "Jarvis";
-        return (
-          <article key={item.id} className="chat-line">
-            <p className="chat-meta">
-              {formatStamp(item.at)} · {who}
-            </p>
-            <p>{text}</p>
-          </article>
-        );
+        if (item.kind === "timing") {
+          return (
+            <article key={item.id} className="chat-line">
+              <p className="chat-meta">{formatStamp(item.at)} · Brain</p>
+              <p>
+                Brain {item.tokenMs} ms to first token · {item.voiceMs} ms to voice
+              </p>
+            </article>
+          );
+        }
+        if (item.kind === "you") {
+          return (
+            <article key={item.id} className="chat-line">
+              <p className="chat-meta">
+                {formatStamp(item.at)} · You
+              </p>
+              <p>{item.text}</p>
+            </article>
+          );
+        }
+        if (item.kind === "jarvis") {
+          return (
+            <article key={item.id} className="chat-line">
+              <p className="chat-meta">
+                {formatStamp(item.at)} · Jarvis
+              </p>
+              <p>{item.text}</p>
+            </article>
+          );
+        }
+        if (item.kind === "hand") {
+          return (
+            <article key={item.id} className="chat-line">
+              <p className="chat-meta">
+                {formatStamp(item.at)} · Jarvis
+              </p>
+              <p>{item.reply}</p>
+            </article>
+          );
+        }
+        const neverItem: never = item;
+        return neverItem;
       })}
     </>
   );

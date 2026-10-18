@@ -23,8 +23,8 @@ describe("inspectorDocument", () => {
     const schoolHub = graph.nodes.find((node) => node.id === "area:school");
     const swimHub = graph.nodes.find((node) => node.id === "area:swim");
     const heading = graph.nodes.find((node) => node.anchor === "Bells");
-    const root = graph.nodes.find((node) => node.root);
-    assert.ok(schoolHub && swimHub && heading && root);
+    const about = graph.nodes.find((node) => node.id === "About.md");
+    assert.ok(schoolHub && swimHub && heading && about);
 
     const schoolView = inspectorDocument(schoolHub, graph.nodes, byPath);
     assert.equal(schoolView.kind, "note");
@@ -50,9 +50,9 @@ describe("inspectorDocument", () => {
       assert.equal(headingView.markdown, school);
     }
 
-    const rootView = inspectorDocument(root, graph.nodes, byPath);
-    assert.equal(rootView.kind, "note");
-    if (rootView.kind === "note") assert.match(rootView.markdown, /Joseph/);
+    const aboutView = inspectorDocument(about, graph.nodes, byPath);
+    assert.equal(aboutView.kind, "note");
+    if (aboutView.kind === "note") assert.match(aboutView.markdown, /Joseph/);
   });
 });
 

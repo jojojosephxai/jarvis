@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { isClockQuestion, isSmallTalk, localClockReply, readySentences } from "./clock";
+import { isClockQuestion, isQuickAsk, isSmallTalk, localClockReply, readySentences } from "./clock";
 
 describe("clock questions", () => {
   const now = new Date("2026-10-15T03:10:00Z");
@@ -19,6 +19,14 @@ describe("clock questions", () => {
   it("answers from the Eastern clock", () => {
     assert.equal(localClockReply("time", now), "It's 11:10 PM Eastern.");
     assert.equal(localClockReply("date", now), "It's Wednesday, October 14.");
+  });
+
+  it("sends greetings and short questions to the fast path", () => {
+    assert.equal(isQuickAsk("hi"), true);
+    assert.equal(isQuickAsk("what time is it"), true);
+    assert.equal(isQuickAsk("how is the weather?"), true);
+    assert.equal(isQuickAsk("what time is swim practice"), false);
+    assert.equal(isQuickAsk("what did I write about the science fair project last spring"), false);
   });
 
   it("treats a short greeting as small talk", () => {

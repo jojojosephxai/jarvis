@@ -182,7 +182,10 @@ export function NoteGraph({
   if (!payload) {
     return (
       <div className="graph-stage graph-stage-empty">
-        <p className="status-note">Reading notes...</p>
+        <div className="graph-loader" role="status">
+          <span />
+          <p>Reading notes</p>
+        </div>
       </div>
     );
   }
@@ -214,9 +217,8 @@ function GraphEmpty({ payload }: { payload: NoteGraphPayload }) {
 
 function matchHub(nodes: GraphNode[], wanted: string): GraphNode | undefined {
   const key = wanted.trim().toLowerCase();
-  if (key === "me" || key === "me / jarvis") {
-    const root = nodes.find((node) => node.root);
-    if (root) return root;
+  if (key === "me / jarvis") {
+    return nodes.find((node) => node.kind === "folder" && node.title.toLowerCase() === "me");
   }
   return nodes.find(
     (node) => node.kind === "folder" && (node.title.toLowerCase() === key || node.id.toLowerCase() === key),
@@ -248,7 +250,11 @@ function GraphReady({
   const [showHubs, setShowHubs] = useState(true);
   const [showLabels, setShowLabels] = useState(true);
   const [showEdges, setShowEdges] = useState(true);
-  const [hiddenTypes, setHiddenTypes] = useState<GraphNodeType[]>(["heading"]);
+  const [hiddenTypes, setHiddenTypes] = useState<GraphNodeType[]>([]);
+  const [repelDraft, setRepelDraft] = useState(180);
+  const [linkDraft, setLinkDraft] = useState(160);
+  const [localOn, setLocalOn] = useState(false);
+  const [readerId, setReaderId] = useState<string | null>(null);
   const [filterId, setFilterId] = useState<string | null>(null);
 
   if (cue && cue.token !== seenCue) {
@@ -259,6 +265,7 @@ function GraphReady({
       setPathFromId("");
       setPathToId("");
       setSelectedId(null);
+      setReaderId(null);
       setClusterId(null);
       setFrameMode("fit");
       setHomeToken((token) => token + 1);
@@ -276,6 +283,7 @@ function GraphReady({
         setFilterId(hub.id);
         setClusterId(hub.id);
         setSelectedId(hub.id);
+        setReaderId(hub.id);
         setFrameMode("cluster");
         setHomeToken((token) => token + 1);
       }
@@ -292,6 +300,7 @@ function GraphReady({
       } else {
         setClusterId(hub.id);
         setSelectedId(hub.id);
+        setReaderId(hub.id);
         setFrameMode("cluster");
         setHomeToken((token) => token + 1);
       }
@@ -325,6 +334,7 @@ function GraphReady({
       } else if (first.kind === "folder") {
         setClusterId(first.id);
         setSelectedId(first.id);
+        setReaderId(first.id);
         setFrameMode("cluster");
       } else {
         setSelectedId(first.id);
@@ -334,6 +344,7 @@ function GraphReady({
       setHomeToken((token) => token + 1);
     } else {
       setSelectedId(null);
+      setReaderId(null);
       setClusterId(null);
       setFrameMode("fit");
     }
@@ -346,6 +357,7 @@ function GraphReady({
       const target = event.target;
       if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) return;
       setSelectedId(null);
+      setReaderId(null);
       setClusterId(null);
       setFilterId(null);
       setPathFromId("");
@@ -394,9 +406,21 @@ function GraphReady({
       if (filterId && node.id !== filterId && !node.root && !node.hubs.includes(filterId)) continue;
       ids.add(node.id);
     }
+    if (localOn && selectedId) {
+      const near = new Set<string>([selectedId]);
+      for (let hop = 0; hop < 2; hop += 1) {
+        for (const edge of payload.edges) {
+          if (near.has(edge.from)) near.add(edge.to);
+          if (near.has(edge.to)) near.add(edge.from);
+        }
+      }
+      for (const id of ids) {
+        if (!near.has(id)) ids.delete(id);
+      }
+    }
     return ids;
-  }, [payload.nodes, hiddenTypes, showHubs, filterId, selectedId]);
-  const selected = payload.nodes.find((node) => node.id === selectedId) ?? null;
+  }, [payload.nodes, payload.edges, hiddenTypes, showHubs, filterId, selectedId, localOn]);
+  const selected = payload.nodes.find((node) => node.id === readerId) ?? null;
   const noteLinks: NoteLink[] = selected
     ? payload.edges.flatMap((edge) => {
         const otherId = edge.from === selected.id ? edge.to : edge.to === selected.id ? edge.from : "";
@@ -419,6 +443,7 @@ function GraphReady({
 
   function clearFocus() {
     setSelectedId(null);
+    setReaderId(null);
     setClusterId(null);
     setFilterId(null);
     setPathFromId("");
@@ -431,6 +456,7 @@ function GraphReady({
     setFilterId(null);
     setClusterId(id);
     setSelectedId(id);
+    setReaderId(id);
     setPathFromId("");
     setPathToId("");
     setFrameMode("cluster");
@@ -452,6 +478,11 @@ function GraphReady({
       focusHub(node.id);
       return;
     }
+    if (selectedId === id) {
+      setReaderId(id);
+      return;
+    }
+    setReaderId(null);
     setClusterId(null);
     setPathFromId("");
     setPathToId("");
@@ -488,6 +519,27 @@ function GraphReady({
     setHomeToken((token) => token + 1);
   }
 
+  useEffect(() => {
+    const timer = window.setTimeout(() => setRepel(repelDraft), 160);
+    return () => window.clearTimeout(timer);
+  }, [repelDraft]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => setLinkLength(linkDraft), 160);
+    return () => window.clearTimeout(timer);
+  }, [linkDraft]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("shot") !== "depth") return;
+    const timers = [500, 900, 1300].map((delay) =>
+      window.setTimeout(() => setZoomCommand((current) => ({ token: current.token + 1, kind: "in" })), delay),
+    );
+    return () => {
+      for (const timer of timers) window.clearTimeout(timer);
+    };
+  }, []);
+
   return (
     <div className={selected ? "graph-stage has-note" : "graph-stage"} data-voice={voiceLive ? "live" : "idle"}>
       <aside className="face-column glass" aria-label="Graph" data-region="left">
@@ -512,9 +564,7 @@ function GraphReady({
               <li key={row.hub.id}>
                 <button type="button" data-active={clusterId === row.hub.id ? "true" : "false"} onClick={() => focusHub(row.hub.id)}>
                   <span className="hub-swatch" style={{ background: hubLabelColor(row.hub.title, hubTitles) }} />
-                  <span className="hub-name" style={{ color: hubLabelColor(row.hub.title, hubTitles) }}>
-                    {row.hub.title}
-                  </span>
+                  <span className="hub-name">{row.hub.title}</span>
                   <span className="hub-count">{row.count}</span>
                 </button>
               </li>
@@ -525,19 +575,26 @@ function GraphReady({
           <p className="face-block-label">Forces</p>
           <label className="face-slider">
             <span>Repel</span>
-            <span>{repel}</span>
-            <input type="range" min={40} max={360} value={repel} aria-label="Repel" onChange={(event) => setRepel(Number(event.target.value))} />
+            <span>{repelDraft}</span>
+            <input
+              type="range"
+              min={40}
+              max={360}
+              value={repelDraft}
+              aria-label="Repel"
+              onChange={(event) => setRepelDraft(Number(event.target.value))}
+            />
           </label>
           <label className="face-slider">
             <span>Link length</span>
-            <span>{linkLength}</span>
+            <span>{linkDraft}</span>
             <input
               type="range"
               min={40}
               max={420}
-              value={linkLength}
+              value={linkDraft}
               aria-label="Link length"
-              onChange={(event) => setLinkLength(Number(event.target.value))}
+              onChange={(event) => setLinkDraft(Number(event.target.value))}
             />
           </label>
         </div>
@@ -554,6 +611,10 @@ function GraphReady({
           <label className="face-check">
             <input type="checkbox" checked={showEdges} onChange={(event) => setShowEdges(event.target.checked)} />
             Edges
+          </label>
+          <label className="face-check">
+            <input type="checkbox" checked={localOn} onChange={(event) => setLocalOn(event.target.checked)} />
+            Local
           </label>
         </div>
         {selected ? (

@@ -14,11 +14,16 @@ type RecognitionErrorEvent = {
   error: string;
 };
 
+type GrammarList = {
+  addFromString: (source: string, weight: number) => void;
+};
+
 type Recognition = {
   lang: string;
   interimResults: boolean;
   continuous: boolean;
   maxAlternatives: number;
+  grammars?: GrammarList;
   onresult: ((event: RecognitionEvent) => void) | null;
   onerror: ((event: RecognitionErrorEvent) => void) | null;
   onend: (() => void) | null;
@@ -35,6 +40,20 @@ function recognitionCtor(): RecognitionCtor | null {
     webkitSpeechRecognition?: RecognitionCtor;
   };
   return host.SpeechRecognition ?? host.webkitSpeechRecognition ?? null;
+}
+
+/** The recognizer often hears the name Jarvis as Joseph. Prefer Jarvis when it is the first word. */
+export function hearJarvis(text: string): string {
+  return text.replace(/^(?:hey\s+|ok\s+|hi\s+)?joseph\b(?=\s*[,:]?\s+|$)/i, (match) => match.replace(/joseph/i, "Jarvis"));
+}
+
+function grammarCtor(): (new () => GrammarList) | null {
+  if (typeof window === "undefined") return null;
+  const host = window as Window & {
+    SpeechGrammarList?: new () => GrammarList;
+    webkitSpeechGrammarList?: new () => GrammarList;
+  };
+  return host.SpeechGrammarList ?? host.webkitSpeechGrammarList ?? null;
 }
 
 export function browserEarsSupported(): boolean {
@@ -83,14 +102,29 @@ export function startBrowserListen(handlers: {
   if (!Ctor) return { error: EARS_UNAVAILABLE };
 
   const recognition = new Ctor();
-  recognition.lang = "en-GB";
+  recognition.lang = "en-US";
   recognition.interimResults = true;
   recognition.continuous = false;
   recognition.maxAlternatives = 1;
+  const Grammar = grammarCtor();
+  if (Grammar) {
+    const grammars = new Grammar();
+    grammars.addFromString("#JSGF V1.0; grammar names; public <name> = Jarvis | hey Jarvis | okay Jarvis;", 1);
+    recognition.grammars = grammars;
+  }
 
   let ignore = false;
   let ended = false;
   let sentFinal = false;
+  let latest = "";
+  let quietTimer = 0;
+
+  const submit = () => {
+    if (sentFinal || !latest.trim()) return;
+    sentFinal = true;
+    window.clearTimeout(quietTimer);
+    handlers.onTranscript(hearJarvis(latest.trim()), true);
+  };
 
   const finish = () => {
     if (ended) return;
@@ -108,13 +142,12 @@ export function startBrowserListen(handlers: {
       text += result[0]?.transcript ?? "";
       if (result.isFinal) isFinal = true;
     }
-    const trimmed = text.trim();
+    const trimmed = hearJarvis(text.trim());
     if (!trimmed) return;
+    latest = trimmed;
     handlers.onTranscript(trimmed, false);
-    if (isFinal && !sentFinal) {
-      sentFinal = true;
-      handlers.onTranscript(trimmed, true);
-    }
+    window.clearTimeout(quietTimer);
+    quietTimer = window.setTimeout(submit, isFinal ? 500 : 500);
   };
 
   recognition.onerror = (event) => {
@@ -123,6 +156,9 @@ export function startBrowserListen(handlers: {
   };
 
   recognition.onend = () => {
+    if (!sentFinal && latest.trim() && quietTimer === 0) {
+      quietTimer = window.setTimeout(submit, 500);
+    }
     finish();
   };
 
@@ -135,6 +171,7 @@ export function startBrowserListen(handlers: {
   return {
     stop: () => {
       ignore = true;
+      window.clearTimeout(quietTimer);
       try {
         recognition.abort();
       } catch {

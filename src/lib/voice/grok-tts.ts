@@ -70,6 +70,24 @@ export function grokTtsPublicStatus(env?: GrokTtsEnv): VoicePublicStatus {
   }
 }
 
+let ttsWarmed = false;
+
+/** Open the Altair connection once when the page loads. */
+export function warmTtsConnection(): void {
+  if (ttsWarmed) return;
+  ttsWarmed = true;
+  const config = readGrokTtsConfig();
+  if (config.state !== "ready") return;
+  void fetch(TTS_URL, {
+    method: "OPTIONS",
+    headers: { Authorization: `Bearer ${config.key}` },
+    cache: "no-store",
+    signal: AbortSignal.timeout(8000),
+  }).catch(() => {
+    ttsWarmed = false;
+  });
+}
+
 function upstreamFailure(status: number): ServerSpeakFailure & { ok: false; httpStatus: number } {
   if (status === 401 || status === 403) {
     return {

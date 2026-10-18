@@ -123,14 +123,18 @@ test("screenshots of the face", async ({ page }) => {
   const shots = [
     ["1280-idle", { width: 1280, height: 800 }, "/"],
     ["1280-speaking", { width: 1280, height: 800 }, "/?face=speaking"],
+    ["1280-orb-chat", { width: 1280, height: 800 }, "/?face=speaking"],
     ["1280-inspector", { width: 1280, height: 800 }, "/?hub=School"],
     ["1280-working", { width: 1280, height: 800 }, "/?face=working"],
     ["1280-hub", { width: 1280, height: 800 }, "/?hub=School"],
+    ["1280-depth", { width: 1280, height: 800 }, "/?shot=depth"],
     ["1920-idle", { width: 1920, height: 1080 }, "/"],
     ["1920-speaking", { width: 1920, height: 1080 }, "/?face=speaking"],
+    ["1920-orb-chat", { width: 1920, height: 1080 }, "/?face=speaking"],
     ["1920-inspector", { width: 1920, height: 1080 }, "/?hub=School"],
     ["1920-working", { width: 1920, height: 1080 }, "/?face=working"],
     ["1920-hub", { width: 1920, height: 1080 }, "/?hub=School"],
+    ["1920-depth", { width: 1920, height: 1080 }, "/?shot=depth"],
   ];
   for (const [name, size, path] of shots) {
     await page.setViewportSize(size);
@@ -138,6 +142,7 @@ test("screenshots of the face", async ({ page }) => {
     if (String(path).includes("hub")) await page.waitForSelector(".graph-inspector");
     if (String(path).includes("speaking")) await page.waitForSelector(".orb-dial[data-place='center']");
     if (String(path).includes("working")) await page.waitForSelector(".face-task");
+    if (String(path).includes("shot=depth")) await page.waitForTimeout(1700);
     await expect.poll(async () => page.evaluate(panelOverlaps), { timeout: 15000 }).toEqual([]);
     await page.screenshot({ path: `${dir}/${name}.png`, fullPage: false });
   }

@@ -39,6 +39,17 @@ export function isSmallTalk(text: string): boolean {
   return SMALL_RE.test(tidy(text));
 }
 
+/** Greetings, the clock, and short questions use the fast model. Vault lookups stay on the hard model. */
+export function isQuickAsk(text: string): boolean {
+  const clean = tidy(text);
+  if (!clean) return false;
+  if (isClockQuestion(clean) || isSmallTalk(clean)) return true;
+  const words = clean.split(" ").filter(Boolean);
+  if (words.length > 8) return false;
+  if (/\b(calendar|schedule|remind|remember|vault|search|filter|focus|swim|school|practice)\b/i.test(clean)) return false;
+  return clean.endsWith("?") || words.length <= 4;
+}
+
 export function localClockReply(kind: "time" | "date", now = new Date()): string {
   if (kind === "date") {
     const date = new Intl.DateTimeFormat("en-US", {

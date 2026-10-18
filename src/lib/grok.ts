@@ -1,4 +1,4 @@
-import { clockStamp, readySentences } from "./clock";
+import { clockStamp, isQuickAsk, readySentences } from "./clock";
 import type { BrainMode, ChatMessageInput } from "./types";
 
 /** Butler prompt. Vault notes are context, not a reason to skip the model. */
@@ -11,6 +11,7 @@ When no note matches, or the notes do not cover the question, still answer.
 A greeting, a general question, or anything else still gets a real answer.
 Do not refuse only because the vault had no hit. Do not say the vault blocked you.
 Do not invent private facts about the person that are not in the notes. If a personal fact is missing, say it is not written down, then still be helpful.
+Do not mention the calendar unless the user asked about it. An unconnected calendar must not delay or replace the answer.
 Do not claim you sent email, placed a phone call, or spent money.
 Do not call tools. Do not output JSON.`;
 
@@ -46,19 +47,44 @@ export function brainMode(): BrainMode {
   return grokConfigured() ? "grok" : "demo";
 }
 
-/** Talk model lock. The API id is grok-4.7. Claude, grok-4.3, and any other id are not used. */
-export const LOCKED_XAI_MODEL = "grok-4.7";
+/** Hard questions stay on grok-4.7. Quick asks use the faster model. Names are constants, not env overrides. */
+export const HARD_XAI_MODEL = "grok-4.7";
+export const FAST_XAI_MODEL = "grok-4-fast-non-reasoning";
+export const LOCKED_XAI_MODEL = HARD_XAI_MODEL;
 
 export function grokModel(): string {
-  const requested = process.env.GROK_MODEL?.trim();
-  if (requested === LOCKED_XAI_MODEL) return requested;
-  return LOCKED_XAI_MODEL;
+  return HARD_XAI_MODEL;
+}
+
+export function grokFastModel(): string {
+  return FAST_XAI_MODEL;
+}
+
+export function pickGrokModel(question: string): string {
+  return isQuickAsk(question) ? FAST_XAI_MODEL : HARD_XAI_MODEL;
+}
+
+let grokWarmed = false;
+
+/** Open the Brain connection once when the page loads, before the first question. */
+export function warmGrokConnection(): void {
+  if (grokWarmed) return;
+  grokWarmed = true;
+  const key = process.env.XAI_API_KEY?.trim();
+  if (!key) return;
+  void fetch("https://api.x.ai/v1/models", {
+    headers: { Authorization: `Bearer ${key}` },
+    cache: "no-store",
+    signal: AbortSignal.timeout(8000),
+  }).catch(() => {
+    grokWarmed = false;
+  });
 }
 
 function reasoningEffort(model: string): string | null {
   const chosen = process.env.XAI_REASONING?.trim();
   if (chosen) return chosen;
-  if (model === LOCKED_XAI_MODEL) return "low";
+  if (model === HARD_XAI_MODEL) return "low";
   return null;
 }
 
@@ -149,7 +175,7 @@ export async function grokChat(messages: ChatMessageInput[]): Promise<GrokResult
 }
 
 export async function grokPhraseNotes(question: string, packet: string): Promise<GrokResult> {
-  const model = grokModel();
+  const model = pickGrokModel(question);
   const user = (packet.startsWith("Question:") ? packet : `Question:\n${question}\n\n${packet}`).slice(0, 12000);
   return postChat(
     chatBody(model, 0.4, 400, [
@@ -163,7 +189,7 @@ export async function grokPhraseNotes(question: string, packet: string): Promise
 export async function* grokStreamSentences(question: string, packet: string): AsyncGenerator<string> {
   const key = process.env.XAI_API_KEY?.trim();
   if (!key) return;
-  const model = grokModel();
+  const model = pickGrokModel(question);
   const user = (packet.startsWith("Current time:") || packet.startsWith("Question:")
     ? packet
     : `Question:\n${question}\n\n${packet}`

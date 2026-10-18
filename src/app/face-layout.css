@@ -131,8 +131,10 @@
   width: 232px;
   flex-direction: column;
   gap: 14px;
-  overflow: auto;
+  overflow: hidden;
   padding: 12px 12px 64px;
+  scrollbar-width: thin;
+  scrollbar-color: #49d4ff transparent;
 }
 
 .face-search input,
@@ -198,7 +200,7 @@
   margin: 0;
   color: #6fa9bf;
   font-size: 12px;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.04em;
   text-transform: uppercase;
 }
 
@@ -212,6 +214,12 @@
 .hub-list {
   max-height: 176px;
   overflow: auto;
+  scrollbar-width: thin;
+  scrollbar-color: #49d4ff transparent;
+}
+
+.hub-name {
+  color: #7ee7ff;
 }
 
 .hub-list button,
@@ -318,10 +326,10 @@
 .face-totals {
   display: flex;
   justify-content: space-between;
-  margin-top: auto;
+  margin-top: 8px;
   padding-top: 8px;
   border-top: 1px solid rgba(73, 212, 255, 0.35);
-  letter-spacing: 0.08em;
+  letter-spacing: 0.04em;
   text-transform: uppercase;
 }
 
@@ -332,13 +340,14 @@
 
 .graph-crumb {
   position: absolute;
-  z-index: 6;
-  top: 72px;
+  z-index: 8;
+  top: 88px;
   left: 50%;
-  padding: 0;
+  padding: 4px 10px;
+  background: rgba(3, 7, 15, 0.92);
   color: #6fa9bf;
   font-size: 12px;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.04em;
   transform: translateX(-50%);
 }
 
@@ -354,9 +363,11 @@
   top: 48px;
   right: 16px;
   width: 188px;
-  max-height: calc(46vh - 148px);
+  max-height: calc(46vh - 188px);
   overflow: auto;
   padding: 12px;
+  scrollbar-width: thin;
+  scrollbar-color: #49d4ff transparent;
 }
 
 .graph-inspector {
@@ -374,15 +385,31 @@
   right: auto;
   bottom: auto;
   left: auto;
+  display: flex;
   width: auto;
-  max-height: 260px;
+  min-height: 0;
+  max-height: none;
+  flex: 1 1 auto;
+  flex-direction: column;
   overflow: auto;
   border: 0;
   border-radius: 0;
   background: transparent;
   padding: 0 0 8px;
   backdrop-filter: none;
+  scrollbar-width: thin;
+  scrollbar-color: #49d4ff transparent;
   animation: status-fade 400ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.graph-inspector .inspector-title,
+.face-column .inspector-title {
+  margin: 0;
+  color: #f4fdff;
+  font-size: 15px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  line-height: 1.35;
 }
 
 .inspector-body {
@@ -400,7 +427,7 @@
   color: #cfefff;
   font-size: 12px;
   letter-spacing: 0.03em;
-  line-height: 1.4;
+  line-height: 1.5;
   white-space: normal;
 }
 
@@ -449,6 +476,53 @@
   opacity: 0;
 }
 
+.graph-loader {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  color: #7ee7ff;
+  font-size: 13px;
+  letter-spacing: 0.06em;
+  animation: status-fade 400ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.graph-loader span {
+  width: 28px;
+  height: 28px;
+  border: 1px solid rgba(73, 212, 255, 0.35);
+  border-top-color: #49d4ff;
+  border-radius: 50%;
+  animation: graph-spin 900ms linear infinite;
+}
+
+.graph-loader p {
+  margin: 0;
+}
+
+@keyframes graph-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.chat-log::-webkit-scrollbar,
+.graph-inspector.is-docked::-webkit-scrollbar,
+.face-column::-webkit-scrollbar,
+.hub-list::-webkit-scrollbar,
+.face-filter::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.chat-log::-webkit-scrollbar-thumb,
+.graph-inspector.is-docked::-webkit-scrollbar-thumb,
+.face-column::-webkit-scrollbar-thumb,
+.hub-list::-webkit-scrollbar-thumb,
+.face-filter::-webkit-scrollbar-thumb {
+  background: #49d4ff;
+}
+
 .force-scene canvas {
   display: block;
   width: 100%;
@@ -472,16 +546,16 @@
 
 .graph-float-label {
   position: absolute;
-  padding: 0;
-  background: transparent;
-  color: #f3feff;
+  padding: 1px 5px;
+  background: rgba(3, 7, 15, 0.72);
+  color: #7ee7ff;
   font-family: var(--font-jetbrains), ui-monospace, monospace;
   font-size: 13px;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.04em;
   line-height: 1.2;
   white-space: nowrap;
   text-shadow:
-    0 1px 2px rgba(0, 0, 0, 0.9),
+    0 1px 2px rgba(0, 0, 0, 0.95),
     0 0 8px rgba(0, 10, 18, 0.85);
   pointer-events: none;
 }
@@ -553,7 +627,9 @@
   bottom: calc(100% + 8px);
   left: 0;
   display: flex;
-  gap: 6px;
+  flex-wrap: wrap;
+  max-width: 100%;
+  gap: 8px;
   pointer-events: auto;
 }
 
@@ -584,7 +660,9 @@
   height: 34px;
   flex: 1;
   color: #cfefff;
-  font-size: 13px;
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  font-size: 15px;
+  font-variant-ligatures: none;
   line-height: 34px;
 }
 
@@ -650,6 +728,13 @@
   outline: none;
 }
 
+.tool-note {
+  margin: 0;
+  color: #6fa9bf;
+  font-size: 12px;
+  letter-spacing: 0.04em;
+}
+
 .tool-btn svg {
   width: 16px;
   height: 16px;
@@ -701,6 +786,9 @@
   min-height: 0;
   overflow: auto;
   margin-top: 8px;
+  padding-top: 8px;
+  scrollbar-width: thin;
+  scrollbar-color: #49d4ff transparent;
 }
 
 .chat-line {
@@ -710,10 +798,16 @@
 .chat-line p {
   margin: 2px 0 0;
   color: #cfefff;
-  font-size: 12px;
-  letter-spacing: 0.04em;
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  font-size: 13px;
+  font-variant-ligatures: none;
+  letter-spacing: 0.01em;
   line-height: 1.45;
   white-space: pre-wrap;
+}
+
+.chat-meta {
+  font-family: var(--font-jetbrains), ui-monospace, monospace;
 }
 
 .chat-sources {
@@ -738,7 +832,7 @@
   right: 280px;
   width: 200px;
   padding: 10px 12px 8px;
-  animation: task-in 300ms cubic-bezier(0.22, 1, 0.36, 1);
+  animation: task-in 180ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .face-task.is-leaving {
@@ -749,9 +843,11 @@
 @keyframes task-in {
   from {
     opacity: 0;
+    transform: translateY(8px);
   }
   to {
     opacity: 1;
+    transform: none;
   }
 }
 
@@ -766,8 +862,10 @@
   margin: 0;
   overflow: hidden;
   color: #cfefff;
+  font-family: ui-sans-serif, system-ui, sans-serif;
   font-size: 13px;
-  letter-spacing: 0.04em;
+  font-variant-ligatures: none;
+  letter-spacing: 0.01em;
   line-height: 1.35;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;

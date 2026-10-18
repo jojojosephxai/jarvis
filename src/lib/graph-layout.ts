@@ -232,9 +232,9 @@ export function labelEligible(
   zoom: number,
   showAll: boolean,
 ): boolean {
-  void zoom;
   void showAll;
-  return Boolean(flags.hub || flags.big || flags.hover || flags.selected || flags.onPath);
+  if (flags.hub || flags.big || flags.hover || flags.selected || flags.onPath) return true;
+  return zoom >= 1.6;
 }
 
 /** CSS cubic-bezier(.22, 1, .36, 1) sampled over 0–1. Focus, zoom, and re-form use this. */
@@ -283,7 +283,7 @@ export function pickLabels(candidates: LabelCandidate[]): PlacedLabel[] {
     const parked = label.protected ? nudgeLabel(label, placed) : label;
     const hits = placed.some((other) => labelBoxesOverlap(parked, other));
     if (hits && label.priority < 100) continue;
-    const opacity = parked.protected ? 1 : parked.depth < 0.32 ? 0.45 : Math.min(1, 0.55 + parked.depth * 0.45);
+    const opacity = parked.protected ? 1 : Math.max(0.86, Math.min(1, 0.86 + parked.depth * 0.14));
     placed.push(parked);
     out.push({ id: parked.id, opacity, x: parked.x, y: parked.y });
   }

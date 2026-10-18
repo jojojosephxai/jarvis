@@ -75,9 +75,11 @@ describe("layoutGalaxy", () => {
     assert.equal(hubs.every(Boolean), true);
     const radii = hubs.flatMap((hub) => (hub ? [Math.hypot(hub.x - width / 2, hub.y - height / 2)] : []));
     const span = Math.min(width, height);
-    assert.equal(Math.max(...radii) > span * 0.2, true);
-    assert.equal(Math.max(...radii) < span * 0.46, true);
-    assert.equal(Math.min(...radii) > 40, true);
+    assert.equal(Math.max(...radii) < span * 0.48, true);
+    const schoolHubPoint = byId.get("tag:school");
+    const swimHubPoint = byId.get("tag:swim");
+    assert.ok(schoolHubPoint && swimHubPoint);
+    assert.equal(Math.hypot(schoolHubPoint.x - swimHubPoint.x, schoolHubPoint.y - swimHubPoint.y) > 70, true);
     const school = byId.get("School.md");
     const schoolHub = byId.get("tag:school");
     const swimHub = byId.get("tag:swim");
@@ -91,12 +93,10 @@ describe("layoutGalaxy", () => {
   it("parks a loose note on its hub instead of the corner", () => {
     const placed = layoutGalaxy(
       [
-        { id: "About.md", kind: "note", root: true },
         { id: "area:school", kind: "folder" },
         { id: "Stray.md", kind: "note" },
       ],
       [
-        { from: "About.md", to: "area:school" },
         { from: "Stray.md", to: "area:school" },
       ],
       { repel: 180, link: 160, width: 1000, height: 640 },
@@ -198,6 +198,7 @@ describe("graph labels", () => {
     };
     assert.equal(labelEligible(quiet, 1, false), false);
     assert.equal(labelEligible(quiet, 1.4, false), false);
+    assert.equal(labelEligible(quiet, 1.7, false), true);
     assert.equal(labelEligible({ ...quiet, depth: 0.1 }, 1.4, false), false);
     assert.equal(labelEligible({ ...quiet, depth: 0.1 }, 1, true), false);
     assert.equal(labelEligible({ ...quiet, hover: true, depth: 0.1 }, 1, false), true);
@@ -215,37 +216,33 @@ describe("graph labels", () => {
 });
 
 describe("source of truth root", () => {
-  it("keeps the root in the middle and the hubs at uneven distances", () => {
+  it("keeps clusters apart without pinning a center note", () => {
     const placed = layoutGalaxy(
       [
-        { id: "About.md", kind: "note", root: true },
+        { id: "About.md", kind: "note", hubId: "area:people" },
         { id: "area:school", kind: "folder" },
         { id: "area:swim", kind: "folder" },
         { id: "area:people", kind: "folder" },
         { id: "Meet.md", kind: "note", hubId: "area:swim" },
       ],
       [
-        { from: "About.md", to: "area:school" },
-        { from: "About.md", to: "area:swim" },
         { from: "About.md", to: "area:people" },
         { from: "Meet.md", to: "area:swim" },
       ],
       { repel: 160, link: 140, width: 1000, height: 640 },
     );
     const byId = new Map(placed.map((point) => [point.id, point]));
-    const root = byId.get("About.md");
     const school = byId.get("area:school");
     const swim = byId.get("area:swim");
     const people = byId.get("area:people");
     const meet = byId.get("Meet.md");
-    assert.ok(root && school && swim && people && meet);
-    assert.equal(Math.hypot(root.x - 500, root.y - 320) < 40, true);
-    const radii = [school, swim, people].map((hub) => Math.hypot(hub.x - root.x, hub.y - root.y));
-    const spread = Math.max(...radii) - Math.min(...radii);
-    assert.equal(spread > 8, true);
-    const meetDist = Math.hypot(meet.x - swim.x, meet.y - swim.y);
-    const schoolDist = Math.hypot(meet.x - school.x, meet.y - school.y);
+    assert.ok(school && swim && people && meet);
+    assert.equal(Math.hypot(school.x - swim.x, school.y - swim.y) > 60, true);
+    assert.equal(Math.hypot(school.x - people.x, school.y - people.y) > 60, true);
+    const meetDist = Math.hypot(meet.x - swim.x, meet.y - swim.y, meet.z - swim.z);
+    const schoolDist = Math.hypot(meet.x - school.x, meet.y - school.y, meet.z - school.z);
     assert.equal(meetDist < schoolDist, true);
+    assert.equal(placed.some((point) => point.id === "root:me"), false);
   });
 });
 

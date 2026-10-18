@@ -1,11 +1,11 @@
 import { assertNever } from "./assert";
-import { clockStamp, isClockQuestion, isSmallTalk, localClockReply, readySentences } from "./clock";
+import { clockStamp, isClockQuestion, isQuickAsk, isSmallTalk, localClockReply, readySentences } from "./clock";
 import { CALL_REFUSAL } from "./demo-brain";
 import { answerFromVault, streamAnswerFromVault, type AnswerOptions, type GroundedAnswer } from "./grounded-answer";
-import { brainMode, grokConfigured, grokPhraseNotes } from "./grok";
+import { brainMode, grokConfigured, grokPhraseNotes, grokStreamSentences } from "./grok";
 import { resolveHand } from "./hands";
 import { describeGraphCommand } from "./graph-command";
-import { mentionsCalendar, parseIntent } from "./intent";
+import { parseIntent } from "./intent";
 import { loadVaultGraph } from "./note-graph.server";
 import { isMorningBriefRequest, morningBriefResponse } from "./morning-brief";
 import type { ChatMessageInput, ChatResponse } from "./types";
@@ -125,14 +125,6 @@ async function talk(latest: string, options: AnswerOptions): Promise<ChatRespons
     };
   }
   if (isSmallTalk(latest)) return talkSmall(latest, options);
-  if (mentionsCalendar(latest)) {
-    return {
-      reply:
-        "I need an event and a time before I can save that. No calendar is connected.",
-      mode: brainMode(),
-      receipts: [],
-    };
-  }
 
   return fromGrounded(await answerFromVault(latest, options));
 }
@@ -183,8 +175,35 @@ export async function* streamTurn(
   }
 
   const clockKind = isClockQuestion(latest.content);
-  if (clockKind || isSmallTalk(latest.content)) {
+  if (clockKind) {
     yield* emitReply(await talk(latest.content, options));
+    return;
+  }
+  if (isQuickAsk(latest.content)) {
+    const modelOn = options.useModel ?? grokConfigured();
+    if (!modelOn || options.complete) {
+      yield* emitReply(await talk(latest.content, options));
+      return;
+    }
+    const packet = `Current time: ${clockStamp(options.now ?? new Date())} (America/New_York).\n\nQuestion:\n${latest.content}\n\nNotes:\nNo vault search. Answer in one or two short sentences.`;
+    let answerText = "";
+    for await (const sentence of grokStreamSentences(latest.content, packet)) {
+      const clean = sentence.trim();
+      if (!clean) continue;
+      logFirst();
+      answerText = answerText ? `${answerText} ${clean}` : clean;
+      yield { type: "sentence", text: clean };
+    }
+    if (!answerText) {
+      yield* emitReply(await talk(latest.content, options));
+      return;
+    }
+    const response = await finish(
+      { reply: answerText, mode: "grok", receipts: [] },
+      options.root ?? process.cwd(),
+    );
+    if (!logged) logFirst();
+    yield { type: "done", response };
     return;
   }
 

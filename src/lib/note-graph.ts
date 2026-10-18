@@ -400,7 +400,7 @@ export function areaHubs(nodes: GraphNode[]): { hub: GraphNode; count: number }[
       hub,
       count: nodes.filter((node) => node.hubs.includes(hub.id)).length,
     }))
-    .filter((row) => row.count > 0)
+    .filter((row) => row.count > 0 || row.hub.file !== "")
     .sort((a, b) => b.count - a.count || a.hub.title.localeCompare(b.hub.title));
 }
 
@@ -443,14 +443,13 @@ export function buildNoteGraph(files: NoteSourceFile[]): NoteGraphPayload {
   const sorted = [...files].sort((a, b) => a.path.localeCompare(b.path));
   const cappedFiles = sorted.slice(0, MAX_GRAPH_NODES);
   const hiddenCount = sorted.length - cappedFiles.length;
-  const rootPath = chooseRootPath(cappedFiles.map((file) => file.path));
   const parsed = cappedFiles.flatMap((file) => {
     const posix = file.path.replace(/\\/g, "/");
     const { front, body } = splitFrontmatter(file.text);
     const folder = posixDirname(posix);
     const cleanFolder = folder === "." ? "" : folder;
     const title = titleFrom(posix, body);
-    if (isHiddenGraphFile(posix, title) && posix !== rootPath) return [];
+    if (isHiddenGraphFile(posix, title)) return [];
     const tags = unique([...tagsFromFrontmatter(front), ...tagsFromBody(body)]);
     return [
       {
@@ -470,27 +469,24 @@ export function buildNoteGraph(files: NoteSourceFile[]): NoteGraphPayload {
   }
 
   const nodes: GraphNode[] = parsed.map((item) => {
-    const root = item.posix === rootPath;
     return {
       id: item.posix,
-      title: root ? "Me / Jarvis" : item.title,
+      title: item.title,
       folder: item.cleanFolder,
       tags: item.tags,
       excerpt: excerptFrom(item.body),
       text: noteText(item.body),
       kind: "note" as const,
-      nodeType: root
-        ? "hub"
-        : classifyNote({
-            path: item.posix,
-            folder: item.cleanFolder,
-            tags: item.tags,
-            frontType: frontmatterValue(item.front, "type"),
-            kind: "note",
-          }),
-      ssot: root || frontmatterFlag(item.front, "ssot"),
+      nodeType: classifyNote({
+        path: item.posix,
+        folder: item.cleanFolder,
+        tags: item.tags,
+        frontType: frontmatterValue(item.front, "type"),
+        kind: "note",
+      }),
+      ssot: frontmatterFlag(item.front, "ssot"),
       hubs: [] as string[],
-      root,
+      root: false,
       file: item.posix,
       anchor: "",
     };
@@ -513,35 +509,19 @@ export function buildNoteGraph(files: NoteSourceFile[]): NoteGraphPayload {
     edges.push({ id, from, to, reason });
   }
 
-  const rootedId = nodes.find((node) => node.root)?.id ?? "";
   const areaOf = new Map<string, (typeof AREAS)[number]>();
-  for (const note of nodes) {
-    if (note.root) continue;
-    areaOf.set(note.id, areaFor(note));
-  }
-  function areaHome(area: (typeof AREAS)[number]): string {
-    if (area.id === "area:me" && rootedId) return rootedId;
-    return area.id;
-  }
+  for (const note of nodes) areaOf.set(note.id, areaFor(note));
   const usedAreas = new Map<string, (typeof AREAS)[number]>();
-  for (const area of areaOf.values()) {
-    if (area.id === "area:me" && rootedId) continue;
-    usedAreas.set(area.id, area);
-  }
+  for (const area of areaOf.values()) usedAreas.set(area.id, area);
 
   for (const note of nodes) {
-    if (note.root) {
-      note.hubs = [];
-      continue;
-    }
     const area = areaOf.get(note.id);
     if (!area) continue;
-    const home = areaHome(area);
-    note.hubs = [home];
-    addEdge(note.id, home, "folder");
+    note.hubs = [area.id];
+    addEdge(note.id, area.id, "folder");
     for (const tag of note.tags) {
       const other = areaByKey(tag);
-      if (other && other.id !== area.id) addEdge(note.id, areaHome(other), "tag");
+      if (other && other.id !== area.id) addEdge(note.id, other.id, "tag");
     }
   }
 
@@ -568,7 +548,7 @@ export function buildNoteGraph(files: NoteSourceFile[]): NoteGraphPayload {
         kind: "note",
         nodeType: "heading",
         ssot: false,
-        hubs: area ? [areaHome(area)] : [],
+        hubs: area ? [area.id] : [],
         root: false,
         file: source.id,
         anchor: heading,
@@ -588,7 +568,7 @@ export function buildNoteGraph(files: NoteSourceFile[]): NoteGraphPayload {
         kind: "note",
         nodeType: attachment.kind === "file" ? "file" : "link",
         ssot: false,
-        hubs: area ? [areaHome(area)] : [],
+        hubs: area ? [area.id] : [],
         root: false,
         file: "",
         anchor: "",
@@ -655,45 +635,24 @@ export function buildNoteGraph(files: NoteSourceFile[]): NoteGraphPayload {
     });
   }
 
-  const rootNode = nodes.find((node) => node.root);
-  const rootId = rootNode?.id ?? (usedAreas.size > 0 ? "root:me" : "");
-  if (!rootNode && rootId) {
-    nodes.push({
-      id: rootId,
-      title: "Me / Jarvis",
-      folder: "",
-      tags: [],
-      excerpt: "Me / Jarvis is the center of this graph.",
-      text: "Me / Jarvis is the center of this graph.",
-      kind: "note",
-      nodeType: "hub",
-      ssot: true,
-      hubs: [],
-      root: true,
-      file: "",
-      anchor: "",
-    });
-  }
-  if (rootId) {
-    for (const area of usedAreas.values()) addEdge(rootId, area.id, "folder");
-  }
-
   const hubByName = new Map<string, GraphNode>();
   for (const node of nodes) {
     if (node.kind === "folder") hubByName.set(hubNameKey(node.title), node);
   }
   const absorbed = new Map<string, string>();
   for (const note of nodes) {
-    if (note.root || !note.ssot || note.kind === "folder" || !note.id.endsWith(".md")) continue;
-    const hub = hubByName.get(hubNameKey(note.title));
-    if (!hub || hub.id === note.id) continue;
-    hub.excerpt = note.excerpt;
-    hub.text = note.text;
-    hub.tags = [...note.tags];
-    hub.ssot = true;
-    hub.file = note.file || note.id;
-    if (note.folder) hub.folder = note.folder;
-    absorbed.set(note.id, hub.id);
+    if (note.kind === "folder") continue;
+    const named = hubByName.get(hubNameKey(note.title));
+    if (!named || named.id === note.id || hubNameKey(note.title) !== hubNameKey(named.title)) continue;
+    if (note.id.endsWith(".md")) {
+      named.excerpt = note.excerpt;
+      named.text = note.text;
+      named.tags = [...note.tags];
+      named.ssot = note.ssot;
+      named.file = note.file || note.id;
+      if (note.folder) named.folder = note.folder;
+    }
+    absorbed.set(note.id, named.id);
   }
   const visibleNodes = absorbed.size === 0 ? nodes : nodes.filter((node) => !absorbed.has(node.id));
   const visibleEdges: GraphEdge[] = [];
@@ -709,6 +668,18 @@ export function buildNoteGraph(files: NoteSourceFile[]): NoteGraphPayload {
     visibleEdges.push({ id, from: left, to: right, reason: edge.reason });
   }
 
+  const linked = new Set<string>();
+  for (const edge of visibleEdges) {
+    linked.add(edge.from);
+    linked.add(edge.to);
+  }
+  const keptNodes = visibleNodes.filter((node) => {
+    if (!node.title.trim()) return false;
+    if (node.kind === "folder") return linked.has(node.id) || node.file !== "";
+    if (!linked.has(node.id) && !node.id.endsWith(".md")) return false;
+    return true;
+  });
+
   const detail = capped
     ? "Some notes were left out so this stays light on an older computer."
     : "These notes were read from the vault folder.";
@@ -716,12 +687,12 @@ export function buildNoteGraph(files: NoteSourceFile[]): NoteGraphPayload {
   return {
     status: "ready",
     detail,
-    nodes: visibleNodes,
+    nodes: keptNodes,
     edges: visibleEdges,
     noteCount,
     connectionCount: visibleEdges.length,
     hiddenCount,
     capped,
-    legend: legendFromNodes(visibleNodes),
+    legend: legendFromNodes(keptNodes),
   };
 }
