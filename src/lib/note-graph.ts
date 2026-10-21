@@ -264,10 +264,15 @@ function posixExtname(value: string): string {
   return base.slice(dot);
 }
 
-function titleFrom(filePath: string, body: string): string {
-  const heading = body.match(/^#\s+(.+)$/m);
-  if (heading?.[1]) return heading[1].trim();
-  return posixBasename(filePath, posixExtname(filePath)).replace(/[-_]/g, " ");
+function isOpaqueLabel(value: string): boolean {
+  return /^(?:[0-9a-f]{8}(?:[-\s][0-9a-f]{4}){3}[-\s][0-9a-f]{12}|[0-9a-f]{16,})$/i.test(value.trim());
+}
+
+function titleFrom(filePath: string, body: string, front: string): string {
+  const title = front.match(/^title\s*:\s*(.+)$/im)?.[1]?.trim().replace(/^['"]|['"]$/g, "");
+  const headings = [...body.matchAll(/^#{1,6}\s+(.+?)(?:\s+#+)?\s*$/gm)].map((match) => match[1].trim());
+  const filename = posixBasename(filePath, posixExtname(filePath));
+  return [title, ...headings, filename].find((value) => value && !isOpaqueLabel(value)) || "Untitled note";
 }
 
 function splitFrontmatter(text: string): { front: string; body: string } {
@@ -412,20 +417,21 @@ function headingsIn(body: string, title: string): string[] {
       .replace(/\[\[([^\]|#]+)(?:#[^\]|]+)?(?:\|[^\]]+)?\]\]/g, "$1")
       .replace(/\s+/g, " ")
       .trim();
-    if (!text || text.toLowerCase() === title.trim().toLowerCase()) continue;
+    if (!text || isOpaqueLabel(text) || text.toLowerCase() === title.trim().toLowerCase()) continue;
     found.push(text);
     if (found.length === 6) break;
   }
   return found;
 }
 
-function attachmentsIn(body: string): { href: string; kind: "file" | "link" }[] {
-  const found: { href: string; kind: "file" | "link" }[] = [];
-  for (const match of body.matchAll(/!?\[[^\]]*\]\(([^)\s]+)\)/g)) {
-    const href = match[1]?.trim() ?? "";
+function attachmentsIn(body: string): { href: string; title: string; kind: "file" | "link" }[] {
+  const found: { href: string; title: string; kind: "file" | "link" }[] = [];
+  for (const match of body.matchAll(/!?\[([^\]]*)\]\(([^)\s]+)\)/g)) {
+    const href = match[2]?.trim() ?? "";
+    const title = match[1]?.trim() ?? "";
     if (!href || href.startsWith("#")) continue;
-    if (/^https?:/i.test(href)) found.push({ href, kind: "link" });
-    else if (/\.(png|jpe?g|gif|webp|pdf|txt|csv|mp3|mp4|wav)$/i.test(href)) found.push({ href, kind: "file" });
+    if (/^https?:/i.test(href)) found.push({ href, title, kind: "link" });
+    else if (/\.(png|jpe?g|gif|webp|pdf|txt|csv|mp3|mp4|wav)$/i.test(href)) found.push({ href, title, kind: "file" });
     if (found.length === 4) break;
   }
   return found;
@@ -448,7 +454,7 @@ export function buildNoteGraph(files: NoteSourceFile[]): NoteGraphPayload {
     const { front, body } = splitFrontmatter(file.text);
     const folder = posixDirname(posix);
     const cleanFolder = folder === "." ? "" : folder;
-    const title = titleFrom(posix, body);
+    const title = titleFrom(posix, body, front);
     if (isHiddenGraphFile(posix, title)) return [];
     const tags = unique([...tagsFromFrontmatter(front), ...tagsFromBody(body)]);
     return [
@@ -557,7 +563,8 @@ export function buildNoteGraph(files: NoteSourceFile[]): NoteGraphPayload {
     });
     for (const attachment of attachmentsIn(item.body)) {
       const id = `${attachment.kind}:${source.id}:${slug(attachment.href)}`;
-      const title = posixBasename(attachment.href) || attachment.href;
+      const filename = posixBasename(attachment.href, posixExtname(attachment.href));
+      const title = [attachment.title, filename].find((value) => value && !isOpaqueLabel(value)) || `${source.title} ${attachment.kind}`;
       nodes.push({
         id,
         title,
@@ -582,7 +589,7 @@ export function buildNoteGraph(files: NoteSourceFile[]): NoteGraphPayload {
     if (!note.id.endsWith(".md") && !note.id.includes("/")) continue;
     if (note.kind !== "note" || note.nodeType === "heading") continue;
     for (const tag of note.tags) {
-      if (AREA_KEYS.has(tag)) continue;
+      if (AREA_KEYS.has(tag) || isOpaqueLabel(tag)) continue;
       const list = tagMembers.get(tag) ?? [];
       list.push(note);
       tagMembers.set(tag, list);

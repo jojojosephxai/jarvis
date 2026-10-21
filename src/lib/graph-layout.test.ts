@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
+import { fitScreenNodes, rectIntersectsCircle, rectsIntersect } from "./graph-screen-layout";
 
 import {
   easeFrame,
@@ -17,6 +18,37 @@ import {
 } from "./graph-layout";
 
 const CANVAS = { width: 2400, height: 1600 };
+
+describe("desktop graph keep-out", () => {
+  it("fits every node, including a selected hub, around the HUD with fixed margins", () => {
+    const free = { left: 76, top: 100, right: 756, bottom: 560 };
+    const hud = { left: 302, top: 175, right: 722, bottom: 405 };
+    const nodes = [
+      { id: "school", x: 510, y: 280, r: 20, priority: 100 },
+      ...Array.from({ length: 100 }, (_, index) => ({
+        id: `note-${index}`, x: 480 + index % 10 * 8, y: 300 + Math.floor(index / 10) * 9,
+        r: 4, hubId: "school", priority: 0,
+      })),
+      { id: "journal", x: 400, y: 800, r: 9, priority: 100 },
+      { id: "jarvis", x: 820, y: 130, r: 9, priority: 100 },
+    ];
+    const placed = fitScreenNodes(nodes, free, [hud]);
+    assert.equal(placed.length, nodes.length);
+    assert.deepEqual(placed, fitScreenNodes(nodes, free, [hud]));
+    for (const node of placed) {
+      assert.ok(node.x - node.r >= free.left && node.x + node.r <= free.right, node.id);
+      assert.ok(node.y - node.r >= free.top && node.y + node.r <= free.bottom, node.id);
+      assert.equal(rectIntersectsCircle(hud, node, 16), false, node.id);
+    }
+  });
+
+  it("detects a label over a neighboring sphere even when their labels are apart", () => {
+    const label = { left: 100, top: 100, right: 190, bottom: 118 };
+    assert.equal(rectIntersectsCircle(label, { x: 195, y: 108, r: 8 }), true);
+    assert.equal(rectIntersectsCircle(label, { x: 200, y: 125, r: 8 }), false);
+    assert.equal(rectsIntersect(label, { left: 130, top: 101, right: 170, bottom: 120 }), true);
+  });
+});
 
 describe("layoutGalaxy", () => {
   const nodes = [

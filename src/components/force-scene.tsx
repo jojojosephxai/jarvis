@@ -3,7 +3,8 @@
 import { useEffect, useRef } from "react";
 import type * as THREE_NS from "three";
 
-import { dropOverlappingLabels, labelRank, pickLabels, smallLabelFade, type LayoutPoint } from "@/lib/graph-layout";
+import { labelRank, smallLabelFade, type LayoutPoint } from "@/lib/graph-layout";
+import { fitScreenNodes, labelSpots, rectIntersectsCircle, rectsIntersect, type ScreenRect, type ScreenNode } from "@/lib/graph-screen-layout";
 import { nodeColor, nodeDiameterPx, type GraphEdge, type GraphNode } from "@/lib/note-graph";
 
 type ZoomKind = "fit" | "in" | "out";
@@ -107,6 +108,9 @@ export function ForceScene({
       const raycaster = new THREE.Raycaster();
       const pointer = new THREE.Vector2();
       const target = new THREE.Vector3();
+      const overviewTarget = new THREE.Vector3();
+      const overviewCamera = camera.clone();
+      const measure = document.createElement("canvas").getContext("2d")!;
       const sphere = new THREE.SphereGeometry(1, 14, 12);
       let group: THREE_NS.Group | null = null;
       const meshes: {
@@ -123,7 +127,6 @@ export function ForceScene({
       let pitch = 0.38;
       let dist = 900;
       let overviewDist = 900;
-      let frameRadius = 80;
       let hoverId = "";
       let drag: { x: number; y: number; button: number; shift: boolean } | null = null;
       let moved = false;
@@ -167,12 +170,11 @@ export function ForceScene({
         };
       };
 
-      // Free rectangle between the left rail and the right column. The orb and ask bar sit in that
-      // rectangle; nodes that land on them are hidden later so the graph can fill the space around them.
+      // The outer free area keeps a fixed screen-space margin from every desktop panel.
       const safeRect = () => {
         const width = Math.max(host.clientWidth, 1);
         const height = Math.max(host.clientHeight, 1);
-        const margin = 14;
+        const margin = 16;
         let left = margin;
         let top = 40;
         let right = width - margin;
@@ -180,7 +182,7 @@ export function ForceScene({
         const leftPanel = relBox("[data-region='left']");
         if (leftPanel) left = Math.max(left, leftPanel.right + margin);
         const header = relBox("[data-region='header']");
-        if (header) top = Math.max(top, header.bottom + 8);
+        if (header) top = Math.max(top, header.bottom + margin);
         const tools = relBox(".graph-tools");
         if (tools) top = Math.max(top, tools.bottom + 6);
         const crumb = relBox(".graph-crumb");
@@ -204,81 +206,29 @@ export function ForceScene({
         return { left, top, right, bottom, width, height };
       };
 
-      const blockRects = () => {
-        const rects: DOMRect[] = [];
-        for (const selector of [".orb-dial", "[data-region='ask']", ".tool-row", ".face-task"]) {
-          const node = document.querySelector(selector);
-          if (!node) continue;
-          const rect = node.getBoundingClientRect();
-          if (rect.width < 2 || rect.height < 2) continue;
-          rects.push(rect);
-        }
+      // One bounding rectangle includes the gaps between the orb, status, Ask and tool row.
+      // Use it for projected forces, label placement, and the transparent WebGL cutout.
+      const blockRects = (): ScreenRect[] => {
+        const center = [".orb-dial", ".orb-status", "[data-region='ask']", ".tool-row"]
+          .map(relBox).filter((rect): rect is ScreenRect => rect !== null);
+        const rects: ScreenRect[] = [];
+        if (center.length) rects.push({
+          left: Math.min(...center.map((rect) => rect.left)),
+          top: Math.min(...center.map((rect) => rect.top)),
+          right: Math.max(...center.map((rect) => rect.right)),
+          bottom: Math.max(...center.map((rect) => rect.bottom)),
+        });
+        const task = relBox(".face-task");
+        if (task) rects.push(task);
         return rects;
       };
 
-      let focusBiasX = 0;
-      let focusBiasY = 0;
-      let biasTries = 0;
-      let biasFor = "";
       const parkView = () => {
         const { width, height } = size();
         const safe = safeRect();
-        const safeCx = (safe.left + safe.right) / 2 + focusBiasX;
-        const safeCy = (safe.top + safe.bottom) / 2 + focusBiasY;
+        const safeCx = (safe.left + safe.right) / 2;
+        const safeCy = (safe.top + safe.bottom) / 2;
         camera.setViewOffset(width, height, width / 2 - safeCx, height / 2 - safeCy, width, height);
-      };
-
-      const openLabelSpot = (
-        sx: number,
-        sy: number,
-        nodePx: number,
-        title: string,
-        safe: { left: number; top: number; right: number; bottom: number },
-        blocks: DOMRect[],
-        hostBox: DOMRect,
-      ) => {
-        const labelW = Math.max(48, Math.ceil(title.length * 8.2 + 16));
-        const labelH = 18;
-        const rel = blocks.map((rect) => ({
-          left: rect.left - hostBox.left,
-          top: rect.top - hostBox.top,
-          right: rect.right - hostBox.left,
-          bottom: rect.bottom - hostBox.top,
-        }));
-        const boxHits = (left: number, top: number, w: number, h: number) =>
-          left < safe.left ||
-          top < safe.top ||
-          left + w > safe.right ||
-          top + h > safe.bottom ||
-          rel.some(
-            (rect) => left < rect.right - 1 && left + w > rect.left + 1 && top < rect.bottom - 1 && top + h > rect.top + 1,
-          );
-        const clear = (x: number, y: number) => {
-          const reach = Math.max(nodePx + 4, 10);
-          if (boxHits(x - reach, y - reach, reach * 2, reach * 2)) return false;
-          const spots = [
-            { left: x + nodePx + 6, top: y - labelH / 2 },
-            { left: x - nodePx - 6 - labelW, top: y - labelH / 2 },
-            { left: x - labelW / 2, top: y - nodePx - labelH - 4 },
-            { left: x + nodePx + 6, top: y - labelH - 4 },
-            { left: x - labelW / 2, top: y + nodePx + 4 },
-          ];
-          return spots.some((spot) => !boxHits(spot.left, spot.top, labelW, labelH));
-        };
-        if (clear(sx, sy)) return null;
-        let best: { x: number; y: number } | null = null;
-        let bestD = Infinity;
-        for (let y = safe.top + 28; y <= safe.bottom - 28; y += 20) {
-          for (let x = safe.left + 28; x <= safe.right - 28; x += 20) {
-            if (!clear(x, y)) continue;
-            const d = (x - sx) * (x - sx) + (y - sy) * (y - sy);
-            if (d < bestD) {
-              bestD = d;
-              best = { x, y };
-            }
-          }
-        }
-        return best;
       };
 
       const framePoints = (list: LayoutPoint[], rememberOverview = false) => {
@@ -310,9 +260,6 @@ export function ForceScene({
         target.set(midX, midY, midZ);
         yaw = 0.62;
         pitch = 0.38;
-        focusBiasX = 0;
-        focusBiasY = 0;
-        biasTries = 0;
         parkView();
         const safeCx = (safe.left + safe.right) / 2;
         const safeCy = (safe.top + safe.bottom) / 2;
@@ -323,8 +270,7 @@ export function ForceScene({
         const roomY = Math.max(48, Math.min(safeCy - safe.top, safe.bottom - safeCy) - 18);
         const fitX = (radius * (width / 2)) / (roomX * hTan);
         const fitY = (radius * (height / 2)) / (roomY * vTan);
-        dist = Math.max(Math.max(fitX, fitY) * 0.58, 80);
-        frameRadius = radius;
+        dist = Math.max(Math.max(fitX, fitY) * 0.9, 80);
         if (!rememberOverview) {
           const framedIds = new Set(list.map((point) => point.id));
           const dirX = Math.sin(yaw) * Math.cos(pitch);
@@ -347,7 +293,7 @@ export function ForceScene({
             dist = Math.min(limit, dist + push);
           }
         }
-        if (rememberOverview) overviewDist = dist;
+        if (rememberOverview) { overviewDist = dist; overviewTarget.copy(target); }
         publishDist();
         placeCamera();
       };
@@ -442,14 +388,6 @@ export function ForceScene({
       };
 
       const draw = (now: number) => {
-        if (!reduced) {
-          const t = now / 1000;
-          const selected = stateRef.current.selectedId;
-          for (const entry of meshes) {
-            const pulse = entry.id === selected ? 1 + Math.sin(t * 2.2) * 0.055 : 1;
-            entry.mesh.scale.setScalar(entry.baseScale * pulse);
-          }
-        }
         const flow = group?.children.find((child) => child.userData.flow);
         if (flow instanceof THREE.Points) {
           const raw = flow.userData.flow as number[];
@@ -477,105 +415,88 @@ export function ForceScene({
         const fov = (camera.fov * Math.PI) / 180;
         const halfTan = Math.tan(fov / 2);
         const framing = stateRef.current;
-        const focusId = framing.clusterId || framing.selectedId;
-        const focusEntry = focusId ? meshes.find((entry) => entry.id === focusId) : undefined;
-        const focused = Boolean(focusId);
-        const centerDist = Math.max(camera.position.distanceTo(target), 1);
-        const hubPx = focusEntry ? (focusEntry.baseScale * viewH) / (2 * halfTan * Math.max(camera.position.distanceTo(focusEntry.mesh.position), 1)) : 16;
-        const nearCap = focused ? Math.min(39, Math.max(14, hubPx * 2)) : 10000;
-        const front = centerDist - frameRadius * 1.05;
-        const boxes: { id: string; x: number; y: number; w: number; h: number; r: number }[] = [];
-        let selectedShot: { sx: number; sy: number; nodePx: number; onChrome: boolean; inside: boolean } | null = null;
+        const focused = Boolean(framing.clusterId || framing.selectedId);
+        const stamp = JSON.stringify([safe, blocks, dist, yaw, pitch, target.toArray(), framing.selectedId, framing.clusterId, meshes.length]);
+        if (stamp !== placementStamp) {
+          placementStamp = stamp;
+          camera.updateMatrixWorld();
+          overviewCamera.copy(camera);
+          overviewCamera.position.set(
+            overviewTarget.x + Math.sin(yaw) * Math.cos(pitch) * overviewDist,
+            overviewTarget.y + Math.sin(pitch) * overviewDist,
+            overviewTarget.z + Math.cos(yaw) * Math.cos(pitch) * overviewDist,
+          );
+          overviewCamera.lookAt(overviewTarget);
+          overviewCamera.updateMatrixWorld();
+          const font = getComputedStyle(host);
+          measure.font = `13px ${font.fontFamily}`;
+          const projected = meshes.map((entry) => {
+            const point = framing.points.find((point) => point.id === entry.id)!;
+            const node = framing.nodes.find((node) => node.id === entry.id)!;
+            const hub = node.kind === "folder" || node.nodeType === "hub";
+            const active = node.id === framing.selectedId || node.id === framing.clusterId ||
+              (framing.clusterId !== null && node.hubs.includes(framing.clusterId));
+            const projectionCamera = focused && !active ? overviewCamera : camera;
+            scratch.set(point.x, point.y, point.z);
+            const depth = scratch.clone().applyMatrix4(projectionCamera.matrixWorldInverse);
+            depth.z = Math.min(depth.z, -dist * 0.35);
+            const worldPerPx = 2 * halfTan * -depth.z / viewH;
+            scratch.copy(depth).applyMatrix4(projectionCamera.matrixWorld).project(projectionCamera);
+            const cap = focused ? (active ? (hub ? 18 : 7) : (hub ? 7 : 3.5)) : (hub ? 12 : 5);
+            const radius = Math.max(hub ? 6 : 3, Math.min(cap, entry.baseScale / worldPerPx));
+            const label = framing.showLabels && (hub || active || node.ssot) ? {
+              w: Math.ceil(measure.measureText(node.title).width + node.title.length * 0.52 + 10), h: 18,
+            } : undefined;
+            return {
+              id: entry.id, x: (scratch.x * 0.5 + 0.5) * viewW, y: (-scratch.y * 0.5 + 0.5) * viewH,
+              r: radius * 1.06, hubId: hub ? undefined : node.hubs[0], priority: node.id === framing.selectedId ? 1000 : hub ? 500 : active ? 100 : 0, label,
+              z: scratch.z,
+            };
+          });
+          const source = new Map(projected.map((node) => [node.id, node]));
+          screenNodes = fitScreenNodes(projected, safe, blocks);
+          const entryOf = new Map(meshes.map((entry) => [entry.id, entry]));
+          for (const node of screenNodes) {
+            const entry = entryOf.get(node.id)!;
+            const z = source.get(node.id)!.z;
+            entry.mesh.position.set(node.x / viewW * 2 - 1, 1 - node.y / viewH * 2, z).unproject(camera);
+            entry.glow?.position.copy(entry.mesh.position);
+            entry.hit?.position.copy(entry.mesh.position);
+          }
+          // Edges retain the real endpoints after projected forces move a node around the HUD.
+          group?.traverse((object) => {
+            const ids = object.userData.nodeIds as string[] | undefined;
+            if (!ids || !(object instanceof THREE.LineSegments)) return;
+            const attr = object.geometry.getAttribute("position");
+            ids.forEach((id, index) => {
+              const point = entryOf.get(id)?.mesh.position;
+              if (point) attr.setXYZ(index, point.x, point.y, point.z);
+            });
+            attr.needsUpdate = true;
+            object.geometry.computeBoundingSphere();
+          });
+          const flow = group?.children.find((child) => child.userData.flow);
+          if (flow) {
+            const ids = flow.userData.nodeIds as string[];
+            flow.userData.flow = ids.flatMap((id) => entryOf.get(id)?.mesh.position.toArray() ?? [0, 0, 0]);
+          }
+        }
+        const byId = new Map(screenNodes.map((node) => [node.id, node]));
+        const boxes = [];
         for (const entry of meshes) {
-          const distance = Math.max(camera.position.distanceTo(entry.mesh.position), 1);
-          const worldPerPx = (2 * halfTan * distance) / viewH;
-          let scale = entry.mesh.scale.x;
-          const rawPx = scale / worldPerPx;
-          const limit = focused ? (distance < centerDist ? nearCap : 39) : 10000;
-          if (rawPx > limit) scale = limit * worldPerPx;
-          entry.mesh.scale.setScalar(scale);
-          if (entry.glow) entry.glow.scale.setScalar(scale * 1.4);
-          if (entry.hit) {
-            entry.hit.scale.setScalar(Math.max(scale * 2.2, 4));
-            entry.hit.visible = false;
-          }
-          let nearFade = 1;
-          if (focused && front > 24 && distance < front) {
-            const gone = Math.max(16, front * 0.62);
-            if (distance <= gone) nearFade = 0;
-            else {
-              const t = (distance - gone) / Math.max(front - gone, 1);
-              nearFade = t * t * (3 - 2 * t);
-            }
-          }
-          const material = entry.mesh.material as THREE_NS.ShaderMaterial;
-          if (material.uniforms?.uDim) material.uniforms.uDim.value *= nearFade;
-          if (entry.glow) {
-            const glowMaterial = entry.glow.material as THREE_NS.MeshBasicMaterial;
-            glowMaterial.opacity *= nearFade;
-          }
-          scratch.copy(entry.mesh.position).project(camera);
-          const sx = (scratch.x * 0.5 + 0.5) * viewW;
-          const sy = (-scratch.y * 0.5 + 0.5) * viewH;
-          const nodePx = scale / worldPerPx;
-          const nodeLeft = hostBox.left + sx - nodePx;
-          const nodeTop = hostBox.top + sy - nodePx;
-          const nodeRight = nodeLeft + nodePx * 2;
-          const nodeBottom = nodeTop + nodePx * 2;
-          const onChrome = blocks.some((rect) => {
-            const overlapX = Math.min(nodeRight, rect.right) - Math.max(nodeLeft, rect.left);
-            const overlapY = Math.min(nodeBottom, rect.bottom) - Math.max(nodeTop, rect.top);
-            return overlapX > 1 && overlapY > 1;
-          });
-          const inside =
-            nearFade > 0.04 &&
-            !onChrome &&
-            scratch.z >= -1 &&
-            scratch.z <= 1 &&
-            Number.isFinite(nodePx) &&
-            sx - nodePx >= safe.left - 1 &&
-            sx + nodePx <= safe.right + 1 &&
-            sy - nodePx >= safe.top - 1 &&
-            sy + nodePx <= safe.bottom + 1;
-          entry.mesh.visible = inside;
-          if (entry.glow) entry.glow.visible = inside;
-          if (entry.id === stateRef.current.selectedId) {
-            selectedShot = { sx, sy, nodePx, onChrome, inside };
-          }
-          if (!inside) continue;
-          const radius = Math.round(nodePx * 10) / 10;
-          boxes.push({
-            id: entry.id,
-            x: Math.round(hostBox.left + sx - nodePx),
-            y: Math.round(hostBox.top + sy - nodePx),
-            w: Math.max(1, Math.round(nodePx * 2)),
-            h: Math.max(1, Math.round(nodePx * 2)),
-            r: radius,
-          });
+          const node = byId.get(entry.id)!;
+          const depth = entry.mesh.position.clone().applyMatrix4(camera.matrixWorldInverse);
+          const worldPerPx = 2 * halfTan * Math.max(-depth.z, 1) / viewH;
+          const pulse = !reduced && entry.id === framing.selectedId ? 1 + Math.sin(now / 1000 * 2.2) * 0.055 : 1;
+          const radius = node.r / 1.06 * pulse;
+          entry.mesh.scale.setScalar(radius * worldPerPx);
+          entry.mesh.visible = true;
+          if (entry.glow) { entry.glow.scale.setScalar(radius * worldPerPx * 1.4); entry.glow.visible = true; }
+          if (entry.hit) { entry.hit.scale.setScalar(radius * worldPerPx * 1.4); entry.hit.visible = false; }
+          boxes.push({ id: entry.id, x: hostBox.left + node.x - radius, y: hostBox.top + node.y - radius, w: radius * 2, h: radius * 2, r: radius });
         }
         host.dataset.nodes = JSON.stringify(boxes);
-        const focusIdNow = stateRef.current.selectedId;
-        if (focusIdNow && selectedShot && (!selectedShot.inside || selectedShot.onChrome)) {
-          const token = `${focusIdNow}|${Math.round(dist)}`;
-          if (token !== biasFor) {
-            biasFor = token;
-            biasTries = 0;
-          }
-          if (biasTries < 6) {
-            const title = stateRef.current.nodes.find((node) => node.id === focusIdNow)?.title ?? "Note";
-            const spot = openLabelSpot(selectedShot.sx, selectedShot.sy, selectedShot.nodePx, title, safe, blocks, hostBox);
-            if (spot) {
-              focusBiasX += spot.x - selectedShot.sx;
-              focusBiasY += spot.y - selectedShot.sy;
-              focusBiasX = Math.max(-420, Math.min(420, focusBiasX));
-              focusBiasY = Math.max(-320, Math.min(320, focusBiasY));
-              biasTries += 1;
-              parkView();
-            } else {
-              biasTries = 6;
-            }
-          }
-        }
+        host.dataset.keepOut = JSON.stringify(blocks[0] ?? null);
         const ring = group?.children.find((child) => child.userData.kind === "select-ring");
         const selectedMesh = meshes.find((entry) => entry.id === stateRef.current.selectedId);
         if (ring instanceof THREE.Mesh && selectedMesh) {
@@ -592,17 +513,17 @@ export function ForceScene({
           ring.position.copy(selectedMesh.mesh.position);
           ring.visible = selectedMesh.mesh.visible;
         }
-        const pixel = renderer.getPixelRatio();
         renderer.setScissorTest(false);
         renderer.clear();
         renderer.setScissorTest(true);
-        renderer.setScissor(
-          Math.max(0, Math.floor(safe.left * pixel)),
-          Math.max(0, Math.floor((viewH - safe.bottom) * pixel)),
-          Math.max(1, Math.floor((safe.right - safe.left) * pixel)),
-          Math.max(1, Math.floor((safe.bottom - safe.top) * pixel)),
-        );
+        renderer.setScissor(safe.left, viewH - safe.bottom, safe.right - safe.left, safe.bottom - safe.top);
         renderer.render(scene, camera);
+        // Clear to alpha, including links and their flow particles, through the complete HUD zone.
+        for (const rect of blocks) {
+          renderer.setScissor(rect.left - 8, viewH - rect.bottom - 8, rect.right - rect.left + 16, rect.bottom - rect.top + 16);
+          renderer.clear();
+        }
+        renderer.setScissorTest(false);
         paintLabels();
       };
 
@@ -639,7 +560,12 @@ export function ForceScene({
         return near;
       };
 
+      let placementStamp = "";
+      let labelStamp = "";
+      let screenNodes: ScreenNode[] = [];
       const rebuild = () => {
+        placementStamp = "";
+        labelStamp = "";
         disposeGroup();
         const current = stateRef.current;
         const pointOf = new Map(current.points.map((point) => [point.id, point]));
@@ -810,8 +736,19 @@ export function ForceScene({
           const spinePositions: number[] = [];
           const hotPositions: number[] = [];
           const pairs = new Map<string, { a: string; b: string }>();
-          const push = (bucket: number[], a: { x: number; y: number; z: number }, b: { x: number; y: number; z: number }) => {
+          const endpointIds = new Map<number[], string[]>();
+          const push = (bucket: number[], a: LayoutPoint, b: LayoutPoint) => {
             bucket.push(a.x, a.y, a.z, b.x, b.y, b.z);
+            const ids = endpointIds.get(bucket) ?? [];
+            ids.push(a.id, b.id);
+            endpointIds.set(bucket, ids);
+          };
+          const addLines = (positions: number[], material: THREE_NS.LineBasicMaterial) => {
+            const geometry = new THREE.BufferGeometry();
+            geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+            const lines = new THREE.LineSegments(geometry, material);
+            lines.userData.nodeIds = endpointIds.get(positions);
+            group!.add(lines);
           };
           const focused = Boolean(current.selectedId || current.clusterId || routeSet);
           for (const edge of current.edges) {
@@ -855,19 +792,13 @@ export function ForceScene({
             push(crossPositions, a, b);
           }
           if (spinePositions.length > 0) {
-            const geometry = new THREE.BufferGeometry();
-            geometry.setAttribute("position", new THREE.Float32BufferAttribute(spinePositions, 3));
-            group.add(new THREE.LineSegments(geometry, spineLine));
+            addLines(spinePositions, spineLine);
           }
           if (positions.length > 0) {
-            const geometry = new THREE.BufferGeometry();
-            geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
-            group.add(new THREE.LineSegments(geometry, sharedLine));
+            addLines(positions, sharedLine);
           }
           if (crossPositions.length > 0) {
-            const geometry = new THREE.BufferGeometry();
-            geometry.setAttribute("position", new THREE.Float32BufferAttribute(crossPositions, 3));
-            group.add(new THREE.LineSegments(geometry, crossLine));
+            addLines(crossPositions, crossLine);
           }
           if (hotPositions.length >= 6) {
             const count = Math.min(18, Math.floor(hotPositions.length / 6));
@@ -884,12 +815,11 @@ export function ForceScene({
               }),
             );
             flow.userData.flow = hotPositions;
+            flow.userData.nodeIds = endpointIds.get(hotPositions);
             group.add(flow);
           }
           if (hotPositions.length > 0) {
-            const geometry = new THREE.BufferGeometry();
-            geometry.setAttribute("position", new THREE.Float32BufferAttribute(hotPositions, 3));
-            group.add(new THREE.LineSegments(geometry, hotLine));
+            addLines(hotPositions, hotLine);
           }
         }
         scene.add(group);
@@ -897,204 +827,68 @@ export function ForceScene({
       };
 
       const labelEls = new Map<string, HTMLSpanElement>();
-      const overlapsHud = (x: number, y: number, w: number, h: number) => {
-        const hostBox = host.getBoundingClientRect();
-        const left = hostBox.left + x;
-        const top = hostBox.top + y;
-        const right = left + w;
-        const bottom = top + h;
-        if (left < hostBox.left + 2 || top < hostBox.top + 2 || right > hostBox.right - 2 || bottom > hostBox.bottom - 2) {
-          return true;
-        }
-        const selectors = [
-          "[data-region='header']",
-          "[data-region='left']",
-          "[data-region='filter']",
-          "[data-region='chat']",
-          "[data-region='ask']",
-          ".orb-dial",
-          ".orb-status",
-          ".graph-inspector",
-          ".face-task",
-        ];
-        return selectors.some((selector) => {
-          const node = document.querySelector(selector);
-          if (!node) return false;
-          const rect = node.getBoundingClientRect();
-          if (rect.width < 2 || rect.height < 2) return false;
-          return left < rect.right - 1 && right > rect.left + 1 && top < rect.bottom - 1 && bottom > rect.top + 1;
-        });
-      };
-
       const paintLabels = () => {
         const current = stateRef.current;
-        const width = host.clientWidth || 1;
-        const height = host.clientHeight || 1;
-        if (!current.showLabels) {
-          labelHost.replaceChildren();
-          labelEls.clear();
-          return;
-        }
+        const safe = safeRect();
+        const blocks = blockRects();
         const fade = smallLabelFade(dist, overviewDist);
+        const stamp = `${placementStamp}|${hoverId}|${current.showLabels}|${fade}`;
+        if (stamp === labelStamp) return;
+        labelStamp = stamp;
         const routeIndex = new Map((current.route ?? []).map((id, index) => [id, index]));
-        const candidates: {
-          id: string;
-          x: number;
-          y: number;
-          w: number;
-          h: number;
-          depth: number;
-          priority: number;
-          protected: boolean;
-          title: string;
-          zoomOpacity: number;
-          hub: boolean;
-          nx: number;
-          ny: number;
-          nr: number;
-        }[] = [];
-        for (const entry of meshes) {
-          if (!entry.mesh.visible) continue;
-          const node = current.nodes.find((item) => item.id === entry.id);
-          if (!node || !current.visibleIds.has(node.id)) continue;
+        const byId = new Map(current.nodes.map((node) => [node.id, node]));
+        const candidates = screenNodes.flatMap((point) => {
+          const node = byId.get(point.id)!;
           const hub = node.kind === "folder" || node.nodeType === "hub" || node.root;
+          const selected = node.id === current.selectedId;
+          const hover = node.id === hoverId;
           const onPath = routeIndex.has(node.id);
-          const neighbor =
-            current.selectedId !== null &&
-            current.edges.some(
-              (edge) =>
-                (edge.from === current.selectedId && edge.to === node.id) ||
-                (edge.to === current.selectedId && edge.from === node.id),
-            );
-          const clusterId = current.clusterId;
-          const inCluster = clusterId !== null && (node.id === clusterId || node.hubs.includes(clusterId));
-          const flags = {
-            selected: node.id === current.selectedId,
-            hover: node.id === hoverId,
-            hub,
-            ssot: node.ssot,
-            onPath,
-            neighbor,
-            folder: false,
-            match: inCluster,
-          };
-          const pinned = hub || flags.selected || flags.hover || flags.onPath;
-          if (!pinned && fade < 0.04) continue;
-          const vector = entry.mesh.position.clone().project(camera);
-          if (vector.z > 1) continue;
-          const sx = (vector.x * 0.5 + 0.5) * width;
-          const sy = (-vector.y * 0.5 + 0.5) * height;
-          const distance = camera.position.distanceTo(entry.mesh.position);
-          const fov = (camera.fov * Math.PI) / 180;
-          const nodePx = (entry.mesh.scale.x * height) / (2 * Math.tan(fov / 2) * Math.max(distance, 1));
+          const inCluster = current.clusterId !== null && (node.id === current.clusterId || node.hubs.includes(current.clusterId));
+          const pinned = hub || selected || hover || onPath || inCluster || node.ssot;
+          if (!current.showLabels || (!pinned && fade < 0.04)) return [];
+          const rank = labelRank({ selected, hover, hub, onPath, neighbor: false, folder: false, match: inCluster, ssot: node.ssot });
           const number = routeIndex.get(node.id);
-          const text = number !== undefined ? `${number + 1}. ${node.title}` : node.title;
-          const w = Math.max(48, Math.ceil(text.length * 8.2 + 16));
-          const h = 18;
-          const spots = [
-            { x: sx + nodePx + 6, y: sy - h / 2 },
-            { x: sx - nodePx - 6 - w, y: sy - h / 2 },
-            { x: sx + nodePx + 6, y: sy - h - 4 },
-            { x: sx - nodePx - 6 - w, y: sy - h - 4 },
-            { x: sx - w / 2, y: sy + nodePx + 4 },
-            { x: sx - w / 2, y: sy - nodePx - h - 4 },
-          ];
-          const spot = spots.find((item) => !overlapsHud(item.x, item.y, w, h));
-          if (!spot) continue;
-          const hostBox = host.getBoundingClientRect();
-          const rank = labelRank(flags);
-          const closeness = typeof entry.mesh.userData.closeness === "number" ? entry.mesh.userData.closeness : 0.8;
-          candidates.push({
-            id: node.id,
-            x: spot.x + w / 2,
-            y: spot.y + h / 2,
-            w,
-            h,
-            depth: closeness,
-            priority: rank.priority,
-            protected: rank.protected || hub,
-            title: text,
-            zoomOpacity: pinned ? 1 : fade,
-            hub,
-            nx: hostBox.left + sx,
-            ny: hostBox.top + sy,
-            nr: nodePx,
-          });
-        }
-        const placed = pickLabels(candidates);
-        const byId = new Map(candidates.map((item) => [item.id, item]));
+          return [{ ...point, title: number !== undefined ? `${number + 1}. ${node.title}` : node.title, hub, priority: rank.priority, opacity: pinned ? 1 : fade }];
+        }).sort((a, b) => b.priority - a.priority || a.id.localeCompare(b.id));
         const keep = new Set<string>();
-        for (const label of placed) {
-          const source = byId.get(label.id);
-          if (!source) continue;
-          if (overlapsHud(label.x - source.w / 2, label.y - source.h / 2, source.w, source.h)) continue;
-          keep.add(label.id);
-          let el = labelEls.get(label.id);
+        const placed: ScreenRect[] = [];
+        for (const source of candidates) {
+          let el = labelEls.get(source.id);
           if (!el) {
             el = document.createElement("span");
             el.className = "graph-float-label";
+            el.dataset.nodeId = source.id;
             el.addEventListener("pointerdown", (event) => {
               event.preventDefault();
               event.stopPropagation();
-              const id = (event.currentTarget as HTMLElement).dataset.nodeId || "";
-              if (id) stateRef.current.onSelect(id, event.shiftKey);
+              stateRef.current.onSelect(source.id, event.shiftKey);
             });
-            el.addEventListener("pointerenter", (event) => {
-              const id = (event.currentTarget as HTMLElement).dataset.nodeId || "";
-              if (!id) return;
-              hoverId = id;
-              host.style.cursor = "pointer";
-            });
-            el.addEventListener("pointerleave", (event) => {
-              const id = (event.currentTarget as HTMLElement).dataset.nodeId || "";
-              if (hoverId === id) hoverId = "";
-              host.style.cursor = "grab";
-            });
+            el.addEventListener("pointerenter", () => { hoverId = source.id; host.style.cursor = "pointer"; });
+            el.addEventListener("pointerleave", () => { if (hoverId === source.id) hoverId = ""; host.style.cursor = "grab"; });
             labelHost.appendChild(el);
-            labelEls.set(label.id, el);
+            labelEls.set(source.id, el);
           }
-          el.dataset.nodeId = source.id;
-          el.dataset.hub = source.hub ? "1" : "0";
-          el.dataset.priority = String(source.priority);
-          el.dataset.nx = String(Math.round(source.nx));
-          el.dataset.ny = String(Math.round(source.ny));
-          el.dataset.nr = String(Math.round(source.nr));
           el.textContent = source.title;
-          el.style.left = `${label.x - source.w / 2}px`;
-          el.style.top = `${label.y - source.h / 2}px`;
-          el.style.opacity = String(Math.max(0, Math.min(1, label.opacity * source.zoomOpacity)));
-        }
-        const measured = [...labelEls.entries()]
-          .filter(([id, el]) => {
-            if (!keep.has(id)) return false;
-            const rect = el.getBoundingClientRect();
-            if (rect.width < 2 || rect.height < 2) return false;
-            const nx = Number(el.dataset.nx || 0);
-            const ny = Number(el.dataset.ny || 0);
-            const nr = Number(el.dataset.nr || 0);
-            const gapX = Math.max(0, Math.max(rect.left - (nx + nr), nx - nr - rect.right));
-            const gapY = Math.max(0, Math.max(rect.top - (ny + nr), ny - nr - rect.bottom));
-            if (Math.hypot(gapX, gapY) > 24) return false;
-            const hostBox = host.getBoundingClientRect();
-            if (overlapsHud(rect.left - hostBox.left, rect.top - hostBox.top, rect.width, rect.height)) return false;
-            return true;
-          })
-          .map(([id, el]) => {
-            const rect = el.getBoundingClientRect();
-            return {
-              id,
-              priority: Number(el.dataset.priority || 0),
-              left: rect.left,
-              top: rect.top,
-              right: rect.right,
-              bottom: rect.bottom,
-            };
+          el.dataset.hub = source.hub ? "1" : "0";
+          // Measure real glyph bounds; estimates and later nudging can hit a neighboring sphere.
+          const w = el.offsetWidth;
+          const h = el.offsetHeight;
+          const { x, y, r } = source;
+          const spots = labelSpots(x, y, r, w, h);
+          if (source.labelRect) spots.unshift({ ...source.labelRect, right: source.labelRect.left + w, bottom: source.labelRect.top + h });
+          const spot = spots.find((spot) => {
+            const rect = spot;
+            return rect.left >= safe.left && rect.right <= safe.right && rect.top >= safe.top && rect.bottom <= safe.bottom &&
+              !blocks.some((block) => rectsIntersect(rect, block, 8)) &&
+              !placed.some((other) => rectsIntersect(rect, other, 6)) &&
+              !screenNodes.some((node) => node.id !== source.id && rectIntersectsCircle(rect, node, 3));
           });
-        const shown = new Set(dropOverlappingLabels(measured).map((label) => label.id));
-        for (const [id, el] of labelEls) {
-          if (!keep.has(id) || shown.has(id)) continue;
-          el.remove();
-          labelEls.delete(id);
+          if (!spot) continue;
+          keep.add(source.id);
+          placed.push(spot);
+          el.style.left = `${spot.left}px`;
+          el.style.top = `${spot.top}px`;
+          el.style.opacity = String(source.opacity);
         }
         for (const [id, el] of labelEls) {
           if (keep.has(id)) continue;
@@ -1108,7 +902,7 @@ export function ForceScene({
         pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
         pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
         raycaster.setFromCamera(pointer, camera);
-        const found = raycaster.intersectObjects(pickables, false)[0];
+        const found = raycaster.intersectObjects(pickables, false).find((hit) => meshes.some((entry) => entry.id === hit.object.userData.id && entry.mesh.visible));
         const id = found?.object.userData.id;
         return typeof id === "string" ? id : "";
       };
@@ -1248,6 +1042,7 @@ export function ForceScene({
           );
         } else if (selectedId) ids = neighborhood(selectedId, current.hopDepth);
         const chosen = current.points.filter((point) => current.visibleIds.has(point.id) && (!ids || ids.has(point.id)));
+        if (ids) framePoints(current.points.filter((point) => current.visibleIds.has(point.id)), true);
         framePoints(chosen.length > 0 ? chosen : current.points, !ids);
       };
       refit = fit;

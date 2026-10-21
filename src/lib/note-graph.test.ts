@@ -8,6 +8,23 @@ import { loadVaultGraph, resolveVaultPath } from "./note-graph.server";
 import { areaHubs, buildNoteGraph, GRAPH_NODE_TYPES, hubNameKey, MAX_GRAPH_NODES, nodeDiameterPx } from "./note-graph";
 
 describe("buildNoteGraph", () => {
+  it("uses a note title, first heading, or filename and never an opaque id", () => {
+    const uuid = "23b43181-68ac-429c-90d0-4d6c77fcf157";
+    const graph = buildNoteGraph([
+      { path: "school/title.md", text: "---\ntitle: 'School timetable'\n---\n# Older heading" },
+      { path: `school/${uuid}.md`, text: "## Conestoga" },
+      { path: "school/bell-schedules.md", text: `# ${uuid}\n\nBells.` },
+      { path: "school/abcdef0123456789abcdef.md", text: "No heading." },
+      { path: "school/links.md", text: `# Links\n[School portal](https://example.com/${uuid})\n[](https://example.com/abcdef0123456789abcdef)` },
+    ]);
+    assert.equal(graph.nodes.find((node) => node.id === "school/title.md")?.title, "School timetable");
+    assert.equal(graph.nodes.find((node) => node.id === `school/${uuid}.md`)?.title, "Conestoga");
+    assert.equal(graph.nodes.find((node) => node.id === "school/bell-schedules.md")?.title, "bell-schedules");
+    assert.equal(graph.nodes.find((node) => node.id === "school/abcdef0123456789abcdef.md")?.title, "Untitled note");
+    assert.equal(graph.nodes.some((node) => node.title === "School portal"), true);
+    assert.equal(graph.nodes.some((node) => /^[0-9a-f-]{16,}$/i.test(node.title)), false);
+  });
+
   it("connects wikilinks, shared tags, and a folder parent", () => {
     const graph = buildNoteGraph([
       {

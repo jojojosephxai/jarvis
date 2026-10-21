@@ -215,6 +215,51 @@ function labelOverlaps() {
   return hits.slice(0, 8);
 }
 
+// Independently measure the HUD; do not trust the renderer's keep-out instrumentation.
+function roundTwoGeometry() {
+  const scene = document.querySelector(".force-scene");
+  const nodes = JSON.parse(scene?.getAttribute("data-nodes") || "[]");
+  if (!nodes.length) return ["no graph nodes measured"];
+  const box = (selector) => {
+    const rect = document.querySelector(selector)?.getBoundingClientRect();
+    return rect && rect.width > 2 && rect.height > 2 ? rect : null;
+  };
+  const center = [".orb-dial", ".orb-status", "[data-region='ask']", ".tool-row"].map(box).filter(Boolean);
+  if (center.length < 3) return ["center HUD missing"];
+  const keepOut = {
+    left: Math.min(...center.map((rect) => rect.left)), top: Math.min(...center.map((rect) => rect.top)),
+    right: Math.max(...center.map((rect) => rect.right)), bottom: Math.max(...center.map((rect) => rect.bottom)),
+  };
+  const panels = ["[data-region='header']", "[data-region='left']", "[data-region='filter']", ".graph-inspector", "[data-region='chat']"].map(box).filter(Boolean);
+  const intersects = (a, b) => a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top;
+  const circleHits = (rect, x, y, r) => Math.hypot(x - Math.max(rect.left, Math.min(rect.right, x)), y - Math.max(rect.top, Math.min(rect.bottom, y))) < r - 0.1;
+  const hits = [];
+  for (const node of nodes) {
+    const x = node.x + node.w / 2;
+    const y = node.y + node.h / 2;
+    const r = node.r;
+    if (x > keepOut.left && x < keepOut.right && y > keepOut.top && y < keepOut.bottom) hits.push(`${node.id} center inside HUD`);
+    if (circleHits(keepOut, x, y, r + 16)) hits.push(`${node.id} has less than 16px HUD margin`);
+    if (node.x < 15.9 || node.y < 15.9 || node.x + node.w > innerWidth - 15.9 || node.y + node.h > innerHeight - 15.9) hits.push(`${node.id} has less than 16px viewport margin`);
+    for (const panel of panels) if (circleHits(panel, x, y, r + 16)) hits.push(`${node.id} has less than 16px panel margin`);
+  }
+  const uuidOrHash = /^(?:[0-9a-f]{8}(?:[-\s][0-9a-f]{4}){3}[-\s][0-9a-f]{12}|[0-9a-f]{16,})$/i;
+  for (const label of document.querySelectorAll(".graph-float-label")) {
+    const style = getComputedStyle(label);
+    if (style.visibility === "hidden" || Number(style.opacity) < 0.05) continue;
+    const text = label.textContent.trim();
+    if (uuidOrHash.test(text.replace(/^\d+\.\s*/, ""))) hits.push(`opaque label: ${text}`);
+    const rect = label.getBoundingClientRect();
+    if (intersects(rect, keepOut)) hits.push(`${text} label intersects HUD`);
+    for (const node of nodes) {
+      if (node.id === label.dataset.nodeId) continue;
+      if (circleHits(rect, node.x + node.w / 2, node.y + node.h / 2, node.r)) hits.push(`${text} label intersects ${node.id}`);
+    }
+  }
+  if (!document.querySelector(".graph-float-label")) hits.push("all graph labels were hidden");
+  return hits.slice(0, 20);
+}
+
 async function openFace(page, path) {
   await page.goto(path);
   await page.waitForFunction(() => document.querySelector(".face")?.getAttribute("data-intro") === "out");
@@ -264,6 +309,13 @@ for (const size of sizes) {
     await expect.poll(async () => page.evaluate(labelOverlaps), { timeout: 15000 }).toEqual([]);
     await expect.poll(async () => page.evaluate(clippedMarks), { timeout: 15000 }).toEqual([]);
     await expect.poll(async () => page.evaluate(chatMissesInspector), { timeout: 15000 }).toEqual([]);
+    await expect.poll(async () => page.evaluate(roundTwoGeometry), { timeout: 15000 }).toEqual([]);
+    await expect(page.locator(".graph-float-label[data-node-id='area:school']")).toBeVisible();
+    const graph = await (await page.request.get("/api/graph")).json();
+    await expect.poll(async () => page.evaluate(() => JSON.parse(document.querySelector(".force-scene").dataset.nodes).length)).toBe(graph.nodes.length);
+    const shotDir = "artifacts/face/1021r2";
+    await mkdir(shotDir, { recursive: true });
+    await page.screenshot({ path: `${shotDir}/${size.width}x${size.height}-idle.png`, fullPage: false });
   });
 
   test(`graph labels stay apart at ${size.width} focus`, async ({ page }) => {
@@ -274,6 +326,13 @@ for (const size of sizes) {
     await expect.poll(async () => page.evaluate(labelOverlaps), { timeout: 15000 }).toEqual([]);
     await expect.poll(async () => page.evaluate(clippedMarks), { timeout: 15000 }).toEqual([]);
     await expect.poll(async () => page.evaluate(chatMissesInspector), { timeout: 15000 }).toEqual([]);
+    await expect.poll(async () => page.evaluate(roundTwoGeometry), { timeout: 15000 }).toEqual([]);
+    await expect(page.locator(".graph-float-label[data-node-id='area:school']")).toBeVisible();
+    const graph = await (await page.request.get("/api/graph")).json();
+    await expect.poll(async () => page.evaluate(() => JSON.parse(document.querySelector(".force-scene").dataset.nodes).length)).toBe(graph.nodes.length);
+    const shotDir = "artifacts/face/1021r2";
+    await mkdir(shotDir, { recursive: true });
+    await page.screenshot({ path: `${shotDir}/${size.width}x${size.height}-hub-selected.png`, fullPage: false });
   });
 }
 
@@ -348,6 +407,8 @@ test("clicking a graph node opens the Inspector", async ({ page }) => {
   await expect(page.locator(".graph-inspector")).toBeVisible();
   await expect(page.locator(".inspector-title")).toBeVisible();
   await expect(page.locator(".inspector-kind")).toBeVisible();
+  await expect.poll(async () => page.evaluate(roundTwoGeometry), { timeout: 15000 }).toEqual([]);
+  await expect(page.locator(`.graph-float-label[data-node-id="${id}"]`)).toBeVisible();
 });
 
 test("hover dims non-neighbors", async ({ page }) => {
@@ -397,7 +458,7 @@ test("labels stay inside the graph area after a resize", async ({ page }) => {
 
 test("screenshots of the face", async ({ page }) => {
   test.setTimeout(300000);
-  const dir = "/opt/cursor/artifacts/face";
+  const dir = "work/artifacts/face";
   await mkdir(dir, { recursive: true });
   const shots = [
     ["1280-idle", { width: 1280, height: 800 }, "/"],
@@ -454,7 +515,7 @@ test("screenshots of the face", async ({ page }) => {
     await expect.poll(async () => page.evaluate(nodeOverlaps), { timeout: 15000 }).toEqual([]);
     await page.screenshot({ path: `${dir}/${size.width}-hover.png`, fullPage: false });
   }
-  const shotDir = "/opt/cursor/artifacts/face/1021";
+  const shotDir = "work/artifacts/face/1021";
   await mkdir(shotDir, { recursive: true });
   for (const size of sizes) {
     await page.setViewportSize(size);
