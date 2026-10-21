@@ -49,9 +49,8 @@ let greetedThisLoad = false;
 
 type LogItem =
   | { kind: "you"; id: string; text: string; at: string }
-  | { kind: "jarvis"; id: string; text: string; at: string; sources?: string[]; failed?: boolean }
-  | { kind: "hand"; id: string; at: string; reply: string; plan?: HandPlan; receipts: Receipt[]; cancelled?: boolean }
-  | { kind: "timing"; id: string; at: string; tokenMs: number; voiceMs: number };
+  | { kind: "jarvis"; id: string; text: string; at: string; sources?: string[]; failed?: boolean; tokenMs?: number; voiceMs?: number }
+  | { kind: "hand"; id: string; at: string; reply: string; plan?: HandPlan; receipts: Receipt[]; cancelled?: boolean; tokenMs?: number; voiceMs?: number };
 
 function dropUnaskedCalendar(text: string, asked: boolean): string {
   if (asked) return text;
@@ -105,6 +104,33 @@ function formatStamp(iso: string): string {
   return new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" }).format(date);
 }
 
+function replyForChat(text: string, sources: string[] | undefined): { body: string; chips: string[] } {
+  const footer = text.match(/(?:^|\n)\s*Notes used:\s*([\s\S]+?)\s*$/i);
+  const bodyWithoutFooter = text.replace(/(?:^|\n)\s*Notes used:\s*[\s\S]+$/i, "").trim();
+  const parsed = footer
+    ? footer[1]
+        .replace(/\.\s*$/, "")
+        .split(/,|\band\b/i)
+        .map((part) => part.trim())
+        .filter((part) => part.length > 0 && part.toLowerCase() !== "none")
+    : [];
+  const chips = [...new Set([...(sources ?? []), ...parsed].map((part) => part.trim()).filter(Boolean))];
+  let body = bodyWithoutFooter;
+  for (const chip of [...chips].sort((a, b) => b.length - a.length)) {
+    const escaped = chip.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    body = body.replace(new RegExp(`\\s*\\(${escaped}\\)`, "gi"), "");
+  }
+  body = body.replace(/[ \t]{2,}/g, " ").replace(/\s+([,.!?])/g, "$1").trim();
+  return { body, chips };
+}
+
+function inTimeOrder(items: LogItem[]): LogItem[] {
+  return items
+    .map((item, index) => ({ item, index }))
+    .sort((a, b) => a.item.at.localeCompare(b.item.at) || a.index - b.index)
+    .map((row) => row.item);
+}
+
 function voiceName(mouth: MouthKind | "unknown"): string {
   switch (mouth) {
     case "grok":
@@ -125,8 +151,8 @@ function voiceName(mouth: MouthKind | "unknown"): string {
 }
 
 function orbPlace(mode: OrbMode): OrbPlace {
-  if (mode === "listening" || mode === "speaking") return "center";
-  return "dock";
+  if (mode === "working") return "corner";
+  return "center";
 }
 
 export function Face() {
@@ -419,16 +445,54 @@ export function Face() {
     const askedAt = performance.now();
     let tokenAt = 0;
     let timed = false;
+    const answerId = makeId("ans");
+    let liveId = answerId;
+    const pendingTiming: { tokenMs?: number; voiceMs?: number } = {};
     const stampTiming = (voiceAt: number | null) => {
       if (timed) return;
       timed = true;
       const now = performance.now();
       const tokenMs = Math.max(0, Math.round((tokenAt || now) - askedAt));
       const voiceMs = tokenAt && voiceAt ? Math.max(0, Math.round(voiceAt - tokenAt)) : 0;
-      const at = new Date().toISOString();
+      pendingTiming.tokenMs = tokenMs;
+      pendingTiming.voiceMs = voiceMs;
+      const targetId = liveId;
       setItems((current) =>
-        [...current, { kind: "timing" as const, id: makeId("time"), at, tokenMs, voiceMs }].slice(-40),
+        current.map((item) => (item.id === targetId && (item.kind === "jarvis" || item.kind === "hand") ? { ...item, tokenMs, voiceMs } : item)),
       );
+    };
+    const upsertJarvis = (text: string, sources?: string[], failed?: boolean) => {
+      const at = new Date().toISOString();
+      setItems((current) => {
+        const index = current.findIndex((item) => item.id === answerId && item.kind === "jarvis");
+        if (index >= 0) {
+          const prev = current[index];
+          if (prev?.kind !== "jarvis") return current;
+          const next = current.slice();
+          next[index] = {
+            ...prev,
+            text,
+            sources: sources ?? prev.sources,
+            failed,
+            tokenMs: pendingTiming.tokenMs ?? prev.tokenMs,
+            voiceMs: pendingTiming.voiceMs ?? prev.voiceMs,
+          };
+          return next;
+        }
+        return [
+          ...current,
+          {
+            kind: "jarvis" as const,
+            id: answerId,
+            text,
+            at,
+            sources,
+            failed,
+            tokenMs: pendingTiming.tokenMs,
+            voiceMs: pendingTiming.voiceMs,
+          },
+        ].slice(-40);
+      });
     };
     let loggedWord = false;
     const queue: string[] = [];
@@ -466,11 +530,14 @@ export function Face() {
       }
     })();
     const askedCalendar = mentionsCalendar(trimmed);
+    let streamed = "";
     const pushSentence = (text: string) => {
       const clean = dropUnaskedCalendar(text.trim(), askedCalendar);
       if (!clean || heard >= 2) return;
       heard += 1;
       if (!tokenAt) tokenAt = performance.now();
+      streamed = streamed ? `${streamed} ${clean}` : clean;
+      upsertJarvis(streamed);
       queue.push(clean);
       const resume = gate.wake;
       gate.wake = null;
@@ -495,18 +562,7 @@ export function Face() {
         if (isChatResponse(json)) payload = json;
       }
       if (!payload) {
-        setItems((current) =>
-          [
-            ...current,
-            {
-              kind: "jarvis" as const,
-              id: makeId("ans"),
-              text: "Jarvis did not answer. Nothing was invented.",
-              at,
-              failed: true,
-            },
-          ].slice(-40),
-        );
+        upsertJarvis("Jarvis did not answer. Nothing was invented.", undefined, true);
         return;
       }
       settleJob(id, loadedContext(payload), payload.mode === "grok" ? "grok-4.7" : null);
@@ -523,19 +579,19 @@ export function Face() {
       if (isHandsTurn(payload)) {
         const reply = dropUnaskedCalendar(payload.reply, askedCalendar);
         if (reply || payload.plan) {
-          setItems((current) =>
-            [
-              ...current,
-              {
-                kind: "hand" as const,
-                id: makeId("hand"),
-                at,
-                reply: reply || payload.reply,
-                plan: payload.plan,
-                receipts: payload.receipts,
-              },
-            ].slice(-40),
-          );
+          const handId = makeId("hand");
+          liveId = handId;
+          const hand: Extract<LogItem, { kind: "hand" }> = {
+            kind: "hand",
+            id: handId,
+            at: new Date().toISOString(),
+            reply: reply || payload.reply,
+            plan: payload.plan,
+            receipts: payload.receipts,
+            tokenMs: pendingTiming.tokenMs,
+            voiceMs: pendingTiming.voiceMs,
+          };
+          setItems((current) => [...current.filter((item) => item.id !== answerId), hand].slice(-40));
         }
         if (payload.plan?.state === "waiting" && payload.plan.tool && !STUB_TASKS.has(payload.plan.tool)) setTab("tasks");
         if (heard === 0 && reply) spoken = butlerSpeech(reply);
@@ -543,64 +599,19 @@ export function Face() {
       }
       const brief = payload.brief;
       if (brief && isMorningBrief(brief)) {
-        setItems((current) =>
-          [
-            ...current,
-            {
-              kind: "jarvis" as const,
-              id: makeId("brief"),
-              text: brief.reply,
-              sources: brief.sources,
-              at,
-            },
-          ].slice(-40),
-        );
+        upsertJarvis(brief.reply, brief.sources);
         if (heard === 0) spoken = brief.spoken;
         return;
       }
       const reply = dropUnaskedCalendar(payload.reply, askedCalendar);
-      if (reply) {
-        setItems((current) =>
-          [
-            ...current,
-            {
-              kind: "jarvis" as const,
-              id: makeId("ans"),
-              text: reply,
-              sources: payload.sources,
-              at,
-            },
-          ].slice(-40),
-        );
-      }
+      if (reply) upsertJarvis(reply, payload.sources);
       if (heard === 0 && reply) spoken = butlerSpeech(reply);
     } catch (error) {
       if (abort.signal.aborted || (error instanceof DOMException && error.name === "AbortError")) {
-        setItems((current) =>
-          [
-            ...current,
-            {
-              kind: "jarvis" as const,
-              id: makeId("ans"),
-              text: "Stopped. I do not know if that finished.",
-              at,
-            },
-          ].slice(-40),
-        );
+        upsertJarvis("Stopped. I do not know if that finished.");
         return;
       }
-      setItems((current) =>
-        [
-          ...current,
-          {
-            kind: "jarvis" as const,
-            id: makeId("ans"),
-            text: "I couldn't reach Jarvis. Try again.",
-            at,
-            failed: true,
-          },
-        ].slice(-40),
-      );
+      upsertJarvis("I couldn't reach Jarvis. Try again.", undefined, true);
     } finally {
       streamDone = true;
       const resume = gate.wake;
@@ -669,15 +680,15 @@ export function Face() {
   );
 
   return (
-    <div className="face" data-intro={intro}>
+    <div className="face" data-intro={intro} data-mode={orb}>
       {intro === "in" ? (
         <div className="face-loader" role="status">
           <span />
           <p>Reading notes</p>
         </div>
       ) : null}
-      <div className="face-stage" data-orb={place}>
-        <NoteGraph cue={cue} suspendEscape={working} voiceLive={place === "center"} />
+      <div className="face-stage" data-orb={place} data-mode={orb}>
+        <NoteGraph cue={cue} suspendEscape={working} voiceLive={orb === "listening" || orb === "speaking"} />
         <OrbStage
           mode={orb}
           levelRef={voice.levelRef}
@@ -798,15 +809,15 @@ export function Face() {
             </div>
             {toolNote ? <p className="tool-note">{toolNote}</p> : null}
           </div>
-          <ChatCard
-            items={items}
-            tab={tab}
-            pending={pending}
-            chatRef={chatRef}
-            onTab={setTab}
-            onDecide={(id, plan, choice) => void decide(id, plan, choice)}
-          />
       </div>
+      <ChatCard
+        items={items}
+        tab={tab}
+        pending={pending}
+        chatRef={chatRef}
+        onTab={setTab}
+        onDecide={(id, plan, choice) => void decide(id, plan, choice)}
+      />
     </div>
   );
 }
@@ -869,8 +880,30 @@ function ChatCard({
   );
 }
 
+function TimingLine({ tokenMs, voiceMs }: { tokenMs?: number; voiceMs?: number }) {
+  if (tokenMs === undefined) return null;
+  return (
+    <p className="chat-timing">
+      Brain {tokenMs} ms to first token · {voiceMs ?? 0} ms to voice
+    </p>
+  );
+}
+
+function SourceChips({ chips }: { chips: string[] }) {
+  if (chips.length === 0) return null;
+  return (
+    <p className="chat-chips">
+      {chips.map((chip) => (
+        <span key={chip} className="chat-chip">
+          {chip}
+        </span>
+      ))}
+    </p>
+  );
+}
+
 function ChatLines({ items }: { items: LogItem[] }) {
-  const rows = collapseCalendar(items.filter((item) => item.kind === "you" || item.kind === "jarvis" || item.kind === "hand"));
+  const rows = inTimeOrder(collapseCalendar(items.filter((item) => item.kind === "you" || item.kind === "jarvis" || item.kind === "hand")));
   if (rows.length === 0) return <p className="face-hint">Ask when you are ready.</p>;
   return (
     <>
@@ -884,23 +917,29 @@ function ChatLines({ items }: { items: LogItem[] }) {
           );
         }
         if (item.kind === "jarvis") {
+          const shown = replyForChat(item.text, item.sources);
           return (
             <article key={item.id} className="chat-line">
               <p className="chat-meta">Jarvis · {formatStamp(item.at)}</p>
-              <p>{item.text}</p>
-              {item.sources && item.sources.length > 0 ? <p className="chat-sources">Sources: {item.sources.join(", ")}</p> : null}
+              <p>{shown.body}</p>
+              <SourceChips chips={shown.chips} />
+              <TimingLine tokenMs={item.tokenMs} voiceMs={item.voiceMs} />
             </article>
           );
         }
         if (item.kind === "hand") {
+          const shown = replyForChat(item.reply, undefined);
           return (
             <article key={item.id} className="chat-line">
               <p className="chat-meta">Jarvis · {formatStamp(item.at)}</p>
-              <p>{item.reply}</p>
+              <p>{shown.body}</p>
+              <SourceChips chips={shown.chips} />
+              <TimingLine tokenMs={item.tokenMs} voiceMs={item.voiceMs} />
             </article>
           );
         }
-        return null;
+        const neverItem: never = item;
+        return neverItem;
       })}
     </>
   );
@@ -953,21 +992,11 @@ function TaskLines({
 }
 
 function LogLines({ items }: { items: LogItem[] }) {
-  const rows = collapseCalendar(items);
+  const rows = inTimeOrder(collapseCalendar(items));
   if (rows.length === 0) return <p className="face-hint">Nothing yet.</p>;
   return (
     <>
       {rows.map((item) => {
-        if (item.kind === "timing") {
-          return (
-            <article key={item.id} className="chat-line">
-              <p className="chat-meta">{formatStamp(item.at)} · Brain</p>
-              <p>
-                Brain {item.tokenMs} ms to first token · {item.voiceMs} ms to voice
-              </p>
-            </article>
-          );
-        }
         if (item.kind === "you") {
           return (
             <article key={item.id} className="chat-line">
@@ -979,22 +1008,28 @@ function LogLines({ items }: { items: LogItem[] }) {
           );
         }
         if (item.kind === "jarvis") {
+          const shown = replyForChat(item.text, item.sources);
           return (
             <article key={item.id} className="chat-line">
               <p className="chat-meta">
                 {formatStamp(item.at)} · Jarvis
               </p>
-              <p>{item.text}</p>
+              <p>{shown.body}</p>
+              <SourceChips chips={shown.chips} />
+              <TimingLine tokenMs={item.tokenMs} voiceMs={item.voiceMs} />
             </article>
           );
         }
         if (item.kind === "hand") {
+          const shown = replyForChat(item.reply, undefined);
           return (
             <article key={item.id} className="chat-line">
               <p className="chat-meta">
                 {formatStamp(item.at)} · Jarvis
               </p>
-              <p>{item.reply}</p>
+              <p>{shown.body}</p>
+              <SourceChips chips={shown.chips} />
+              <TimingLine tokenMs={item.tokenMs} voiceMs={item.voiceMs} />
             </article>
           );
         }

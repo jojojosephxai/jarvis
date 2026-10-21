@@ -1,7 +1,7 @@
 import path from "node:path";
 
 import { clockStamp } from "./clock";
-import { grokConfigured, grokPhraseNotes, grokStreamSentences, type GrokResult } from "./grok";
+import { grokConfigured, grokPhraseNotes, grokStreamSentences, warmGrokConnection, type GrokResult } from "./grok";
 import type { BrainMode } from "./types";
 import { loadVaultNotes, resolveVaultPath, type VaultNote } from "./vault-read";
 
@@ -440,6 +440,7 @@ export async function* streamAnswerFromVault(
   question: string,
   options: AnswerOptions = {},
 ): AsyncGenerator<StreamedAnswer> {
+  warmGrokConnection();
   const gathered = await gatherAnswer(question, options);
   if (gathered.blocked) {
     yield { type: "done", answer: gathered.blocked };

@@ -167,44 +167,118 @@ export function ForceScene({
         };
       };
 
-      // Open graph area: right of the left panel, left of the orb / filter / inspector, above the ask bar.
+      // Free rectangle between the left rail and the right column. The orb and ask bar sit in that
+      // rectangle; nodes that land on them are hidden later so the graph can fill the space around them.
       const safeRect = () => {
         const width = Math.max(host.clientWidth, 1);
         const height = Math.max(host.clientHeight, 1);
-        const margin = 16;
+        const margin = 14;
         let left = margin;
         let top = 40;
         let right = width - margin;
-        let bottom = height - margin;
+        const bottom = height - margin;
         const leftPanel = relBox("[data-region='left']");
         if (leftPanel) left = Math.max(left, leftPanel.right + margin);
         const header = relBox("[data-region='header']");
-        if (header) top = Math.max(top, header.bottom + 12);
+        if (header) top = Math.max(top, header.bottom + 8);
         const tools = relBox(".graph-tools");
-        if (tools) top = Math.max(top, tools.bottom + 8);
+        if (tools) top = Math.max(top, tools.bottom + 6);
         const crumb = relBox(".graph-crumb");
-        if (crumb) top = Math.max(top, crumb.bottom + 8);
+        if (crumb) top = Math.max(top, crumb.bottom + 6);
         const filter = relBox("[data-region='filter']");
         if (filter) right = Math.min(right, filter.left - margin);
         const inspector = relBox(".graph-inspector");
         if (inspector) right = Math.min(right, inspector.left - margin);
-        const orb = relBox(".orb-dial[data-place='dock']");
-        if (orb) right = Math.min(right, orb.left - margin);
         const chat = relBox("[data-region='chat']");
-        if (chat) right = Math.min(right, chat.left - 12);
-        const ask = relBox("[data-region='ask']");
-        if (ask) bottom = Math.min(bottom, ask.top - margin);
+        if (chat) right = Math.min(right, chat.left - margin);
         if (right - left < 80 || bottom - top < 80) {
           return {
-            left: width * 0.22,
-            top: height * 0.1,
-            right: width * 0.7,
-            bottom: height * 0.78,
+            left: width * 0.08,
+            top: height * 0.08,
+            right: width * 0.72,
+            bottom: height * 0.92,
             width,
             height,
           };
         }
         return { left, top, right, bottom, width, height };
+      };
+
+      const blockRects = () => {
+        const rects: DOMRect[] = [];
+        for (const selector of [".orb-dial", "[data-region='ask']", ".tool-row", ".face-task"]) {
+          const node = document.querySelector(selector);
+          if (!node) continue;
+          const rect = node.getBoundingClientRect();
+          if (rect.width < 2 || rect.height < 2) continue;
+          rects.push(rect);
+        }
+        return rects;
+      };
+
+      let focusBiasX = 0;
+      let focusBiasY = 0;
+      let biasTries = 0;
+      let biasFor = "";
+      const parkView = () => {
+        const { width, height } = size();
+        const safe = safeRect();
+        const safeCx = (safe.left + safe.right) / 2 + focusBiasX;
+        const safeCy = (safe.top + safe.bottom) / 2 + focusBiasY;
+        camera.setViewOffset(width, height, width / 2 - safeCx, height / 2 - safeCy, width, height);
+      };
+
+      const openLabelSpot = (
+        sx: number,
+        sy: number,
+        nodePx: number,
+        title: string,
+        safe: { left: number; top: number; right: number; bottom: number },
+        blocks: DOMRect[],
+        hostBox: DOMRect,
+      ) => {
+        const labelW = Math.max(48, Math.ceil(title.length * 8.2 + 16));
+        const labelH = 18;
+        const rel = blocks.map((rect) => ({
+          left: rect.left - hostBox.left,
+          top: rect.top - hostBox.top,
+          right: rect.right - hostBox.left,
+          bottom: rect.bottom - hostBox.top,
+        }));
+        const boxHits = (left: number, top: number, w: number, h: number) =>
+          left < safe.left ||
+          top < safe.top ||
+          left + w > safe.right ||
+          top + h > safe.bottom ||
+          rel.some(
+            (rect) => left < rect.right - 1 && left + w > rect.left + 1 && top < rect.bottom - 1 && top + h > rect.top + 1,
+          );
+        const clear = (x: number, y: number) => {
+          const reach = Math.max(nodePx + 4, 10);
+          if (boxHits(x - reach, y - reach, reach * 2, reach * 2)) return false;
+          const spots = [
+            { left: x + nodePx + 6, top: y - labelH / 2 },
+            { left: x - nodePx - 6 - labelW, top: y - labelH / 2 },
+            { left: x - labelW / 2, top: y - nodePx - labelH - 4 },
+            { left: x + nodePx + 6, top: y - labelH - 4 },
+            { left: x - labelW / 2, top: y + nodePx + 4 },
+          ];
+          return spots.some((spot) => !boxHits(spot.left, spot.top, labelW, labelH));
+        };
+        if (clear(sx, sy)) return null;
+        let best: { x: number; y: number } | null = null;
+        let bestD = Infinity;
+        for (let y = safe.top + 28; y <= safe.bottom - 28; y += 20) {
+          for (let x = safe.left + 28; x <= safe.right - 28; x += 20) {
+            if (!clear(x, y)) continue;
+            const d = (x - sx) * (x - sx) + (y - sy) * (y - sy);
+            if (d < bestD) {
+              bestD = d;
+              best = { x, y };
+            }
+          }
+        }
+        return best;
       };
 
       const framePoints = (list: LayoutPoint[], rememberOverview = false) => {
@@ -236,24 +310,27 @@ export function ForceScene({
         target.set(midX, midY, midZ);
         yaw = 0.62;
         pitch = 0.38;
+        focusBiasX = 0;
+        focusBiasY = 0;
+        biasTries = 0;
+        parkView();
         const safeCx = (safe.left + safe.right) / 2;
         const safeCy = (safe.top + safe.bottom) / 2;
-        camera.setViewOffset(width, height, width / 2 - safeCx, height / 2 - safeCy, width, height);
         const fov = (camera.fov * Math.PI) / 180;
         const vTan = Math.tan(fov / 2);
         const hTan = vTan * camera.aspect;
-        const roomX = Math.max(48, Math.min(safeCx - safe.left, safe.right - safeCx) - 28);
-        const roomY = Math.max(48, Math.min(safeCy - safe.top, safe.bottom - safeCy) - 28);
-        const fitX = radius + (radius * (width / 2)) / (roomX * hTan);
-        const fitY = radius + (radius * (height / 2)) / (roomY * vTan);
-        dist = Math.max(fitX, fitY, radius * 2.6, 160) * 1.04;
+        const roomX = Math.max(48, Math.min(safeCx - safe.left, safe.right - safeCx) - 18);
+        const roomY = Math.max(48, Math.min(safeCy - safe.top, safe.bottom - safeCy) - 18);
+        const fitX = (radius * (width / 2)) / (roomX * hTan);
+        const fitY = (radius * (height / 2)) / (roomY * vTan);
+        dist = Math.max(Math.max(fitX, fitY) * 0.58, 80);
         frameRadius = radius;
         if (!rememberOverview) {
           const framedIds = new Set(list.map((point) => point.id));
           const dirX = Math.sin(yaw) * Math.cos(pitch);
           const dirY = Math.sin(pitch);
           const dirZ = Math.cos(yaw) * Math.cos(pitch);
-          const limit = Math.max(overviewDist, dist);
+          const limit = dist * 1.12;
           for (let pass = 0; pass < 8; pass += 1) {
             const camX = midX + dirX * dist;
             const camY = midY + dirY * dist;
@@ -393,6 +470,7 @@ export function ForceScene({
         applyHover();
         placeCamera();
         const safe = safeRect();
+        const blocks = blockRects();
         const viewW = host.clientWidth || 1;
         const viewH = host.clientHeight || 1;
         const hostBox = host.getBoundingClientRect();
@@ -407,6 +485,7 @@ export function ForceScene({
         const nearCap = focused ? Math.min(39, Math.max(14, hubPx * 2)) : 10000;
         const front = centerDist - frameRadius * 1.05;
         const boxes: { id: string; x: number; y: number; w: number; h: number; r: number }[] = [];
+        let selectedShot: { sx: number; sy: number; nodePx: number; onChrome: boolean; inside: boolean } | null = null;
         for (const entry of meshes) {
           const distance = Math.max(camera.position.distanceTo(entry.mesh.position), 1);
           const worldPerPx = (2 * halfTan * distance) / viewH;
@@ -439,8 +518,18 @@ export function ForceScene({
           const sx = (scratch.x * 0.5 + 0.5) * viewW;
           const sy = (-scratch.y * 0.5 + 0.5) * viewH;
           const nodePx = scale / worldPerPx;
+          const nodeLeft = hostBox.left + sx - nodePx;
+          const nodeTop = hostBox.top + sy - nodePx;
+          const nodeRight = nodeLeft + nodePx * 2;
+          const nodeBottom = nodeTop + nodePx * 2;
+          const onChrome = blocks.some((rect) => {
+            const overlapX = Math.min(nodeRight, rect.right) - Math.max(nodeLeft, rect.left);
+            const overlapY = Math.min(nodeBottom, rect.bottom) - Math.max(nodeTop, rect.top);
+            return overlapX > 1 && overlapY > 1;
+          });
           const inside =
             nearFade > 0.04 &&
+            !onChrome &&
             scratch.z >= -1 &&
             scratch.z <= 1 &&
             Number.isFinite(nodePx) &&
@@ -450,6 +539,9 @@ export function ForceScene({
             sy + nodePx <= safe.bottom + 1;
           entry.mesh.visible = inside;
           if (entry.glow) entry.glow.visible = inside;
+          if (entry.id === stateRef.current.selectedId) {
+            selectedShot = { sx, sy, nodePx, onChrome, inside };
+          }
           if (!inside) continue;
           const radius = Math.round(nodePx * 10) / 10;
           boxes.push({
@@ -462,6 +554,28 @@ export function ForceScene({
           });
         }
         host.dataset.nodes = JSON.stringify(boxes);
+        const focusIdNow = stateRef.current.selectedId;
+        if (focusIdNow && selectedShot && (!selectedShot.inside || selectedShot.onChrome)) {
+          const token = `${focusIdNow}|${Math.round(dist)}`;
+          if (token !== biasFor) {
+            biasFor = token;
+            biasTries = 0;
+          }
+          if (biasTries < 6) {
+            const title = stateRef.current.nodes.find((node) => node.id === focusIdNow)?.title ?? "Note";
+            const spot = openLabelSpot(selectedShot.sx, selectedShot.sy, selectedShot.nodePx, title, safe, blocks, hostBox);
+            if (spot) {
+              focusBiasX += spot.x - selectedShot.sx;
+              focusBiasY += spot.y - selectedShot.sy;
+              focusBiasX = Math.max(-420, Math.min(420, focusBiasX));
+              focusBiasY = Math.max(-320, Math.min(320, focusBiasY));
+              biasTries += 1;
+              parkView();
+            } else {
+              biasTries = 6;
+            }
+          }
+        }
         const ring = group?.children.find((child) => child.userData.kind === "select-ring");
         const selectedMesh = meshes.find((entry) => entry.id === stateRef.current.selectedId);
         if (ring instanceof THREE.Mesh && selectedMesh) {
@@ -501,7 +615,7 @@ export function ForceScene({
       const tick = (now: number) => {
         if (dead) return;
         frame = requestAnimationFrame(tick);
-        const allowSpin = stateRef.current.autoRotate && !hoverId && !drag;
+        const allowSpin = stateRef.current.autoRotate && !hoverId && !drag && !stateRef.current.selectedId;
         if (!allowSpin) spinning = false;
         else if (!spinning && now > idleUntil) spinning = true;
         if (spinning && allowSpin) yaw += 0.0016;
@@ -835,6 +949,9 @@ export function ForceScene({
           title: string;
           zoomOpacity: number;
           hub: boolean;
+          nx: number;
+          ny: number;
+          nr: number;
         }[] = [];
         for (const entry of meshes) {
           if (!entry.mesh.visible) continue;
@@ -871,17 +988,20 @@ export function ForceScene({
           const fov = (camera.fov * Math.PI) / 180;
           const nodePx = (entry.mesh.scale.x * height) / (2 * Math.tan(fov / 2) * Math.max(distance, 1));
           const number = routeIndex.get(node.id);
-          const title = number !== undefined ? `${number + 1}. ${node.title}` : node.title;
-          const text = title.length > 28 ? `${title.slice(0, 27)}…` : title;
-          const w = Math.max(48, text.length * 7.6 + 12);
-          const h = 20;
+          const text = number !== undefined ? `${number + 1}. ${node.title}` : node.title;
+          const w = Math.max(48, Math.ceil(text.length * 8.2 + 16));
+          const h = 18;
           const spots = [
-            { x: sx + nodePx + 8, y: sy - h / 2 },
-            { x: sx - nodePx - 8 - w, y: sy - h / 2 },
-            { x: sx + nodePx + 8, y: sy - h - 10 },
+            { x: sx + nodePx + 6, y: sy - h / 2 },
+            { x: sx - nodePx - 6 - w, y: sy - h / 2 },
+            { x: sx + nodePx + 6, y: sy - h - 4 },
+            { x: sx - nodePx - 6 - w, y: sy - h - 4 },
+            { x: sx - w / 2, y: sy + nodePx + 4 },
+            { x: sx - w / 2, y: sy - nodePx - h - 4 },
           ];
           const spot = spots.find((item) => !overlapsHud(item.x, item.y, w, h));
           if (!spot) continue;
+          const hostBox = host.getBoundingClientRect();
           const rank = labelRank(flags);
           const closeness = typeof entry.mesh.userData.closeness === "number" ? entry.mesh.userData.closeness : 0.8;
           candidates.push({
@@ -896,6 +1016,9 @@ export function ForceScene({
             title: text,
             zoomOpacity: pinned ? 1 : fade,
             hub,
+            nx: hostBox.left + sx,
+            ny: hostBox.top + sy,
+            nr: nodePx,
           });
         }
         const placed = pickLabels(candidates);
@@ -933,13 +1056,29 @@ export function ForceScene({
           el.dataset.nodeId = source.id;
           el.dataset.hub = source.hub ? "1" : "0";
           el.dataset.priority = String(source.priority);
+          el.dataset.nx = String(Math.round(source.nx));
+          el.dataset.ny = String(Math.round(source.ny));
+          el.dataset.nr = String(Math.round(source.nr));
           el.textContent = source.title;
           el.style.left = `${label.x - source.w / 2}px`;
           el.style.top = `${label.y - source.h / 2}px`;
           el.style.opacity = String(Math.max(0, Math.min(1, label.opacity * source.zoomOpacity)));
         }
         const measured = [...labelEls.entries()]
-          .filter(([id]) => keep.has(id))
+          .filter(([id, el]) => {
+            if (!keep.has(id)) return false;
+            const rect = el.getBoundingClientRect();
+            if (rect.width < 2 || rect.height < 2) return false;
+            const nx = Number(el.dataset.nx || 0);
+            const ny = Number(el.dataset.ny || 0);
+            const nr = Number(el.dataset.nr || 0);
+            const gapX = Math.max(0, Math.max(rect.left - (nx + nr), nx - nr - rect.right));
+            const gapY = Math.max(0, Math.max(rect.top - (ny + nr), ny - nr - rect.bottom));
+            if (Math.hypot(gapX, gapY) > 24) return false;
+            const hostBox = host.getBoundingClientRect();
+            if (overlapsHud(rect.left - hostBox.left, rect.top - hostBox.top, rect.width, rect.height)) return false;
+            return true;
+          })
           .map(([id, el]) => {
             const rect = el.getBoundingClientRect();
             return {

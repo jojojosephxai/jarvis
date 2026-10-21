@@ -257,6 +257,8 @@ function GraphReady({
   const [autoRotate, setAutoRotate] = useState(true);
   const [hopDepth, setHopDepth] = useState(1);
   const [showOrphans, setShowOrphans] = useState(true);
+  const [narrow, setNarrow] = useState(false);
+  const [railOpen, setRailOpen] = useState(false);
   const [readerId, setReaderId] = useState<string | null>(null);
   const [filterId, setFilterId] = useState<string | null>(null);
 
@@ -530,6 +532,14 @@ function GraphReady({
   }
 
   useEffect(() => {
+    const media = window.matchMedia("(max-width: 1179px)");
+    const onChange = () => setNarrow(media.matches);
+    onChange();
+    media.addEventListener("change", onChange);
+    return () => media.removeEventListener("change", onChange);
+  }, []);
+
+  useEffect(() => {
     const timer = window.setTimeout(() => setRepel(repelDraft), 160);
     return () => window.clearTimeout(timer);
   }, [repelDraft]);
@@ -552,7 +562,16 @@ function GraphReady({
 
   return (
     <div className={selected ? "graph-stage has-note" : "graph-stage"} data-voice={voiceLive ? "live" : "idle"}>
-      <aside className="face-column glass" aria-label="Graph" data-region="left">
+      <aside className={narrow && !railOpen ? "face-column glass is-rail" : "face-column glass"} aria-label="Graph" data-region="left">
+        <button
+          type="button"
+          className="rail-toggle"
+          aria-expanded={narrow && !railOpen ? "false" : "true"}
+          aria-label={narrow && !railOpen ? "Open hubs" : "Collapse hubs"}
+          onClick={() => setRailOpen((open) => !open)}
+        >
+          {narrow && !railOpen ? "Hubs" : "Hide"}
+        </button>
         <label className="face-search" htmlFor="graph-search">
           <span className="sr-only">Search notes</span>
           <input

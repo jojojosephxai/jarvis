@@ -2,7 +2,7 @@ import { assertNever } from "./assert";
 import { clockStamp, isClockQuestion, isQuickAsk, isSmallTalk, localClockReply, readySentences } from "./clock";
 import { CALL_REFUSAL } from "./demo-brain";
 import { answerFromVault, streamAnswerFromVault, type AnswerOptions, type GroundedAnswer } from "./grounded-answer";
-import { brainMode, grokConfigured, grokPhraseNotes, grokStreamSentences } from "./grok";
+import { brainMode, grokConfigured, grokPhraseNotes, grokStreamSentences, warmGrokConnection } from "./grok";
 import { resolveHand } from "./hands";
 import { describeGraphCommand } from "./graph-command";
 import { parseIntent } from "./intent";
@@ -50,64 +50,65 @@ export async function think(
   const root = options.root ?? process.cwd();
   const vaultDir = resolveVaultPath(root, options.vaultPath);
   const clockOnly = isClockQuestion(latest.content) !== null;
-  if (!clockOnly) await observeVault(root, vaultDir);
+  const watching = clockOnly ? null : observeVault(root, vaultDir);
+
+  const done = (response: ChatResponse) => finishAfterWatch(response, root, watching);
 
   if (isMorningBriefRequest(latest.content)) {
-    return finish(await morningBriefResponse(options), root);
+    return done(await morningBriefResponse(options));
   }
 
   const parsed = parseIntent(latest.content);
   switch (parsed.kind) {
     case "refuse-call":
-      return finish({ reply: CALL_REFUSAL, mode: brainMode(), receipts: [] }, root);
-    case "changes":
+      return done({ reply: CALL_REFUSAL, mode: brainMode(), receipts: [] });
+    case "changes": {
+      if (watching) await watching;
       return {
         reply: await describeChanges(root),
         mode: brainMode(),
         receipts: [],
       };
+    }
     case "graph": {
       const graph = await loadVaultGraph(vaultDir);
       const described = describeGraphCommand(parsed.command, graph.nodes);
-      return finish(
-        { reply: described.reply, mode: brainMode(), receipts: [], graph: described.directive },
-        root,
-      );
+      return done({ reply: described.reply, mode: brainMode(), receipts: [], graph: described.directive });
     }
     case "tool": {
       if (parsed.request.tool === "notes.recall") {
         const query = parsed.request.input.query?.trim() ?? "";
         if (!query) {
-          return finish(
-            {
-              reply: "Tell me what to look for in the vault notes.",
-              mode: brainMode(),
-              receipts: [],
-            },
-            root,
-          );
+          return done({
+            reply: "Tell me what to look for in the vault notes.",
+            mode: brainMode(),
+            receipts: [],
+          });
         }
-        return finish(fromGrounded(await answerFromVault(query, options)), root);
+        return done(fromGrounded(await answerFromVault(query, options)));
       }
       if (parsed.request.tool === "notes.keep") {
         const enriched = await enrichKeepInput(parsed.request.input.text ?? "", vaultDir);
         const hand = await resolveHand({ tool: "notes.keep", input: enriched }, undefined, root, vaultDir);
-        return finish(
-          { reply: hand.reply, mode: brainMode(), receipts: hand.receipts, plan: hand.plan },
-          root,
-        );
+        return done({ reply: hand.reply, mode: brainMode(), receipts: hand.receipts, plan: hand.plan });
       }
       const hand = await resolveHand(parsed.request, undefined, root, vaultDir);
-      return finish(
-        { reply: hand.reply, mode: brainMode(), receipts: hand.receipts, plan: hand.plan },
-        root,
-      );
+      return done({ reply: hand.reply, mode: brainMode(), receipts: hand.receipts, plan: hand.plan });
     }
     case "chat":
-      return finish(await talk(latest.content, options), root);
+      return done(await talk(latest.content, options));
     default:
       return assertNever(parsed);
   }
+}
+
+async function finishAfterWatch(
+  response: ChatResponse,
+  root: string,
+  watching: Promise<unknown> | null,
+): Promise<ChatResponse> {
+  if (watching) await watching;
+  return finish(response, root);
 }
 
 async function finish(response: ChatResponse, root: string): Promise<ChatResponse> {
@@ -152,6 +153,7 @@ export async function* streamTurn(
   messages: ChatMessageInput[],
   options: AnswerOptions = {},
 ): AsyncGenerator<SpeakEvent> {
+  warmGrokConnection();
   const started = Date.now();
   let logged = false;
   const logFirst = () => {
@@ -208,6 +210,25 @@ export async function* streamTurn(
   }
 
   const parsed = parseIntent(latest.content);
+  if (parsed.kind === "graph") {
+    const root = options.root ?? process.cwd();
+    const vaultDir = resolveVaultPath(root, options.vaultPath);
+    const watching = observeVault(root, vaultDir);
+    const graph = await loadVaultGraph(vaultDir);
+    const described = describeGraphCommand(parsed.command, graph.nodes);
+    for (const text of spokenParts(described.reply)) {
+      logFirst();
+      yield { type: "sentence", text };
+    }
+    const response = await finishAfterWatch(
+      { reply: described.reply, mode: brainMode(), receipts: [], graph: described.directive },
+      root,
+      watching,
+    );
+    if (!logged) logFirst();
+    yield { type: "done", response };
+    return;
+  }
   if (parsed.kind === "chat") {
     let answerText = "";
     for await (const event of streamAnswerFromVault(latest.content, options)) {

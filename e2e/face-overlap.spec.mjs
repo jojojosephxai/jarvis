@@ -114,6 +114,85 @@ function focusNodeRadii() {
   return hits.slice(0, 8);
 }
 
+function chatMissesInspector() {
+  const chat = document.querySelector("[data-region='chat']")?.getBoundingClientRect();
+  const inspector = document.querySelector(".graph-inspector")?.getBoundingClientRect();
+  if (!chat || !inspector || chat.width < 2 || inspector.width < 2) return [];
+  const overlapX = Math.min(chat.right, inspector.right) - Math.max(chat.left, inspector.left);
+  const overlapY = Math.min(chat.bottom, inspector.bottom) - Math.max(chat.top, inspector.top);
+  if (overlapX > 0 && overlapY > 0) return [`chat overlaps inspector ${Math.round(overlapX)}x${Math.round(overlapY)}`];
+  return [];
+}
+
+function clippedMarks() {
+  const hits = [];
+  const viewW = window.innerWidth;
+  const viewH = window.innerHeight;
+  const zones = [
+    ["header", "[data-region='header']"],
+    ["left", "[data-region='left']"],
+    ["filter", "[data-region='filter']"],
+    ["inspector", ".graph-inspector"],
+    ["chat", "[data-region='chat']"],
+    ["ask", "[data-region='ask']"],
+  ];
+  const panels = [];
+  for (const [name, selector] of zones) {
+    const el = document.querySelector(selector);
+    if (!el) continue;
+    const rect = el.getBoundingClientRect();
+    if (rect.width < 2 || rect.height < 2) continue;
+    panels.push({ name, rect });
+  }
+  const raw = document.querySelector(".force-scene")?.getAttribute("data-nodes") || "";
+  let nodes = [];
+  try {
+    nodes = JSON.parse(raw || "[]");
+  } catch {
+    return ["graph nodes were not readable"];
+  }
+  const byId = new Map(nodes.map((node) => [node.id, node]));
+  for (const node of nodes) {
+    if (!node || node.w < 1) continue;
+    if (node.x < -1 || node.y < -1 || node.x + node.w > viewW + 1 || node.y + node.h > viewH + 1) {
+      hits.push(`${node.id} clipped by viewport`);
+    }
+    for (const panel of panels) {
+      const overlapX = Math.min(node.x + node.w, panel.rect.right) - Math.max(node.x, panel.rect.left);
+      const overlapY = Math.min(node.y + node.h, panel.rect.bottom) - Math.max(node.y, panel.rect.top);
+      if (overlapX > 1 && overlapY > 1) hits.push(`${node.id} clipped by ${panel.name}`);
+    }
+  }
+  for (const label of document.querySelectorAll(".graph-float-label")) {
+    const style = getComputedStyle(label);
+    const rect = label.getBoundingClientRect();
+    const opacity = Number(style.opacity);
+    if (style.visibility === "hidden" || opacity < 0.05 || rect.width < 2 || rect.height < 2) continue;
+    const text = (label.textContent || "").trim() || "label";
+    if (rect.left < -1 || rect.top < -1 || rect.right > viewW + 1 || rect.bottom > viewH + 1) {
+      hits.push(`${text} clipped by viewport`);
+    }
+    if (label.scrollWidth > label.clientWidth + 2) hits.push(`${text} truncated`);
+    const size = Number.parseFloat(style.fontSize);
+    if (size < 12 || size > 13.5) hits.push(`${text} is ${size}px`);
+    for (const panel of panels) {
+      const overlapX = Math.min(rect.right, panel.rect.right) - Math.max(rect.left, panel.rect.left);
+      const overlapY = Math.min(rect.bottom, panel.rect.bottom) - Math.max(rect.top, panel.rect.top);
+      if (overlapX > 1 && overlapY > 1) hits.push(`${text} clipped by ${panel.name}`);
+    }
+    const node = byId.get(label.getAttribute("data-node-id") || "");
+    if (!node) {
+      hits.push(`${text} has no node`);
+      continue;
+    }
+    const gapX = Math.max(0, Math.max(rect.left - (node.x + node.w), node.x - rect.right));
+    const gapY = Math.max(0, Math.max(rect.top - (node.y + node.h), node.y - rect.bottom));
+    const dist = Math.hypot(gapX, gapY);
+    if (dist > 24) hits.push(`${text} is ${Math.round(dist)}px from its node`);
+  }
+  return hits.slice(0, 12);
+}
+
 function labelOverlaps() {
   const labels = [...document.querySelectorAll(".graph-float-label")].filter((el) => {
     const style = getComputedStyle(el);
@@ -140,7 +219,7 @@ async function openFace(page, path) {
   await page.goto(path);
   await page.waitForFunction(() => document.querySelector(".face")?.getAttribute("data-intro") === "out");
   await page.waitForSelector("[data-scene='ready']");
-  await page.waitForSelector("[data-region='ask']");
+  if (!String(path).includes("face=working")) await page.waitForSelector("[data-region='ask']");
   await page.waitForSelector(".face-totals");
   await page.waitForTimeout(200);
 }
@@ -170,7 +249,9 @@ async function hoverNode(page) {
 }
 
 const sizes = [
+  { width: 1024, height: 576 },
   { width: 1280, height: 800 },
+  { width: 1366, height: 768 },
   { width: 1440, height: 900 },
   { width: 1920, height: 1080 },
 ];
@@ -181,6 +262,8 @@ for (const size of sizes) {
     await openFace(page, "/");
     await page.waitForTimeout(400);
     await expect.poll(async () => page.evaluate(labelOverlaps), { timeout: 15000 }).toEqual([]);
+    await expect.poll(async () => page.evaluate(clippedMarks), { timeout: 15000 }).toEqual([]);
+    await expect.poll(async () => page.evaluate(chatMissesInspector), { timeout: 15000 }).toEqual([]);
   });
 
   test(`graph labels stay apart at ${size.width} focus`, async ({ page }) => {
@@ -189,6 +272,8 @@ for (const size of sizes) {
     await page.waitForSelector(".graph-inspector");
     await page.waitForTimeout(400);
     await expect.poll(async () => page.evaluate(labelOverlaps), { timeout: 15000 }).toEqual([]);
+    await expect.poll(async () => page.evaluate(clippedMarks), { timeout: 15000 }).toEqual([]);
+    await expect.poll(async () => page.evaluate(chatMissesInspector), { timeout: 15000 }).toEqual([]);
   });
 }
 
@@ -198,6 +283,7 @@ for (const size of sizes) {
     await openFace(page, "/");
     await page.waitForTimeout(1200);
     await expect.poll(async () => page.evaluate(nodeOverlaps), { timeout: 15000 }).toEqual([]);
+    await expect.poll(async () => page.evaluate(clippedMarks), { timeout: 15000 }).toEqual([]);
   });
 
   test(`graph nodes stay in the free area at ${size.width} focus`, async ({ page }) => {
@@ -206,7 +292,9 @@ for (const size of sizes) {
     await page.waitForSelector(".graph-inspector");
     await page.waitForTimeout(800);
     await expect.poll(async () => page.evaluate(nodeOverlaps), { timeout: 15000 }).toEqual([]);
+    await expect.poll(async () => page.evaluate(clippedMarks), { timeout: 15000 }).toEqual([]);
     await expect.poll(async () => page.evaluate(focusNodeRadii), { timeout: 15000 }).toEqual([]);
+    await expect.poll(async () => page.evaluate(chatMissesInspector), { timeout: 15000 }).toEqual([]);
   });
 }
 
@@ -216,6 +304,7 @@ for (const size of sizes) {
     await openFace(page, "/?hub=School");
     await page.waitForSelector(".graph-inspector");
     await expect.poll(async () => page.evaluate(panelOverlaps), { timeout: 15000 }).toEqual([]);
+    await expect.poll(async () => page.evaluate(chatMissesInspector), { timeout: 15000 }).toEqual([]);
   });
 }
 
@@ -307,7 +396,7 @@ test("labels stay inside the graph area after a resize", async ({ page }) => {
 });
 
 test("screenshots of the face", async ({ page }) => {
-  test.setTimeout(180000);
+  test.setTimeout(300000);
   const dir = "/opt/cursor/artifacts/face";
   await mkdir(dir, { recursive: true });
   const shots = [
@@ -364,5 +453,22 @@ test("screenshots of the face", async ({ page }) => {
     expect(await hoverNode(page)).toBe(true);
     await expect.poll(async () => page.evaluate(nodeOverlaps), { timeout: 15000 }).toEqual([]);
     await page.screenshot({ path: `${dir}/${size.width}-hover.png`, fullPage: false });
+  }
+  const shotDir = "/opt/cursor/artifacts/face/1021";
+  await mkdir(shotDir, { recursive: true });
+  for (const size of sizes) {
+    await page.setViewportSize(size);
+    await openFace(page, "/");
+    await page.waitForTimeout(500);
+    await expect.poll(async () => page.evaluate(panelOverlaps), { timeout: 15000 }).toEqual([]);
+    await expect.poll(async () => page.evaluate(clippedMarks), { timeout: 15000 }).toEqual([]);
+    await page.screenshot({ path: `${shotDir}/${size.width}x${size.height}-idle.png`, fullPage: false });
+    await openFace(page, "/?hub=School");
+    await page.waitForSelector(".graph-inspector");
+    await page.waitForSelector("[data-region='chat']");
+    await page.waitForTimeout(400);
+    await expect.poll(async () => page.evaluate(chatMissesInspector), { timeout: 15000 }).toEqual([]);
+    await expect.poll(async () => page.evaluate(clippedMarks), { timeout: 15000 }).toEqual([]);
+    await page.screenshot({ path: `${shotDir}/${size.width}x${size.height}-hub.png`, fullPage: false });
   }
 });

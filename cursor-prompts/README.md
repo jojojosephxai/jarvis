@@ -18,4 +18,5 @@ This folder holds the exact prompts Jarvis Ship sent to Cursor cloud agents, so 
 - [2026-09-23 JOS-40 graph pan](2026-09-23_jos-40-graph-pan_bc-e5fe319a.md)
 - [2026-09-23 JOS-41 orb zoom and inspector](2026-09-23_jos-41-orb-zoom-inspector_bc-16efc062.md)
 - [2026-10-08 JOS-41 orb redo](2026-10-08_jos-41-orb-redo_bc-8df7bc7d.md)
-Latest: [2026-10-08_jos-41-orb-redo_bc-8df7bc7d.md](2026-10-08_jos-41-orb-redo_bc-8df7bc7d.md) — glowing sphere, still idle, voice pulse, dock hook, readable graph titles.
+- [2026-10-21 Face 1024 centered orb](2026-10-21_face-1024-centered-orb_bc-cdbefa9a.md)
+Latest: [2026-10-21_face-1024-centered-orb_bc-cdbefa9a.md](2026-10-21_face-1024-centered-orb_bc-cdbefa9a.md) — orb centered, chat under the Inspector, labels beside their nodes, slim hubs rail below 1180.

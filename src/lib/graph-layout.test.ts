@@ -169,7 +169,9 @@ describe("graph labels", () => {
     const journal = placed.find((label) => label.id === "journal");
     const schedule = placed.find((label) => label.id === "schedule");
     assert.ok(journal && schedule);
-    assert.equal(Math.abs(journal.y - schedule.y) >= 30, true);
+    assert.equal(Math.abs(journal.x - 800) <= 28 && Math.abs(journal.y - 290) <= 28, true);
+    assert.equal(Math.abs(schedule.x - 820) <= 28 && Math.abs(schedule.y - 292) <= 28, true);
+    assert.equal(Math.abs(journal.y - schedule.y) >= 20 || Math.abs(journal.x - schedule.x) >= 40, true);
   });
 
   it("hides a lower label that sits on the focused label", () => {

@@ -277,7 +277,7 @@ function bezierSlope(u: number, p1: number, p2: number): number {
 }
 
 function labelBoxesOverlap(a: LabelCandidate, b: LabelCandidate): boolean {
-  const pad = 10;
+  const pad = 6;
   return Math.abs(a.x - b.x) < (a.w + b.w) / 2 + pad && Math.abs(a.y - b.y) < (a.h + b.h) / 2 + pad;
 }
 
@@ -334,14 +334,14 @@ export function dropOverlappingLabels<T extends ScreenLabel>(labels: T[]): T[] {
 function nudgeLabel(label: LabelCandidate, placed: LabelCandidate[]): LabelCandidate {
   const shifts: Array<[number, number]> = [
     [0, 0],
-    [0, 36],
-    [0, -36],
-    [0, 54],
-    [0, -54],
-    [Math.round(label.w * 0.7), 28],
-    [-Math.round(label.w * 0.7), 28],
-    [Math.round(label.w), 0],
-    [-Math.round(label.w), 0],
+    [0, -14],
+    [0, 14],
+    [0, -26],
+    [0, 26],
+    [18, -8],
+    [-18, -8],
+    [18, 8],
+    [-18, 8],
   ];
   for (const [dx, dy] of shifts) {
     const trial = { ...label, x: label.x + dx, y: label.y + dy };

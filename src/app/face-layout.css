@@ -1,4 +1,7 @@
 .face {
+  --side: clamp(200px, 18vw, 300px);
+  --chat-h: clamp(120px, 24vh, 200px);
+  --edge: 12px;
   position: relative;
   height: 100vh;
   height: 100dvh;
@@ -13,7 +16,9 @@
   inset: 0;
 }
 
-.face-stage[data-orb="center"] .graph-canvas,
+.face-stage[data-mode="listening"] .graph-canvas,
+.face-stage[data-mode="speaking"] .graph-canvas,
+.face-stage[data-mode="working"] .graph-canvas,
 .face-stage[data-orb="corner"] .graph-canvas {
   opacity: 0.28;
   transition: opacity 600ms cubic-bezier(0.22, 1, 0.36, 1);
@@ -125,16 +130,27 @@
   position: absolute;
   z-index: 6;
   top: 48px;
-  bottom: 16px;
-  left: 16px;
+  bottom: var(--edge);
+  left: var(--edge);
   display: flex;
-  width: 232px;
+  width: clamp(200px, 14vw, 232px);
   flex-direction: column;
   gap: 14px;
   overflow: hidden;
-  padding: 12px 12px 64px;
+  padding: 12px 12px 16px;
   scrollbar-width: thin;
   scrollbar-color: #49d4ff transparent;
+}
+
+.rail-toggle {
+  display: none;
+  width: 100%;
+  margin: 0;
+  padding: 4px 0;
+  color: #49d4ff;
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
 .face-search input,
@@ -361,9 +377,9 @@
   position: absolute;
   z-index: 7;
   top: 48px;
-  right: 16px;
-  width: 188px;
-  max-height: calc(46vh - 188px);
+  right: var(--edge);
+  width: var(--side);
+  max-height: calc(100% - 48px - var(--chat-h) - var(--edge) - 16px);
   overflow: auto;
   padding: 12px;
   scrollbar-width: thin;
@@ -371,11 +387,11 @@
 }
 
 .graph-inspector {
-  top: 250px;
-  right: 192px;
+  top: 48px;
+  right: var(--edge);
   z-index: 6;
-  width: 300px;
-  max-height: calc(100% - 290px);
+  width: var(--side);
+  max-height: calc(100% - 48px - var(--chat-h) - var(--edge) - 16px);
 }
 
 .graph-inspector.is-docked {
@@ -416,14 +432,14 @@
   position: absolute;
   z-index: 8;
   top: 48px;
-  right: 16px;
-  bottom: calc(54vh - 234px);
+  right: var(--edge);
+  bottom: calc(var(--chat-h) + var(--edge) + 8px);
   left: auto;
-  width: 300px;
+  width: var(--side);
   max-height: none;
   min-height: 0;
   overflow: auto;
-  padding: 12px 14px 40px;
+  padding: 12px 14px 16px;
   scrollbar-width: thin;
   scrollbar-color: #49d4ff transparent;
   animation: inspector-in 200ms cubic-bezier(0.22, 1, 0.36, 1);
@@ -663,7 +679,7 @@
   position: absolute;
   padding: 1px 5px;
   background: rgba(3, 7, 15, 0.72);
-  color: #7ee7ff;
+  color: #49d4ff;
   font-family: var(--font-jetbrains), ui-monospace, monospace;
   font-size: 13px;
   letter-spacing: 0.04em;
@@ -689,13 +705,24 @@
 .face-dock {
   position: absolute;
   z-index: 10;
-  right: 16px;
-  bottom: 16px;
-  left: 264px;
+  top: calc(42% + clamp(78px, 11vmin, 110px));
+  right: 0;
+  left: 0;
   display: flex;
-  align-items: flex-end;
-  gap: 16px;
+  justify-content: center;
   pointer-events: none;
+}
+
+.face[data-mode="speaking"] .face-dock,
+.face[data-mode="listening"] .face-dock,
+.face[data-mode="ack"] .face-dock,
+.face[data-mode="thinking"] .face-dock {
+  top: calc(40% + min(24vmin, 220px) + 52px);
+}
+
+.face:has(.face-task) .face-dock,
+.face:has(.face-task) .face-chat {
+  display: none;
 }
 
 .face-dock > * {
@@ -706,13 +733,11 @@
   position: relative;
   z-index: 1;
   display: flex;
-  width: auto;
+  width: min(460px, calc(100vw - 2 * (var(--side) + var(--edge) + 8px)));
   min-width: 0;
-  flex: 1 1 auto;
   flex-direction: column;
   align-items: center;
-  gap: 12px;
-  padding-right: 264px;
+  gap: 10px;
 }
 
 .face-caption {
@@ -730,8 +755,8 @@
 .face-ask {
   position: relative;
   display: flex;
-  width: min(480px, 100%);
-  max-width: 480px;
+  width: 100%;
+  max-width: 460px;
   height: 36px;
   align-items: center;
   gap: 10px;
@@ -868,13 +893,13 @@
 
 .face-chat {
   position: absolute;
-  right: 0;
-  bottom: 0;
+  right: var(--edge);
+  bottom: var(--edge);
   display: flex;
-  width: 248px;
-  height: calc(54vh - 210px);
-  min-height: 168px;
-  max-height: calc(100vh - 46vh - 250px);
+  width: var(--side);
+  height: var(--chat-h);
+  min-height: 0;
+  max-height: none;
   flex-direction: column;
   padding: 8px 10px 10px;
 }
@@ -926,8 +951,26 @@
   font-family: var(--font-jetbrains), ui-monospace, monospace;
 }
 
-.chat-sources {
+.chat-sources,
+.chat-timing {
   color: #6fa9bf;
+  font-size: 12px;
+}
+
+.chat-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.chat-chip {
+  padding: 1px 6px;
+  border: 1px solid rgba(73, 212, 255, 0.35);
+  color: #6fa9bf;
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  line-height: 1.4;
 }
 
 .hand-yes,
@@ -1079,11 +1122,19 @@
 }
 
 .orb-dial[data-place="center"] {
-  top: 40%;
+  top: 42%;
   left: 50%;
-  width: min(48vmin, 440px);
+  width: clamp(112px, 16vmin, 160px);
   transform: translate(-50%, -50%);
   transition-duration: 700ms;
+}
+
+.orb-dial[data-place="center"][data-mode="listening"],
+.orb-dial[data-place="center"][data-mode="speaking"],
+.orb-dial[data-place="center"][data-mode="ack"],
+.orb-dial[data-place="center"][data-mode="thinking"] {
+  top: 40%;
+  width: min(40vmin, 380px);
 }
 
 .speech-caption {
@@ -1131,9 +1182,16 @@
 }
 
 @media (min-width: 1600px) {
+  .face {
+    --side: clamp(240px, 16vw, 300px);
+  }
+
+  .face-bottom {
+    width: min(520px, calc(100vw - 2 * (var(--side) + var(--edge) + 8px)));
+  }
+
   .face-ask {
-    width: 580px;
-    max-width: 640px;
+    max-width: 520px;
   }
 }
 
@@ -1156,17 +1214,36 @@
   }
 }
 
-@media (max-width: 1180px) {
-  .face-dock {
-    left: 16px;
+@media (max-width: 1179px) {
+  .face {
+    --side: clamp(188px, 24vw, 240px);
+  }
+
+  .rail-toggle {
+    display: block;
+  }
+
+  .face-column.is-rail {
+    width: 48px;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 4px 12px;
+  }
+
+  .face-column.is-rail > :not(.rail-toggle):not(.face-totals) {
+    display: none;
+  }
+
+  .face-column.is-rail .face-totals {
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    font-size: 12px;
+    text-align: center;
   }
 
   .face-bottom {
-    padding-right: 260px;
-  }
-
-  .face-chat {
-    width: 240px;
+    width: min(420px, calc(100vw - 2 * (var(--side) + var(--edge) + 8px)));
   }
 }
 

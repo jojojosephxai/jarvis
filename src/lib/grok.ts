@@ -221,6 +221,29 @@ export async function* grokStreamSentences(question: string, packet: string): As
   const decoder = new TextDecoder();
   let pending = "";
   let text = "";
+  let primed = false;
+  const pull = (): string[] => {
+    const split = readySentences(text);
+    text = split.rest;
+    const ready = split.ready.slice();
+    if (ready.length > 0) primed = true;
+    if (!primed) {
+      const lead = text.trimStart();
+      let cut = -1;
+      const pause = lead.search(/[,;]\s/);
+      if (pause >= 12) cut = pause + 1;
+      else if (lead.length >= 32) {
+        const space = lead.lastIndexOf(" ", 32);
+        if (space >= 12) cut = space;
+      }
+      if (cut >= 12) {
+        primed = true;
+        ready.push(lead.slice(0, cut).trim());
+        text = lead.slice(cut).trimStart();
+      }
+    }
+    return ready.filter((sentence) => sentence.length > 0);
+  };
   while (true) {
     const { done, value } = await reader.read();
     if (done) break;
@@ -239,9 +262,7 @@ export async function* grokStreamSentences(question: string, packet: string): As
         // Ignore a partial SSE frame.
       }
     }
-    const split = readySentences(text);
-    text = split.rest;
-    for (const sentence of split.ready) yield sentence;
+    for (const sentence of pull()) yield sentence;
   }
   const tail = text.trim();
   if (tail) yield tail;

@@ -1,4 +1,7 @@
 import { readMessages, streamTurn, think } from "@/lib/brain";
+import { warmGrokConnection } from "@/lib/grok";
+
+warmGrokConnection();
 
 export async function POST(request: Request) {
   let body: unknown;
@@ -39,6 +42,7 @@ export async function POST(request: Request) {
       headers: {
         "Content-Type": "application/x-ndjson; charset=utf-8",
         "Cache-Control": "no-store",
+        "X-Accel-Buffering": "no",
       },
     });
   } catch {
