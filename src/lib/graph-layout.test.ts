@@ -10,6 +10,7 @@ import {
   meanDistance,
   pickLabels,
   projectSpace,
+  smallLabelFade,
   restCamera,
   shiftFrame,
 } from "./graph-layout";
@@ -206,6 +207,13 @@ describe("graph labels", () => {
     assert.equal(labelEligible({ ...quiet, hub: true, depth: 0.1 }, 1, false), true);
     assert.equal(labelEligible({ ...quiet, big: true, depth: 0.1 }, 1, false), true);
     assert.equal(labelEligible({ ...quiet, ssot: true, depth: 0.8 }, 1, false), false);
+  });
+
+  it("fades small labels in as the camera moves closer", () => {
+    assert.equal(smallLabelFade(1000, 1000), 0);
+    assert.equal(smallLabelFade(200, 1000), 1);
+    const mid = smallLabelFade(650, 1000);
+    assert.equal(mid > 0 && mid < 1, true);
   });
 
   it("eases focus on cubic-bezier(.22, 1, .36, 1)", () => {

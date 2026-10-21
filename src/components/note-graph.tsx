@@ -254,6 +254,9 @@ function GraphReady({
   const [repelDraft, setRepelDraft] = useState(180);
   const [linkDraft, setLinkDraft] = useState(160);
   const [localOn, setLocalOn] = useState(false);
+  const [autoRotate, setAutoRotate] = useState(true);
+  const [hopDepth, setHopDepth] = useState(1);
+  const [showOrphans, setShowOrphans] = useState(true);
   const [readerId, setReaderId] = useState<string | null>(null);
   const [filterId, setFilterId] = useState<string | null>(null);
 
@@ -391,6 +394,11 @@ function GraphReady({
   }, [payload.edges, pathFromId, pathToId]);
   const visibleIds = useMemo(() => {
     const hidden = new Set(hiddenTypes);
+    const linked = new Set<string>();
+    for (const edge of payload.edges) {
+      linked.add(edge.from);
+      linked.add(edge.to);
+    }
     const selectedNode = payload.nodes.find((node) => node.id === selectedId);
     const focusedFile = selectedNode?.file || (selectedNode && selectedNode.id.endsWith(".md") ? selectedNode.id : "");
     const ids = new Set<string>();
@@ -403,12 +411,14 @@ function GraphReady({
         continue;
       }
       if (!showHubs && node.kind === "folder") continue;
+      if (!showOrphans && node.kind !== "folder" && !linked.has(node.id) && node.id !== selectedId) continue;
       if (filterId && node.id !== filterId && !node.root && !node.hubs.includes(filterId)) continue;
       ids.add(node.id);
     }
     if (localOn && selectedId) {
       const near = new Set<string>([selectedId]);
-      for (let hop = 0; hop < 2; hop += 1) {
+      const steps = Math.min(2, Math.max(1, hopDepth));
+      for (let hop = 0; hop < steps; hop += 1) {
         for (const edge of payload.edges) {
           if (near.has(edge.from)) near.add(edge.to);
           if (near.has(edge.to)) near.add(edge.from);
@@ -419,7 +429,7 @@ function GraphReady({
       }
     }
     return ids;
-  }, [payload.nodes, payload.edges, hiddenTypes, showHubs, filterId, selectedId, localOn]);
+  }, [payload.nodes, payload.edges, hiddenTypes, showHubs, showOrphans, filterId, selectedId, localOn, hopDepth]);
   const selected = payload.nodes.find((node) => node.id === readerId) ?? null;
   const noteLinks: NoteLink[] = selected
     ? payload.edges.flatMap((edge) => {
@@ -439,7 +449,7 @@ function GraphReady({
       return node ? { id, index, title: node.title } : null;
     })
     .filter((item): item is { id: string; index: number; title: string } => Boolean(item));
-  const focusKey = `${frameMode}|${selectedId ?? ""}|${clusterId ?? ""}|${filterId ?? ""}|${pathFromId}|${pathToId}|${homeToken}|${hiddenTypes.join(",")}|${showHubs}`;
+  const focusKey = `${frameMode}|${selectedId ?? ""}|${clusterId ?? ""}|${filterId ?? ""}|${pathFromId}|${pathToId}|${homeToken}|${hiddenTypes.join(",")}|${showHubs}|${hopDepth}|${showOrphans}`;
 
   function clearFocus() {
     setSelectedId(null);
@@ -616,24 +626,40 @@ function GraphReady({
             <input type="checkbox" checked={localOn} onChange={(event) => setLocalOn(event.target.checked)} />
             Local
           </label>
+          <label className="face-check">
+            <input type="checkbox" checked={autoRotate} onChange={(event) => setAutoRotate(event.target.checked)} />
+            Auto-rotate
+          </label>
+          <label className="face-check">
+            <input
+              type="checkbox"
+              checked={!hiddenTypes.includes("tag")}
+              onChange={(event) =>
+                setHiddenTypes((current) =>
+                  event.target.checked ? current.filter((item) => item !== "tag") : current.includes("tag") ? current : [...current, "tag"],
+                )
+              }
+            />
+            Tags
+          </label>
+          <label className="face-check">
+            <input type="checkbox" checked={showOrphans} onChange={(event) => setShowOrphans(event.target.checked)} />
+            Orphans
+          </label>
+          <label className="face-slider">
+            <span>Hops</span>
+            <span>{hopDepth}</span>
+            <input
+              type="range"
+              min={1}
+              max={2}
+              step={1}
+              value={hopDepth}
+              aria-label="Hop depth"
+              onChange={(event) => setHopDepth(Number(event.target.value))}
+            />
+          </label>
         </div>
-        {selected ? (
-          <NoteReader
-            docked
-            node={selected}
-            links={noteLinks}
-            path={pathNodes}
-            members={
-              selected.file
-                ? []
-                : payload.nodes
-                    .filter((node) => node.hubs.includes(selected.id) && node.id.endsWith(".md") && !node.root)
-                    .map((node) => ({ id: node.id, title: node.title }))
-            }
-            onBack={clearFocus}
-            onOpen={(id) => openNote(id)}
-          />
-        ) : null}
         <p className="face-totals">
           <span>{payload.noteCount} notes</span>
           <span>{payload.connectionCount} links</span>
@@ -659,13 +685,30 @@ function GraphReady({
           GRAPH / {clusterName.toUpperCase()}
         </button>
       ) : null}
-      <FilterLegend
-        legend={payload.legend}
-        hiddenTypes={hiddenTypes}
-        onToggle={(type) =>
-          setHiddenTypes((current) => (current.includes(type) ? current.filter((item) => item !== type) : [...current, type]))
-        }
-      />
+      {selected ? (
+        <NoteReader
+          node={selected}
+          links={noteLinks}
+          path={pathNodes}
+          members={
+            selected.file
+              ? []
+              : payload.nodes
+                  .filter((node) => node.hubs.includes(selected.id) && node.id.endsWith(".md") && !node.root)
+                  .map((node) => ({ id: node.id, title: node.title }))
+          }
+          onBack={clearFocus}
+          onOpen={(id) => openNote(id)}
+        />
+      ) : (
+        <FilterLegend
+          legend={payload.legend}
+          hiddenTypes={hiddenTypes}
+          onToggle={(type) =>
+            setHiddenTypes((current) => (current.includes(type) ? current.filter((item) => item !== type) : [...current, type]))
+          }
+        />
+      )}
       <div className="graph-canvas">
         <ForceScene
           nodes={payload.nodes}
@@ -677,6 +720,9 @@ function GraphReady({
           route={route}
           showLabels={showLabels}
           showEdges={showEdges}
+          hopDepth={hopDepth}
+          autoRotate={autoRotate}
+          padRight={selected ? 360 : 260}
           focusKey={focusKey}
           zoomToken={zoomCommand.token}
           zoomKind={zoomCommand.kind}

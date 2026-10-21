@@ -216,6 +216,17 @@ export function labelRank(flags: {
   return { priority: 10, protected: false };
 }
 
+/** 0 when the camera is near the overview, 1 once it has moved in on a cluster. */
+export function smallLabelFade(dist: number, overviewDist: number): number {
+  if (!(dist > 0) || !(overviewDist > 0)) return 0;
+  const far = overviewDist * 0.88;
+  const near = Math.max(80, overviewDist * 0.42);
+  if (dist >= far) return 0;
+  if (dist <= near) return 1;
+  const t = (far - dist) / Math.max(far - near, 1);
+  return t * t * (3 - 2 * t);
+}
+
 export function labelEligible(
   flags: {
     selected: boolean;

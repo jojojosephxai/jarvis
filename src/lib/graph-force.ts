@@ -36,7 +36,14 @@ function blob(id: string, index: number, count: number): { x: number; y: number;
 }
 
 function clusterRadius(count: number, repel: number): number {
-  return 18 + Math.sqrt(Math.max(count, 1)) * (10 + repel / 40);
+  return 12 + Math.sqrt(Math.max(count, 1)) * (5 + repel / 90);
+}
+
+/** Hubs sit on one ring so each group has its own patch of the floor. */
+function hubSlot(index: number, count: number): { x: number; y: number; z: number } {
+  const theta = (index / Math.max(count, 1)) * Math.PI * 2 - Math.PI / 2;
+  const lift = ((index % 2) - 0.5) * 0.28;
+  return { x: Math.cos(theta), y: lift, z: Math.sin(theta) * 0.92 };
 }
 
 type Body = {
@@ -76,9 +83,9 @@ export function layoutForce(nodes: LayoutNode[], edges: LayoutEdge[], options: G
     .filter((node) => node.kind === "folder")
     .map((node) => node.id)
     .sort();
-  const reach = Math.min(width, height) * (0.1 + repel / 1560);
+  const reach = Math.min(width, height) * (0.3 + repel / 1800);
   hubIds.forEach((id, index) => {
-    const point = shell(index, hubIds.length);
+    const point = hubSlot(index, hubIds.length);
     const jitter = 0.86 + hashUnit(id, 4) * 0.28;
     const x = cx + point.x * reach * jitter;
     const y = cy + point.y * reach * jitter * 0.86;
@@ -174,21 +181,23 @@ export function layoutForce(nodes: LayoutNode[], edges: LayoutEdge[], options: G
   }
 
   const list = [...bodies.values()];
-  const springs = edges.filter((edge) => bodies.has(edge.from) && bodies.has(edge.to));
-  const iterations = list.length > 220 ? 36 : 56;
+  const sim = list.filter((body) => body.hub || !body.home);
+  const simIds = new Set(sim.map((body) => body.id));
+  const springs = edges.filter((edge) => simIds.has(edge.from) && simIds.has(edge.to));
+  const iterations = sim.length > 80 ? 28 : 40;
   for (let step = 0; step < iterations; step += 1) {
     const cool = 1 - step / iterations;
-    for (const body of list) {
+    for (const body of sim) {
       body.vx = 0;
       body.vy = 0;
       body.vz = 0;
     }
-    const repelK = repel * (list.length > 80 ? 9 : 14) * cool;
-    for (let i = 0; i < list.length; i += 1) {
-      const a = list[i];
+    const repelK = repel * (sim.length > 80 ? 9 : 14) * cool;
+    for (let i = 0; i < sim.length; i += 1) {
+      const a = sim[i];
       if (!a) continue;
-      for (let j = i + 1; j < list.length; j += 1) {
-        const b = list[j];
+      for (let j = i + 1; j < sim.length; j += 1) {
+        const b = sim[j];
         if (!b) continue;
         let dx = a.x - b.x;
         let dy = a.y - b.y;
@@ -202,7 +211,7 @@ export function layoutForce(nodes: LayoutNode[], edges: LayoutEdge[], options: G
         }
         const same = Boolean(a.home && a.home === b.home);
         const bothHubs = a.hub && b.hub;
-        const push = (repelK * (bothHubs ? 1.15 : same ? 0.9 : 0.35)) / (dist * dist);
+        const push = (repelK * (bothHubs ? 2.4 : same ? 0.9 : 0.35)) / (dist * dist);
         const ux = (dx / dist) * push;
         const uy = (dy / dist) * push;
         const uz = (dz / dist) * push;
@@ -230,8 +239,8 @@ export function layoutForce(nodes: LayoutNode[], edges: LayoutEdge[], options: G
       let rest = link * 0.55;
       let localK = springK;
       if (a.hub && b.hub) {
-        rest = Math.max(link * 0.35, Math.min(width, height) * 0.08);
-        localK = springK * 0.04;
+        rest = Math.max(link * 0.9, Math.min(width, height) * 0.2);
+        localK = springK * 0.015;
       } else if (cross) {
         rest = link * 0.85;
         localK = springK * 0.03;
@@ -249,7 +258,7 @@ export function layoutForce(nodes: LayoutNode[], edges: LayoutEdge[], options: G
       b.vy -= uy;
       b.vz -= uz;
     }
-    for (const body of list) {
+    for (const body of sim) {
       if (body.home) {
         const home = bodies.get(body.home);
         if (home) {
@@ -282,9 +291,10 @@ export function layoutForce(nodes: LayoutNode[], edges: LayoutEdge[], options: G
     const radius = clusterRadius(sorted.length, repel);
     sorted.forEach((body, index) => {
       const point = blob(body.id, index, sorted.length);
+      const lift = sorted.length <= 1 ? 0 : (index / (sorted.length - 1) - 0.5) * Math.max(28, radius * 0.85);
       body.x = home.x + point.x * radius;
       body.y = home.y + point.y * radius;
-      body.z = home.z + point.z * radius;
+      body.z = home.z + point.z * radius + lift;
     });
   }
 

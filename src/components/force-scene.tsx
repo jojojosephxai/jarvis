@@ -3,7 +3,7 @@
 import { useEffect, useRef } from "react";
 import type * as THREE_NS from "three";
 
-import { labelEligible, labelRank, pickLabels, type LayoutPoint } from "@/lib/graph-layout";
+import { labelRank, pickLabels, smallLabelFade, type LayoutPoint } from "@/lib/graph-layout";
 import { nodeColor, nodeDiameterPx, type GraphEdge, type GraphNode } from "@/lib/note-graph";
 
 type ZoomKind = "fit" | "in" | "out";
@@ -20,6 +20,9 @@ export function ForceScene({
   route,
   showLabels,
   showEdges,
+  hopDepth,
+  autoRotate,
+  padRight,
   focusKey,
   zoomToken,
   zoomKind,
@@ -35,6 +38,9 @@ export function ForceScene({
   route: string[] | null;
   showLabels: boolean;
   showEdges: boolean;
+  hopDepth: number;
+  autoRotate: boolean;
+  padRight: number;
   focusKey: string;
   zoomToken: number;
   zoomKind: ZoomKind;
@@ -53,6 +59,9 @@ export function ForceScene({
     route,
     showLabels,
     showEdges,
+    hopDepth,
+    autoRotate,
+    padRight,
     onSelect,
     onClear,
   });
@@ -67,6 +76,9 @@ export function ForceScene({
       route,
       showLabels,
       showEdges,
+      hopDepth,
+      autoRotate,
+      padRight,
       onSelect,
       onClear,
     };
@@ -96,11 +108,19 @@ export function ForceScene({
       const target = new THREE.Vector3();
       const sphere = new THREE.SphereGeometry(1, 14, 12);
       let group: THREE_NS.Group | null = null;
-      const meshes: { mesh: THREE_NS.Mesh; id: string; baseScale: number }[] = [];
+      const meshes: {
+        mesh: THREE_NS.Mesh;
+        id: string;
+        baseScale: number;
+        baseDim: number;
+        glow: THREE_NS.Mesh | null;
+        glowOpacity: number;
+      }[] = [];
+      const pickables: THREE_NS.Object3D[] = [];
       let yaw = 0.62;
       let pitch = 0.38;
       let dist = 900;
-      let fitDist = 900;
+      let overviewDist = 900;
       let hoverId = "";
       let drag: { x: number; y: number; button: number; shift: boolean } | null = null;
       let moved = false;
@@ -125,7 +145,11 @@ export function ForceScene({
         camera.lookAt(target);
       };
 
-      const framePoints = (list: LayoutPoint[]) => {
+      const publishDist = () => {
+        host.dataset.dist = String(Math.round(dist));
+      };
+
+      const framePoints = (list: LayoutPoint[], rememberOverview = false) => {
         if (list.length === 0) return;
         let minX = Infinity;
         let minY = Infinity;
@@ -143,8 +167,8 @@ export function ForceScene({
         }
         const { width, height } = size();
         const padTop = 96;
-        const padLeft = 320;
-        const padRight = 260;
+        const padLeft = 380;
+        const padRight = stateRef.current.padRight || 260;
         const padBottom = 188;
         const availW = Math.max(220, width - padLeft - padRight);
         const availH = Math.max(220, height - padTop - padBottom);
@@ -176,7 +200,7 @@ export function ForceScene({
         });
         const vTan = Math.tan(fov / 2);
         const hTan = vTan * camera.aspect;
-        const edge = 36;
+        const edge = 80;
         let distNeeded = 160;
         for (const point of list) {
           const relX = point.x - midX;
@@ -217,7 +241,8 @@ export function ForceScene({
           if (!Number.isFinite(scale) || scale === 0) break;
           dist *= scale;
         }
-        fitDist = dist;
+        if (rememberOverview) overviewDist = dist;
+        publishDist();
         const ndcX = ((padLeft + availW / 2) / width) * 2 - 1;
         const ndcY = -(((padTop + availH / 2) / height) * 2 - 1);
         const shiftX = ndcX * dist * Math.tan(fov / 2) * camera.aspect;
@@ -244,13 +269,15 @@ export function ForceScene({
             material !== haloMat &&
             material !== leafHalo &&
             material !== ringMat &&
-            material !== glowMat
+            material !== glowMat &&
+            material !== hitMat
           ) {
             material.dispose();
           }
         });
         group = null;
         meshes.length = 0;
+        pickables.length = 0;
       };
 
       const sharedLine = new THREE.LineBasicMaterial({ color: LINK, transparent: true, opacity: 0.28 });
@@ -283,28 +310,36 @@ export function ForceScene({
         depthWrite: false,
         blending: THREE.AdditiveBlending,
       });
+      const hitMat = new THREE.MeshBasicMaterial({
+        transparent: true,
+        opacity: 0,
+        depthWrite: false,
+        color: 0x000000,
+      });
 
-      let labelStamp = "";
-      let generation = 0;
-
-      const paintLabelsIfNeeded = () => {
+      const applyHover = () => {
         const current = stateRef.current;
-        const stamp = [
-          generation,
-          yaw.toFixed(2),
-          pitch.toFixed(2),
-          dist.toFixed(0),
-          target.x.toFixed(0),
-          target.y.toFixed(0),
-          hoverId,
-          current.selectedId ?? "",
-          current.clusterId ?? "",
-          current.showLabels ? "1" : "0",
-          (current.route ?? []).join(","),
-        ].join("|");
-        if (stamp === labelStamp) return;
-        labelStamp = stamp;
-        paintLabels();
+        const near = new Set<string>();
+        if (hoverId) {
+          near.add(hoverId);
+          for (const edge of current.edges) {
+            if (edge.from === hoverId) near.add(edge.to);
+            if (edge.to === hoverId) near.add(edge.from);
+          }
+        }
+        let dimmed = 0;
+        for (const entry of meshes) {
+          const material = entry.mesh.material as THREE_NS.ShaderMaterial;
+          const dimNow = hoverId !== "" && !near.has(entry.id);
+          if (material.uniforms?.uDim) material.uniforms.uDim.value = dimNow ? entry.baseDim * 0.35 : entry.baseDim;
+          if (entry.glow) {
+            const glowMaterial = entry.glow.material as THREE_NS.MeshBasicMaterial;
+            glowMaterial.opacity = dimNow ? entry.glowOpacity * 0.35 : entry.glowOpacity;
+          }
+          if (dimNow) dimmed += 1;
+        }
+        host.dataset.dim = hoverId && dimmed > 0 ? "1" : "0";
+        publishDist();
       };
 
       const draw = (now: number) => {
@@ -349,9 +384,10 @@ export function ForceScene({
           }
           attr.needsUpdate = true;
         }
+        applyHover();
         placeCamera();
         renderer.render(scene, camera);
-        paintLabelsIfNeeded();
+        paintLabels();
       };
 
       let spinning = !reduced;
@@ -363,10 +399,10 @@ export function ForceScene({
       const tick = (now: number) => {
         if (dead) return;
         frame = requestAnimationFrame(tick);
-        if (!drag) {
-          if (!spinning && now > idleUntil) spinning = true;
-          if (spinning) yaw += 0.0016;
-        }
+        const allowSpin = stateRef.current.autoRotate && !hoverId && !drag;
+        if (!allowSpin) spinning = false;
+        else if (!spinning && now > idleUntil) spinning = true;
+        if (spinning && allowSpin) yaw += 0.0016;
         draw(now);
       };
 
@@ -374,9 +410,20 @@ export function ForceScene({
         if (reduced) draw(performance.now());
       };
 
+      const neighborhood = (id: string, hops: number) => {
+        const near = new Set<string>([id]);
+        const current = stateRef.current;
+        const steps = Math.min(2, Math.max(1, hops));
+        for (let hop = 0; hop < steps; hop += 1) {
+          for (const edge of current.edges) {
+            if (near.has(edge.from)) near.add(edge.to);
+            if (near.has(edge.to)) near.add(edge.from);
+          }
+        }
+        return near;
+      };
+
       const rebuild = () => {
-        generation += 1;
-        labelStamp = "";
         disposeGroup();
         const current = stateRef.current;
         const pointOf = new Map(current.points.map((point) => [point.id, point]));
@@ -395,7 +442,9 @@ export function ForceScene({
             if (node.hubs.includes(current.clusterId)) hot.add(node.id);
           }
         }
-        if (current.selectedId) {
+        if (current.selectedId && !current.clusterId) {
+          for (const id of neighborhood(current.selectedId, current.hopDepth)) hot.add(id);
+        } else if (current.selectedId) {
           hot.add(current.selectedId);
           for (const edge of current.edges) {
             if (edge.from === current.selectedId) hot.add(edge.to);
@@ -423,12 +472,13 @@ export function ForceScene({
           const depthScale = 0.72 + 0.28 * closeness;
           const px = nodeDiameterPx(node, degree.get(node.id) ?? 0);
           const color = new THREE.Color(nodeColor(node.nodeType));
+          const baseDim = (dim && !hot.has(node.id) ? 0.35 : 1) * (0.82 + 0.18 * closeness);
           const material = new THREE.ShaderMaterial({
             transparent: true,
             depthWrite: false,
             uniforms: {
               uColor: { value: color },
-              uDim: { value: (dim && !hot.has(node.id) ? 0.35 : 1) * (0.82 + 0.18 * closeness) },
+              uDim: { value: baseDim },
             },
             vertexShader: `
               varying vec3 vNormal;
@@ -461,13 +511,22 @@ export function ForceScene({
           mesh.scale.setScalar(Math.max(1.7, px * 0.44) * depthScale);
           mesh.userData.id = node.id;
           mesh.userData.closeness = closeness;
-          const glow = new THREE.Mesh(sphere, glowMat);
+          const glowMaterial = glowMat.clone();
+          const glow = new THREE.Mesh(sphere, glowMaterial);
           glow.position.copy(mesh.position);
           glow.scale.setScalar(mesh.scale.x * 2.35);
           glow.userData.kind = "glow";
+          glow.userData.id = node.id;
+          const hit = new THREE.Mesh(sphere, hitMat);
+          hit.position.copy(mesh.position);
+          hit.scale.setScalar(Math.max(mesh.scale.x * 2.8, 6));
+          hit.visible = false;
+          hit.userData.id = node.id;
           group.add(glow);
+          group.add(hit);
           group.add(mesh);
-          meshes.push({ mesh, id: node.id, baseScale: mesh.scale.x });
+          pickables.push(hit, glow, mesh);
+          meshes.push({ mesh, id: node.id, baseScale: mesh.scale.x, baseDim, glow, glowOpacity: 0.2 });
           if (node.id === current.selectedId) {
             const distance = Math.max(camera.position.distanceTo(mesh.position), 1);
             const worldPerPx =
@@ -544,8 +603,10 @@ export function ForceScene({
           const push = (bucket: number[], a: { x: number; y: number; z: number }, b: { x: number; y: number; z: number }) => {
             bucket.push(a.x, a.y, a.z, b.x, b.y, b.z);
           };
+          const focused = Boolean(current.selectedId || current.clusterId || routeSet);
           for (const edge of current.edges) {
             if (!current.visibleIds.has(edge.from) || !current.visibleIds.has(edge.to)) continue;
+            if (focused && hot.size > 0 && (!hot.has(edge.from) || !hot.has(edge.to))) continue;
             const from = nodeOf.get(edge.from);
             const to = nodeOf.get(edge.to);
             const a = pointOf.get(edge.from);
@@ -625,13 +686,46 @@ export function ForceScene({
         host.dataset.ready = meshes.length > 0 ? "true" : "false";
       };
 
+      const labelEls = new Map<string, HTMLSpanElement>();
+      const overlapsHud = (x: number, y: number, w: number, h: number) => {
+        const hostBox = host.getBoundingClientRect();
+        const left = hostBox.left + x;
+        const top = hostBox.top + y;
+        const right = left + w;
+        const bottom = top + h;
+        if (left < hostBox.left + 2 || top < hostBox.top + 2 || right > hostBox.right - 2 || bottom > hostBox.bottom - 2) {
+          return true;
+        }
+        const selectors = [
+          "[data-region='header']",
+          "[data-region='left']",
+          "[data-region='filter']",
+          "[data-region='chat']",
+          "[data-region='ask']",
+          ".orb-dial",
+          ".orb-status",
+          ".graph-inspector",
+          ".face-task",
+        ];
+        return selectors.some((selector) => {
+          const node = document.querySelector(selector);
+          if (!node) return false;
+          const rect = node.getBoundingClientRect();
+          if (rect.width < 2 || rect.height < 2) return false;
+          return left < rect.right - 1 && right > rect.left + 1 && top < rect.bottom - 1 && bottom > rect.top + 1;
+        });
+      };
+
       const paintLabels = () => {
         const current = stateRef.current;
         const width = host.clientWidth || 1;
         const height = host.clientHeight || 1;
-        labelHost.replaceChildren();
-        if (!current.showLabels) return;
-        const zoomed = dist < fitDist * 0.82;
+        if (!current.showLabels) {
+          labelHost.replaceChildren();
+          labelEls.clear();
+          return;
+        }
+        const fade = smallLabelFade(dist, overviewDist);
         const routeIndex = new Map((current.route ?? []).map((id, index) => [id, index]));
         const candidates: {
           id: string;
@@ -643,15 +737,13 @@ export function ForceScene({
           priority: number;
           protected: boolean;
           title: string;
+          zoomOpacity: number;
+          hub: boolean;
         }[] = [];
         for (const entry of meshes) {
           const node = current.nodes.find((item) => item.id === entry.id);
           if (!node || !current.visibleIds.has(node.id)) continue;
           const hub = node.kind === "folder" || node.nodeType === "hub" || node.root;
-          const links = current.edges.reduce(
-            (count, edge) => count + (edge.from === node.id || edge.to === node.id ? 1 : 0),
-            0,
-          );
           const onPath = routeIndex.has(node.id);
           const neighbor =
             current.selectedId !== null &&
@@ -660,7 +752,8 @@ export function ForceScene({
                 (edge.from === current.selectedId && edge.to === node.id) ||
                 (edge.to === current.selectedId && edge.from === node.id),
             );
-          const inCluster = current.clusterId !== null && (node.id === current.clusterId || node.hubs.includes(current.clusterId));
+          const clusterId = current.clusterId;
+          const inCluster = clusterId !== null && (node.id === clusterId || node.hubs.includes(clusterId));
           const flags = {
             selected: node.id === current.selectedId,
             hover: node.id === hoverId,
@@ -670,10 +763,9 @@ export function ForceScene({
             neighbor,
             folder: false,
             match: inCluster,
-            depth: 0.8,
-            big: links >= 4,
           };
-          if (!labelEligible(flags, zoomed ? 1.7 : 1, false)) continue;
+          const pinned = hub || flags.selected || flags.hover || flags.onPath;
+          if (!pinned && fade < 0.04) continue;
           const vector = entry.mesh.position.clone().project(camera);
           if (vector.z > 1) continue;
           const sx = (vector.x * 0.5 + 0.5) * width;
@@ -684,14 +776,14 @@ export function ForceScene({
           const number = routeIndex.get(node.id);
           const title = number !== undefined ? `${number + 1}. ${node.title}` : node.title;
           const text = title.length > 28 ? `${title.slice(0, 27)}…` : title;
-          const w = Math.max(48, text.length * 7.4 + 10);
-          const h = 18;
+          const w = Math.max(48, text.length * 7.6 + 12);
+          const h = 20;
           const spots = [
             { x: sx + nodePx + 8, y: sy - h / 2 },
             { x: sx - nodePx - 8 - w, y: sy - h / 2 },
             { x: sx + nodePx + 8, y: sy - h - 10 },
           ];
-          const spot = spots.find((item) => !blocked(item.x, item.y, w, h, width, height));
+          const spot = spots.find((item) => !overlapsHud(item.x, item.y, w, h));
           if (!spot) continue;
           const rank = labelRank(flags);
           const closeness = typeof entry.mesh.userData.closeness === "number" ? entry.mesh.userData.closeness : 0.8;
@@ -705,20 +797,53 @@ export function ForceScene({
             priority: rank.priority,
             protected: rank.protected || hub,
             title: text,
+            zoomOpacity: pinned ? 1 : fade,
+            hub,
           });
         }
         const placed = pickLabels(candidates);
         const byId = new Map(candidates.map((item) => [item.id, item]));
+        const keep = new Set<string>();
         for (const label of placed) {
           const source = byId.get(label.id);
           if (!source) continue;
-          const el = document.createElement("span");
-          el.className = "graph-float-label";
+          if (overlapsHud(label.x - source.w / 2, label.y - source.h / 2, source.w, source.h)) continue;
+          keep.add(label.id);
+          let el = labelEls.get(label.id);
+          if (!el) {
+            el = document.createElement("span");
+            el.className = "graph-float-label";
+            el.addEventListener("pointerdown", (event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              const id = (event.currentTarget as HTMLElement).dataset.nodeId || "";
+              if (id) stateRef.current.onSelect(id, event.shiftKey);
+            });
+            el.addEventListener("pointerenter", (event) => {
+              const id = (event.currentTarget as HTMLElement).dataset.nodeId || "";
+              if (!id) return;
+              hoverId = id;
+              host.style.cursor = "pointer";
+            });
+            el.addEventListener("pointerleave", (event) => {
+              const id = (event.currentTarget as HTMLElement).dataset.nodeId || "";
+              if (hoverId === id) hoverId = "";
+              host.style.cursor = "grab";
+            });
+            labelHost.appendChild(el);
+            labelEls.set(label.id, el);
+          }
+          el.dataset.nodeId = source.id;
+          el.dataset.hub = source.hub ? "1" : "0";
           el.textContent = source.title;
           el.style.left = `${label.x - source.w / 2}px`;
           el.style.top = `${label.y - source.h / 2}px`;
-          el.style.opacity = String(label.opacity);
-          labelHost.appendChild(el);
+          el.style.opacity = String(Math.max(0, Math.min(1, label.opacity * source.zoomOpacity)));
+        }
+        for (const [id, el] of labelEls) {
+          if (keep.has(id)) continue;
+          el.remove();
+          labelEls.delete(id);
         }
       };
 
@@ -727,7 +852,7 @@ export function ForceScene({
         pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
         pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
         raycaster.setFromCamera(pointer, camera);
-        const found = raycaster.intersectObjects(meshes.map((entry) => entry.mesh), false)[0];
+        const found = raycaster.intersectObjects(pickables, false)[0];
         const id = found?.object.userData.id;
         return typeof id === "string" ? id : "";
       };
@@ -751,6 +876,7 @@ export function ForceScene({
         if (drag || !hoverId) return;
         hoverId = "";
         host.style.cursor = "grab";
+        if (stateRef.current.autoRotate) spinning = true;
         requestDraw();
       };
       const onDrag = (event: PointerEvent) => {
@@ -787,8 +913,9 @@ export function ForceScene({
       const onWheel = (event: WheelEvent) => {
         pauseSpin();
         event.preventDefault();
-        const nextDist = dist * (event.deltaY > 0 ? 1.08 : 0.92);
-        dist = Math.max(fitDist, Math.min(4000, nextDist));
+        if (event.deltaY > 0) dist = Math.min(overviewDist, dist * 1.08);
+        else dist = Math.max(80, dist * 0.92);
+        publishDist();
         requestDraw();
       };
       const onKey = (event: KeyboardEvent) => {
@@ -796,9 +923,10 @@ export function ForceScene({
         else if (event.key === "ArrowRight") yaw += 0.08;
         else if (event.key === "ArrowUp") pitch = Math.max(-1.1, pitch - 0.06);
         else if (event.key === "ArrowDown") pitch = Math.min(1.1, pitch + 0.06);
-        else if (event.key === "+" || event.key === "=") dist = Math.max(fitDist, dist * 0.9);
-        else if (event.key === "-" || event.key === "_") dist = Math.min(4000, dist * 1.1);
+        else if (event.key === "+" || event.key === "=") dist = Math.max(80, dist * 0.9);
+        else if (event.key === "-" || event.key === "_") dist = Math.min(overviewDist, dist * 1.1);
         else return;
+        publishDist();
         pauseSpin();
         event.preventDefault();
         requestDraw();
@@ -808,7 +936,7 @@ export function ForceScene({
       renderer.domElement.addEventListener("pointerdown", onDown);
       renderer.domElement.addEventListener("pointermove", onHover);
       renderer.domElement.addEventListener("pointerleave", onLeave);
-      renderer.domElement.addEventListener("wheel", onWheel, { passive: false });
+      host.addEventListener("wheel", onWheel, { passive: false });
       renderer.domElement.addEventListener("contextmenu", onMenu);
       host.addEventListener("keydown", onKey);
       const observer = new ResizeObserver(() => {
@@ -824,7 +952,7 @@ export function ForceScene({
         renderer.domElement.removeEventListener("pointerleave", onLeave);
         window.removeEventListener("pointermove", onDrag);
         window.removeEventListener("pointerup", onUp);
-        renderer.domElement.removeEventListener("wheel", onWheel);
+        host.removeEventListener("wheel", onWheel);
         renderer.domElement.removeEventListener("contextmenu", onMenu);
         host.removeEventListener("keydown", onKey);
         disposeGroup();
@@ -837,6 +965,7 @@ export function ForceScene({
         leafHalo.dispose();
         ringMat.dispose();
         glowMat.dispose();
+        hitMat.dispose();
         renderer.dispose();
         renderer.forceContextLoss();
         renderer.domElement.remove();
@@ -849,26 +978,29 @@ export function ForceScene({
       size();
       rebuild();
       const visiblePoints = stateRef.current.points.filter((point) => stateRef.current.visibleIds.has(point.id));
-      framePoints(visiblePoints.length > 0 ? visiblePoints : stateRef.current.points);
+      framePoints(visiblePoints.length > 0 ? visiblePoints : stateRef.current.points, true);
       const fit = () => {
         const current = stateRef.current;
-        const chosen = current.points.filter((point) => {
-          if (!current.visibleIds.has(point.id)) return false;
-          if (current.clusterId) {
-            const node = current.nodes.find((item) => item.id === point.id);
-            return point.id === current.clusterId || node?.hubs.includes(current.clusterId) === true;
-          }
-          return true;
-        });
-        framePoints(chosen.length > 0 ? chosen : current.points);
+        let ids: Set<string> | null = null;
+        const clusterId = current.clusterId;
+        const selectedId = current.selectedId;
+        if (current.route && current.route.length > 1) ids = new Set(current.route);
+        else if (clusterId) {
+          ids = new Set(
+            current.nodes.filter((node) => node.id === clusterId || node.hubs.includes(clusterId)).map((node) => node.id),
+          );
+        } else if (selectedId) ids = neighborhood(selectedId, current.hopDepth);
+        const chosen = current.points.filter((point) => current.visibleIds.has(point.id) && (!ids || ids.has(point.id)));
+        framePoints(chosen.length > 0 ? chosen : current.points, !ids);
       };
       apiRef.current = {
         fit,
         rebuild,
         zoom: (kind) => {
           if (kind === "fit") fit();
-          if (kind === "in") dist = Math.max(fitDist, dist * 0.82);
-          if (kind === "out") dist = Math.min(4000, dist * 1.22);
+          if (kind === "in") dist = Math.max(80, dist * 0.82);
+          if (kind === "out") dist = Math.min(overviewDist, dist * 1.22);
+          publishDist();
         },
       };
       if (reduced) draw(performance.now());
@@ -889,7 +1021,7 @@ export function ForceScene({
   useEffect(() => {
     apiRef.current?.rebuild();
     apiRef.current?.fit();
-  }, [focusKey, points, nodes, edges, showEdges, selectedId, clusterId, route, visibleIds, showLabels]);
+  }, [focusKey, points, nodes, edges, showEdges, selectedId, clusterId, route, visibleIds, showLabels, hopDepth, padRight]);
 
   useEffect(() => {
     if (zoomToken === 0) return;
@@ -910,14 +1042,3 @@ export function ForceScene({
   );
 }
 
-function blocked(x: number, y: number, w: number, h: number, width: number, height: number): boolean {
-  const zones = [
-    [0, 0, width, 46],
-    [0, 40, 268, height],
-    [width - 232, 40, 232, 340],
-    [width - 210, height * 0.3, 210, 300],
-    [248, height - 176, width - 248 - 356, 176],
-    [width - 356, height - 330, 356, 330],
-  ];
-  return zones.some(([zx, zy, zw, zh]) => x < (zx ?? 0) + (zw ?? 0) && x + w > (zx ?? 0) && y < (zy ?? 0) + (zh ?? 0) && y + h > (zy ?? 0));
-}

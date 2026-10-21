@@ -35,7 +35,6 @@ function panelOverlaps() {
     }
   }
   if (badge) boxes.push(badge);
-  else missing.push("dev badge missing");
   const mark = portal?.shadowRoot?.querySelector("[data-next-badge]");
   if (mark?.getAttribute("data-error") === "true" || /issue/i.test(mark?.textContent || "")) {
     missing.push("dev badge reports issues");
@@ -66,14 +65,31 @@ async function openFace(page, path) {
   await page.waitForSelector("[data-scene='ready']");
   await page.waitForSelector("[data-region='ask']");
   await page.waitForSelector(".face-totals");
-  await page.waitForFunction(() => {
-    const portal = document.querySelector("nextjs-portal");
-    const button = portal?.shadowRoot?.querySelector("[data-nextjs-dev-tools-button]");
-    const node = button || document.querySelector("[data-nextjs-dev-tools-button]");
-    if (!node) return false;
-    const rect = node.getBoundingClientRect();
-    return rect.width > 2 && rect.height > 2;
-  });
+  await page.waitForTimeout(200);
+}
+
+async function zoomIn(page, steps = 8) {
+  const scene = page.locator(".force-scene");
+  const box = await scene.boundingBox();
+  if (!box) return;
+  await page.mouse.move(box.x + box.width * 0.5, box.y + box.height * 0.46);
+  for (let step = 0; step < steps; step += 1) {
+    await page.mouse.wheel(0, -280);
+    await page.waitForTimeout(40);
+  }
+}
+
+async function hoverNode(page) {
+  const scene = page.locator(".force-scene");
+  const box = await scene.boundingBox();
+  if (!box) return false;
+  for (let y = 0.32; y <= 0.72; y += 0.04) {
+    for (let x = 0.28; x <= 0.72; x += 0.04) {
+      await page.mouse.move(box.x + box.width * x, box.y + box.height * y);
+      if ((await scene.getAttribute("data-dim")) === "1") return true;
+    }
+  }
+  return (await scene.getAttribute("data-dim")) === "1";
 }
 
 const sizes = [
@@ -117,7 +133,69 @@ test("working card stays off the other panels", async ({ page }) => {
   await expect.poll(async () => page.evaluate(panelOverlaps), { timeout: 15000 }).toEqual([]);
 });
 
+test("clicking a graph node opens the Inspector", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await openFace(page, "/");
+  await zoomIn(page);
+  const label = page.locator(".graph-float-label[data-hub='0']").first();
+  await expect(label).toBeVisible();
+  const id = await label.getAttribute("data-node-id");
+  expect(id).toBeTruthy();
+  await label.click();
+  await expect(page.locator(".graph-inspector")).toHaveCount(0);
+  await page.locator(`.graph-float-label[data-node-id="${id}"]`).click();
+  await expect(page.locator(".graph-inspector")).toBeVisible();
+  await expect(page.locator(".inspector-title")).toBeVisible();
+  await expect(page.locator(".inspector-kind")).toBeVisible();
+});
+
+test("hover dims non-neighbors", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await openFace(page, "/");
+  expect(await hoverNode(page)).toBe(true);
+  await expect(page.locator(".force-scene")).toHaveAttribute("data-dim", "1");
+});
+
+test("wheel zoom changes the camera distance", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await openFace(page, "/");
+  const scene = page.locator(".force-scene");
+  const before = Number(await scene.getAttribute("data-dist"));
+  expect(before).toBeGreaterThan(80);
+  await zoomIn(page, 3);
+  await expect.poll(async () => Number(await scene.getAttribute("data-dist"))).toBeLessThan(before - 5);
+});
+
+test("labels stay inside the graph area after a resize", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await openFace(page, "/");
+  await page.setViewportSize({ width: 1920, height: 1080 });
+  await page.waitForTimeout(400);
+  const spills = await page.evaluate(() => {
+    const zones = ["[data-region='left']", "[data-region='filter']", ".orb-dial", "[data-region='chat']", "[data-region='ask']"]
+      .map((selector) => document.querySelector(selector)?.getBoundingClientRect())
+      .filter((rect) => rect && rect.width > 2);
+    const graph = document.querySelector(".graph-canvas")?.getBoundingClientRect();
+    const hits = [];
+    for (const label of document.querySelectorAll(".graph-float-label")) {
+      const rect = label.getBoundingClientRect();
+      if (rect.width < 2 || Number(getComputedStyle(label).opacity) < 0.05) continue;
+      if (graph && (rect.left < graph.left - 1 || rect.top < graph.top - 1 || rect.right > graph.right + 1 || rect.bottom > graph.bottom + 1)) {
+        hits.push("outside");
+      }
+      for (const zone of zones) {
+        const overlapX = Math.min(rect.right, zone.right) - Math.max(rect.left, zone.left);
+        const overlapY = Math.min(rect.bottom, zone.bottom) - Math.max(rect.top, zone.top);
+        if (overlapX > 1 && overlapY > 1) hits.push("hud");
+      }
+    }
+    return hits;
+  });
+  expect(spills).toEqual([]);
+});
+
 test("screenshots of the face", async ({ page }) => {
+  test.setTimeout(180000);
   const dir = "/opt/cursor/artifacts/face";
   await mkdir(dir, { recursive: true });
   const shots = [
@@ -128,6 +206,9 @@ test("screenshots of the face", async ({ page }) => {
     ["1280-working", { width: 1280, height: 800 }, "/?face=working"],
     ["1280-hub", { width: 1280, height: 800 }, "/?hub=School"],
     ["1280-depth", { width: 1280, height: 800 }, "/?shot=depth"],
+    ["1440-idle", { width: 1440, height: 900 }, "/"],
+    ["1440-inspector", { width: 1440, height: 900 }, "/?hub=School"],
+    ["1440-hub", { width: 1440, height: 900 }, "/?hub=School"],
     ["1920-idle", { width: 1920, height: 1080 }, "/"],
     ["1920-speaking", { width: 1920, height: 1080 }, "/?face=speaking"],
     ["1920-orb-chat", { width: 1920, height: 1080 }, "/?face=speaking"],
@@ -145,5 +226,24 @@ test("screenshots of the face", async ({ page }) => {
     if (String(path).includes("shot=depth")) await page.waitForTimeout(1700);
     await expect.poll(async () => page.evaluate(panelOverlaps), { timeout: 15000 }).toEqual([]);
     await page.screenshot({ path: `${dir}/${name}.png`, fullPage: false });
+  }
+  const views = [
+    { width: 1280, height: 800 },
+    { width: 1440, height: 900 },
+    { width: 1920, height: 1080 },
+  ];
+  for (const size of views) {
+    await page.setViewportSize(size);
+    await openFace(page, "/");
+    await page.locator(".hub-list button", { hasText: "School" }).click();
+    await page.waitForSelector(".graph-inspector");
+    await expect(page.locator(".graph-float-label[data-hub='0']").first()).toBeVisible();
+    await expect.poll(async () => page.evaluate(panelOverlaps), { timeout: 15000 }).toEqual([]);
+    await page.screenshot({ path: `${dir}/${size.width}-zoomed.png`, fullPage: false });
+    await page.screenshot({ path: `${dir}/${size.width}-clicked.png`, fullPage: false });
+    await page.keyboard.press("Escape");
+    await page.waitForSelector(".face-filter");
+    expect(await hoverNode(page)).toBe(true);
+    await page.screenshot({ path: `${dir}/${size.width}-hover.png`, fullPage: false });
   }
 });

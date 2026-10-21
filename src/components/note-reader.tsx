@@ -154,18 +154,18 @@ export function NoteReader({
     };
   }, [node.file, node.id]);
   return (
-    <aside className={docked ? "graph-inspector is-docked" : "graph-inspector glass"} aria-label="Inspector">
+    <aside className={docked ? "graph-inspector is-docked" : "graph-inspector is-side glass"} aria-label="Inspector">
       <div className="inspector-head">
         <p className="inspector-kicker">Inspector</p>
         <button type="button" className="inspector-back" onClick={onBack}>
           Close
         </button>
       </div>
-      <p className="inspector-type">
+      <h3 className="inspector-title">{node.title}</h3>
+      <p className="inspector-kind">
         <span className="inspector-type-dot" style={{ background: color }} />
         {nodeTypeLabel(node.nodeType)}
       </p>
-      <h3 className="inspector-title">{node.title}</h3>
       <p className="inspector-path">{node.id}</p>
       {members.length > 0 && !node.file ? (
         <div className="inspector-block">

@@ -217,7 +217,18 @@ export function Face() {
 
   useEffect(() => {
     const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    const frame = window.requestAnimationFrame(() => setIntro("out"));
+    const started = performance.now();
+    let frame = 0;
+    const tick = () => {
+      const ready = document.querySelector("[data-scene='ready']");
+      const failed = document.querySelector(".graph-stage-empty");
+      if (ready || failed || performance.now() - started > 2500) {
+        setIntro("out");
+        return;
+      }
+      frame = window.requestAnimationFrame(tick);
+    };
+    frame = window.requestAnimationFrame(tick);
     bootTimer.current = window.setTimeout(() => {
       markBootDone();
       void greet();
@@ -659,6 +670,12 @@ export function Face() {
 
   return (
     <div className="face" data-intro={intro}>
+      {intro === "in" ? (
+        <div className="face-loader" role="status">
+          <span />
+          <p>Reading notes</p>
+        </div>
+      ) : null}
       <div className="face-stage" data-orb={place}>
         <NoteGraph cue={cue} suspendEscape={working} voiceLive={place === "center"} />
         <OrbStage
