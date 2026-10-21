@@ -123,6 +123,7 @@ export function ForceScene({
       let pitch = 0.38;
       let dist = 900;
       let overviewDist = 900;
+      let frameRadius = 80;
       let hoverId = "";
       let drag: { x: number; y: number; button: number; shift: boolean } | null = null;
       let moved = false;
@@ -245,7 +246,30 @@ export function ForceScene({
         const roomY = Math.max(48, Math.min(safeCy - safe.top, safe.bottom - safeCy) - 28);
         const fitX = radius + (radius * (width / 2)) / (roomX * hTan);
         const fitY = radius + (radius * (height / 2)) / (roomY * vTan);
-        dist = Math.max(fitX, fitY, 160) * 1.04;
+        dist = Math.max(fitX, fitY, radius * 2.6, 160) * 1.04;
+        frameRadius = radius;
+        if (!rememberOverview) {
+          const framedIds = new Set(list.map((point) => point.id));
+          const dirX = Math.sin(yaw) * Math.cos(pitch);
+          const dirY = Math.sin(pitch);
+          const dirZ = Math.cos(yaw) * Math.cos(pitch);
+          const limit = Math.max(overviewDist, dist);
+          for (let pass = 0; pass < 8; pass += 1) {
+            const camX = midX + dirX * dist;
+            const camY = midY + dirY * dist;
+            const camZ = midZ + dirZ * dist;
+            let push = 0;
+            for (const point of stateRef.current.points) {
+              if (!stateRef.current.visibleIds.has(point.id) || framedIds.has(point.id)) continue;
+              const visual = (meshes.find((entry) => entry.id === point.id)?.baseScale ?? 5) * 1.45;
+              const gap = Math.max(radius * 0.85, visual * 5, 42);
+              const gapDist = Math.hypot(point.x - camX, point.y - camY, point.z - camZ);
+              if (gapDist < gap) push = Math.max(push, gap - gapDist + 6);
+            }
+            if (push < 1 || dist >= limit) break;
+            dist = Math.min(limit, dist + push);
+          }
+        }
         if (rememberOverview) overviewDist = dist;
         publishDist();
         placeCamera();
@@ -350,22 +374,6 @@ export function ForceScene({
           }
         }
         const flow = group?.children.find((child) => child.userData.flow);
-        const ring = group?.children.find((child) => child.userData.kind === "select-ring");
-        const selectedMesh = meshes.find((entry) => entry.id === stateRef.current.selectedId);
-        if (ring instanceof THREE.Mesh && selectedMesh) {
-          const distance = Math.max(camera.position.distanceTo(selectedMesh.mesh.position), 1);
-          const worldPerPx =
-            (2 * Math.tan((camera.fov * Math.PI) / 360) * distance) / Math.max(host.clientHeight, 1);
-          const outer = selectedMesh.mesh.scale.x * 1.9;
-          const inner = Math.max(outer - 1.5 * worldPerPx, outer * 0.82);
-          const stamp = `${inner.toFixed(3)}|${outer.toFixed(3)}`;
-          if (ring.userData.stamp !== stamp) {
-            ring.geometry.dispose();
-            ring.geometry = new THREE.RingGeometry(inner, outer, 48);
-            ring.userData.stamp = stamp;
-          }
-          ring.position.copy(selectedMesh.mesh.position);
-        }
         if (flow instanceof THREE.Points) {
           const raw = flow.userData.flow as number[];
           const attr = flow.geometry.getAttribute("position");
@@ -389,15 +397,50 @@ export function ForceScene({
         const viewH = host.clientHeight || 1;
         const hostBox = host.getBoundingClientRect();
         const fov = (camera.fov * Math.PI) / 180;
-        const boxes: { id: string; x: number; y: number; w: number; h: number }[] = [];
+        const halfTan = Math.tan(fov / 2);
+        const framing = stateRef.current;
+        const focusId = framing.clusterId || framing.selectedId;
+        const focusEntry = focusId ? meshes.find((entry) => entry.id === focusId) : undefined;
+        const focused = Boolean(focusId);
+        const centerDist = Math.max(camera.position.distanceTo(target), 1);
+        const hubPx = focusEntry ? (focusEntry.baseScale * viewH) / (2 * halfTan * Math.max(camera.position.distanceTo(focusEntry.mesh.position), 1)) : 16;
+        const nearCap = focused ? Math.min(39, Math.max(14, hubPx * 2)) : 10000;
+        const front = centerDist - frameRadius * 1.05;
+        const boxes: { id: string; x: number; y: number; w: number; h: number; r: number }[] = [];
         for (const entry of meshes) {
-          if (entry.glow) entry.glow.scale.setScalar(entry.mesh.scale.x * 1.4);
+          const distance = Math.max(camera.position.distanceTo(entry.mesh.position), 1);
+          const worldPerPx = (2 * halfTan * distance) / viewH;
+          let scale = entry.mesh.scale.x;
+          const rawPx = scale / worldPerPx;
+          const limit = focused ? (distance < centerDist ? nearCap : 39) : 10000;
+          if (rawPx > limit) scale = limit * worldPerPx;
+          entry.mesh.scale.setScalar(scale);
+          if (entry.glow) entry.glow.scale.setScalar(scale * 1.4);
+          if (entry.hit) {
+            entry.hit.scale.setScalar(Math.max(scale * 2.2, 4));
+            entry.hit.visible = false;
+          }
+          let nearFade = 1;
+          if (focused && front > 24 && distance < front) {
+            const gone = Math.max(16, front * 0.62);
+            if (distance <= gone) nearFade = 0;
+            else {
+              const t = (distance - gone) / Math.max(front - gone, 1);
+              nearFade = t * t * (3 - 2 * t);
+            }
+          }
+          const material = entry.mesh.material as THREE_NS.ShaderMaterial;
+          if (material.uniforms?.uDim) material.uniforms.uDim.value *= nearFade;
+          if (entry.glow) {
+            const glowMaterial = entry.glow.material as THREE_NS.MeshBasicMaterial;
+            glowMaterial.opacity *= nearFade;
+          }
           scratch.copy(entry.mesh.position).project(camera);
           const sx = (scratch.x * 0.5 + 0.5) * viewW;
           const sy = (-scratch.y * 0.5 + 0.5) * viewH;
-          const distance = Math.max(camera.position.distanceTo(entry.mesh.position), 1);
-          const nodePx = (entry.mesh.scale.x * viewH) / (2 * Math.tan(fov / 2) * distance);
+          const nodePx = scale / worldPerPx;
           const inside =
+            nearFade > 0.04 &&
             scratch.z >= -1 &&
             scratch.z <= 1 &&
             Number.isFinite(nodePx) &&
@@ -407,17 +450,34 @@ export function ForceScene({
             sy + nodePx <= safe.bottom + 1;
           entry.mesh.visible = inside;
           if (entry.glow) entry.glow.visible = inside;
-          if (entry.hit) entry.hit.visible = false;
           if (!inside) continue;
+          const radius = Math.round(nodePx * 10) / 10;
           boxes.push({
             id: entry.id,
             x: Math.round(hostBox.left + sx - nodePx),
             y: Math.round(hostBox.top + sy - nodePx),
             w: Math.max(1, Math.round(nodePx * 2)),
             h: Math.max(1, Math.round(nodePx * 2)),
+            r: radius,
           });
         }
         host.dataset.nodes = JSON.stringify(boxes);
+        const ring = group?.children.find((child) => child.userData.kind === "select-ring");
+        const selectedMesh = meshes.find((entry) => entry.id === stateRef.current.selectedId);
+        if (ring instanceof THREE.Mesh && selectedMesh) {
+          const distance = Math.max(camera.position.distanceTo(selectedMesh.mesh.position), 1);
+          const worldPerPx = (2 * Math.tan((camera.fov * Math.PI) / 360) * distance) / Math.max(host.clientHeight, 1);
+          const outer = selectedMesh.mesh.scale.x * 1.55;
+          const inner = Math.max(outer - 1.5 * worldPerPx, outer * 0.82);
+          const stamp = `${inner.toFixed(3)}|${outer.toFixed(3)}`;
+          if (ring.userData.stamp !== stamp) {
+            ring.geometry.dispose();
+            ring.geometry = new THREE.RingGeometry(inner, outer, 48);
+            ring.userData.stamp = stamp;
+          }
+          ring.position.copy(selectedMesh.mesh.position);
+          ring.visible = selectedMesh.mesh.visible;
+        }
         const pixel = renderer.getPixelRatio();
         renderer.setScissorTest(false);
         renderer.clear();

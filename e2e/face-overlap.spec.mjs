@@ -95,6 +95,25 @@ function nodeOverlaps() {
   return hits.slice(0, 12);
 }
 
+function focusNodeRadii() {
+  const raw = document.querySelector(".force-scene")?.getAttribute("data-nodes") || "";
+  if (!raw) return ["graph nodes were not measured"];
+  let nodes = [];
+  try {
+    nodes = JSON.parse(raw);
+  } catch {
+    return ["graph nodes were not readable"];
+  }
+  if (!Array.isArray(nodes) || nodes.length === 0) return ["graph nodes were empty"];
+  const hits = [];
+  for (const node of nodes) {
+    const published = Number(node.r);
+    const radius = Number.isFinite(published) && published > 0 ? published : Math.max(node.w || 0, node.h || 0) / 2;
+    if (radius > 40) hits.push(`${node.id} radius ${Math.round(radius)}`);
+  }
+  return hits.slice(0, 8);
+}
+
 async function openFace(page, path) {
   await page.goto(path);
   await page.waitForFunction(() => document.querySelector(".face")?.getAttribute("data-intro") === "out");
@@ -148,6 +167,7 @@ for (const size of sizes) {
     await page.waitForSelector(".graph-inspector");
     await page.waitForTimeout(800);
     await expect.poll(async () => page.evaluate(nodeOverlaps), { timeout: 15000 }).toEqual([]);
+    await expect.poll(async () => page.evaluate(focusNodeRadii), { timeout: 15000 }).toEqual([]);
   });
 }
 
@@ -297,6 +317,7 @@ test("screenshots of the face", async ({ page }) => {
     await expect(page.locator(".graph-float-label[data-hub='0']").first()).toBeVisible();
     await expect.poll(async () => page.evaluate(panelOverlaps), { timeout: 15000 }).toEqual([]);
     await expect.poll(async () => page.evaluate(nodeOverlaps), { timeout: 15000 }).toEqual([]);
+    await expect.poll(async () => page.evaluate(focusNodeRadii), { timeout: 15000 }).toEqual([]);
     await page.screenshot({ path: `${dir}/${size.width}-zoomed.png`, fullPage: false });
     await page.screenshot({ path: `${dir}/${size.width}-clicked.png`, fullPage: false });
     await page.keyboard.press("Escape");
