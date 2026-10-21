@@ -36,7 +36,7 @@ function blob(id: string, index: number, count: number): { x: number; y: number;
 }
 
 function clusterRadius(count: number, repel: number): number {
-  return 12 + Math.sqrt(Math.max(count, 1)) * (5 + repel / 90);
+  return 12 + Math.sqrt(Math.max(count, 1)) * (4.2 + repel / 100);
 }
 
 /** Hubs sit on one ring so each group has its own patch of the floor. */
@@ -83,7 +83,7 @@ export function layoutForce(nodes: LayoutNode[], edges: LayoutEdge[], options: G
     .filter((node) => node.kind === "folder")
     .map((node) => node.id)
     .sort();
-  const reach = Math.min(width, height) * (0.3 + repel / 1800);
+  const reach = Math.min(width, height) * (0.22 + repel / 2200);
   hubIds.forEach((id, index) => {
     const point = hubSlot(index, hubIds.length);
     const jitter = 0.86 + hashUnit(id, 4) * 0.28;
@@ -239,7 +239,7 @@ export function layoutForce(nodes: LayoutNode[], edges: LayoutEdge[], options: G
       let rest = link * 0.55;
       let localK = springK;
       if (a.hub && b.hub) {
-        rest = Math.max(link * 0.9, Math.min(width, height) * 0.2);
+        rest = Math.max(link * 0.9, Math.min(width, height) * 0.16);
         localK = springK * 0.015;
       } else if (cross) {
         rest = link * 0.85;
@@ -319,7 +319,7 @@ export function layoutForce(nodes: LayoutNode[], edges: LayoutEdge[], options: G
     point.z = hub.z + 6;
   }
   const pad = 48;
-  const reachLimit = Math.min(width, height) * 0.46;
+  const reachLimit = Math.min(width, height) * 0.38;
   for (const point of points) {
     const dx = point.x - cx;
     const dy = point.y - cy;

@@ -99,6 +99,7 @@ export function ForceScene({
       if (dead || !hostRef.current || !labelRef.current) return;
       const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
       renderer.setClearColor(0x000000, 0);
+      renderer.autoClear = false;
       renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
       host.appendChild(renderer.domElement);
       const scene = new THREE.Scene();
@@ -115,6 +116,7 @@ export function ForceScene({
         baseDim: number;
         glow: THREE_NS.Mesh | null;
         glowOpacity: number;
+        hit: THREE_NS.Mesh | null;
       }[] = [];
       const pickables: THREE_NS.Object3D[] = [];
       let yaw = 0.62;
@@ -145,8 +147,63 @@ export function ForceScene({
         camera.lookAt(target);
       };
 
+      const scratch = new THREE.Vector3();
       const publishDist = () => {
         host.dataset.dist = String(Math.round(dist));
+      };
+
+      const relBox = (selector: string) => {
+        const node = document.querySelector(selector);
+        if (!node) return null;
+        const rect = node.getBoundingClientRect();
+        if (rect.width < 2 || rect.height < 2) return null;
+        const hostBox = host.getBoundingClientRect();
+        return {
+          left: rect.left - hostBox.left,
+          top: rect.top - hostBox.top,
+          right: rect.right - hostBox.left,
+          bottom: rect.bottom - hostBox.top,
+        };
+      };
+
+      // Open graph area: right of the left panel, left of the orb / filter / inspector, above the ask bar.
+      const safeRect = () => {
+        const width = Math.max(host.clientWidth, 1);
+        const height = Math.max(host.clientHeight, 1);
+        const margin = 16;
+        let left = margin;
+        let top = 40;
+        let right = width - margin;
+        let bottom = height - margin;
+        const leftPanel = relBox("[data-region='left']");
+        if (leftPanel) left = Math.max(left, leftPanel.right + margin);
+        const header = relBox("[data-region='header']");
+        if (header) top = Math.max(top, header.bottom + 12);
+        const tools = relBox(".graph-tools");
+        if (tools) top = Math.max(top, tools.bottom + 8);
+        const crumb = relBox(".graph-crumb");
+        if (crumb) top = Math.max(top, crumb.bottom + 8);
+        const filter = relBox("[data-region='filter']");
+        if (filter) right = Math.min(right, filter.left - margin);
+        const inspector = relBox(".graph-inspector");
+        if (inspector) right = Math.min(right, inspector.left - margin);
+        const orb = relBox(".orb-dial[data-place='dock']");
+        if (orb) right = Math.min(right, orb.left - margin);
+        const chat = relBox("[data-region='chat']");
+        if (chat) right = Math.min(right, chat.left - 12);
+        const ask = relBox("[data-region='ask']");
+        if (ask) bottom = Math.min(bottom, ask.top - margin);
+        if (right - left < 80 || bottom - top < 80) {
+          return {
+            left: width * 0.22,
+            top: height * 0.1,
+            right: width * 0.7,
+            bottom: height * 0.78,
+            width,
+            height,
+          };
+        }
+        return { left, top, right, bottom, width, height };
       };
 
       const framePoints = (list: LayoutPoint[], rememberOverview = false) => {
@@ -166,89 +223,31 @@ export function ForceScene({
           maxZ = Math.max(maxZ, point.z);
         }
         const { width, height } = size();
-        const padTop = 96;
-        const padLeft = 380;
-        const padRight = stateRef.current.padRight || 260;
-        const padBottom = 188;
-        const availW = Math.max(220, width - padLeft - padRight);
-        const availH = Math.max(220, height - padTop - padBottom);
-        const framing = stateRef.current;
-        const rootPoint = framing.clusterId
-          ? undefined
-          : list.find((point) => framing.nodes.some((node) => node.id === point.id && node.root));
-        const midX = rootPoint ? rootPoint.x : (minX + maxX) / 2;
-        const midY = rootPoint ? rootPoint.y : (minY + maxY) / 2;
-        const midZ = rootPoint ? rootPoint.z : (minZ + maxZ) / 2;
+        const safe = safeRect();
+        const midX = (minX + maxX) / 2;
+        const midY = (minY + maxY) / 2;
+        const midZ = (minZ + maxZ) / 2;
+        let radius = 12;
+        for (const point of list) {
+          const visual = (meshes.find((entry) => entry.id === point.id)?.baseScale ?? 5) * 1.45;
+          radius = Math.max(radius, Math.hypot(point.x - midX, point.y - midY, point.z - midZ) + visual);
+        }
         target.set(midX, midY, midZ);
-        const fov = (camera.fov * Math.PI) / 180;
         yaw = 0.62;
         pitch = 0.38;
-        const unit = (v: { x: number; y: number; z: number }) => {
-          const length = Math.hypot(v.x, v.y, v.z) || 1;
-          return { x: v.x / length, y: v.y / length, z: v.z / length };
-        };
-        const zAxis = unit({
-          x: Math.sin(yaw) * Math.cos(pitch),
-          y: Math.sin(pitch),
-          z: Math.cos(yaw) * Math.cos(pitch),
-        });
-        const xAxis = unit({ x: zAxis.z, y: 0, z: -zAxis.x });
-        const yAxis = unit({
-          x: zAxis.y * xAxis.z - zAxis.z * xAxis.y,
-          y: zAxis.z * xAxis.x - zAxis.x * xAxis.z,
-          z: zAxis.x * xAxis.y - zAxis.y * xAxis.x,
-        });
+        const safeCx = (safe.left + safe.right) / 2;
+        const safeCy = (safe.top + safe.bottom) / 2;
+        camera.setViewOffset(width, height, width / 2 - safeCx, height / 2 - safeCy, width, height);
+        const fov = (camera.fov * Math.PI) / 180;
         const vTan = Math.tan(fov / 2);
         const hTan = vTan * camera.aspect;
-        const edge = 80;
-        let distNeeded = 160;
-        for (const point of list) {
-          const relX = point.x - midX;
-          const relY = point.y - midY;
-          const relZ = point.z - midZ;
-          const camX = relX * xAxis.x + relY * xAxis.y + relZ * xAxis.z;
-          const camY = relX * yAxis.x + relY * yAxis.y + relZ * yAxis.z;
-          const camZ = relX * zAxis.x + relY * zAxis.y + relZ * zAxis.z;
-          const need = Math.max((Math.abs(camX) + edge) / hTan, (Math.abs(camY) + edge) / vTan) + camZ;
-          if (need > distNeeded) distNeeded = need;
-        }
-        const spanAt = (cameraDist: number) => {
-          let loX = Infinity;
-          let hiX = -Infinity;
-          let loY = Infinity;
-          let hiY = -Infinity;
-          for (const point of list) {
-            const relX = point.x - midX;
-            const relY = point.y - midY;
-            const relZ = point.z - midZ;
-            const camX = relX * xAxis.x + relY * xAxis.y + relZ * xAxis.z;
-            const camY = relX * yAxis.x + relY * yAxis.y + relZ * yAxis.z;
-            const camZ = relX * zAxis.x + relY * zAxis.y + relZ * zAxis.z;
-            const depth = Math.max(40, cameraDist - camZ);
-            loX = Math.min(loX, camX / (depth * hTan));
-            hiX = Math.max(hiX, camX / (depth * hTan));
-            loY = Math.min(loY, camY / (depth * vTan));
-            hiY = Math.max(hiY, camY / (depth * vTan));
-          }
-          return { w: (hiX - loX) * width * 0.5, h: (hiY - loY) * height * 0.5 };
-        };
-        dist = Math.max(distNeeded, 160);
-        const goalW = availW * 0.96;
-        const goalH = availH * 0.96;
-        for (let pass = 0; pass < 4; pass += 1) {
-          const span = spanAt(dist);
-          const scale = Math.max(span.w / goalW, span.h / goalH);
-          if (!Number.isFinite(scale) || scale === 0) break;
-          dist *= scale;
-        }
+        const roomX = Math.max(48, Math.min(safeCx - safe.left, safe.right - safeCx) - 28);
+        const roomY = Math.max(48, Math.min(safeCy - safe.top, safe.bottom - safeCy) - 28);
+        const fitX = radius + (radius * (width / 2)) / (roomX * hTan);
+        const fitY = radius + (radius * (height / 2)) / (roomY * vTan);
+        dist = Math.max(fitX, fitY, 160) * 1.04;
         if (rememberOverview) overviewDist = dist;
         publishDist();
-        const ndcX = ((padLeft + availW / 2) / width) * 2 - 1;
-        const ndcY = -(((padTop + availH / 2) / height) * 2 - 1);
-        const shiftX = ndcX * dist * Math.tan(fov / 2) * camera.aspect;
-        const shiftY = ndcY * dist * Math.tan(fov / 2);
-        target.x -= shiftX;
-        target.y -= shiftY;
         placeCamera();
       };
 
@@ -304,11 +303,10 @@ export function ForceScene({
         depthWrite: false,
       });
       const glowMat = new THREE.MeshBasicMaterial({
-        color: 0xc8f6ff,
+        color: 0x9adfff,
         transparent: true,
-        opacity: 0.2,
+        opacity: 0.14,
         depthWrite: false,
-        blending: THREE.AdditiveBlending,
       });
       const hitMat = new THREE.MeshBasicMaterial({
         transparent: true,
@@ -386,6 +384,50 @@ export function ForceScene({
         }
         applyHover();
         placeCamera();
+        const safe = safeRect();
+        const viewW = host.clientWidth || 1;
+        const viewH = host.clientHeight || 1;
+        const hostBox = host.getBoundingClientRect();
+        const fov = (camera.fov * Math.PI) / 180;
+        const boxes: { id: string; x: number; y: number; w: number; h: number }[] = [];
+        for (const entry of meshes) {
+          if (entry.glow) entry.glow.scale.setScalar(entry.mesh.scale.x * 1.4);
+          scratch.copy(entry.mesh.position).project(camera);
+          const sx = (scratch.x * 0.5 + 0.5) * viewW;
+          const sy = (-scratch.y * 0.5 + 0.5) * viewH;
+          const distance = Math.max(camera.position.distanceTo(entry.mesh.position), 1);
+          const nodePx = (entry.mesh.scale.x * viewH) / (2 * Math.tan(fov / 2) * distance);
+          const inside =
+            scratch.z >= -1 &&
+            scratch.z <= 1 &&
+            Number.isFinite(nodePx) &&
+            sx - nodePx >= safe.left - 1 &&
+            sx + nodePx <= safe.right + 1 &&
+            sy - nodePx >= safe.top - 1 &&
+            sy + nodePx <= safe.bottom + 1;
+          entry.mesh.visible = inside;
+          if (entry.glow) entry.glow.visible = inside;
+          if (entry.hit) entry.hit.visible = false;
+          if (!inside) continue;
+          boxes.push({
+            id: entry.id,
+            x: Math.round(hostBox.left + sx - nodePx),
+            y: Math.round(hostBox.top + sy - nodePx),
+            w: Math.max(1, Math.round(nodePx * 2)),
+            h: Math.max(1, Math.round(nodePx * 2)),
+          });
+        }
+        host.dataset.nodes = JSON.stringify(boxes);
+        const pixel = renderer.getPixelRatio();
+        renderer.setScissorTest(false);
+        renderer.clear();
+        renderer.setScissorTest(true);
+        renderer.setScissor(
+          Math.max(0, Math.floor(safe.left * pixel)),
+          Math.max(0, Math.floor((viewH - safe.bottom) * pixel)),
+          Math.max(1, Math.floor((safe.right - safe.left) * pixel)),
+          Math.max(1, Math.floor((safe.bottom - safe.top) * pixel)),
+        );
         renderer.render(scene, camera);
         paintLabels();
       };
@@ -436,22 +478,16 @@ export function ForceScene({
         }
         const rootId = current.nodes.find((node) => node.root)?.id ?? "";
         const hot = new Set<string>();
-        if (current.clusterId) {
+        if (current.route && current.route.length > 1) {
+          for (const id of current.route) hot.add(id);
+        } else if (current.clusterId) {
           hot.add(current.clusterId);
           for (const node of current.nodes) {
             if (node.hubs.includes(current.clusterId)) hot.add(node.id);
           }
-        }
-        if (current.selectedId && !current.clusterId) {
-          for (const id of neighborhood(current.selectedId, current.hopDepth)) hot.add(id);
         } else if (current.selectedId) {
-          hot.add(current.selectedId);
-          for (const edge of current.edges) {
-            if (edge.from === current.selectedId) hot.add(edge.to);
-            if (edge.to === current.selectedId) hot.add(edge.from);
-          }
+          for (const id of neighborhood(current.selectedId, current.hopDepth)) hot.add(id);
         }
-        if (current.route) for (const id of current.route) hot.add(id);
         const dim = hot.size > 0;
         let nearZ = Infinity;
         let farZ = -Infinity;
@@ -514,7 +550,7 @@ export function ForceScene({
           const glowMaterial = glowMat.clone();
           const glow = new THREE.Mesh(sphere, glowMaterial);
           glow.position.copy(mesh.position);
-          glow.scale.setScalar(mesh.scale.x * 2.35);
+          glow.scale.setScalar(mesh.scale.x * 1.4);
           glow.userData.kind = "glow";
           glow.userData.id = node.id;
           const hit = new THREE.Mesh(sphere, hitMat);
@@ -526,7 +562,7 @@ export function ForceScene({
           group.add(hit);
           group.add(mesh);
           pickables.push(hit, glow, mesh);
-          meshes.push({ mesh, id: node.id, baseScale: mesh.scale.x, baseDim, glow, glowOpacity: 0.2 });
+          meshes.push({ mesh, id: node.id, baseScale: mesh.scale.x, baseDim, glow, glowOpacity: 0.14, hit });
           if (node.id === current.selectedId) {
             const distance = Math.max(camera.position.distanceTo(mesh.position), 1);
             const worldPerPx =
@@ -741,6 +777,7 @@ export function ForceScene({
           hub: boolean;
         }[] = [];
         for (const entry of meshes) {
+          if (!entry.mesh.visible) continue;
           const node = current.nodes.find((item) => item.id === entry.id);
           if (!node || !current.visibleIds.has(node.id)) continue;
           const hub = node.kind === "folder" || node.nodeType === "hub" || node.root;
@@ -939,9 +976,10 @@ export function ForceScene({
       host.addEventListener("wheel", onWheel, { passive: false });
       renderer.domElement.addEventListener("contextmenu", onMenu);
       host.addEventListener("keydown", onKey);
+      let refit = () => {};
       const observer = new ResizeObserver(() => {
         size();
-        requestDraw();
+        refit();
       });
       observer.observe(host);
       const stop = () => {
@@ -993,6 +1031,7 @@ export function ForceScene({
         const chosen = current.points.filter((point) => current.visibleIds.has(point.id) && (!ids || ids.has(point.id)));
         framePoints(chosen.length > 0 ? chosen : current.points, !ids);
       };
+      refit = fit;
       apiRef.current = {
         fit,
         rebuild,

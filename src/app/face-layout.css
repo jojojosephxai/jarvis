@@ -54,7 +54,7 @@
 
 .face-header {
   position: absolute;
-  z-index: 8;
+  z-index: 11;
   top: 0;
   right: 0;
   left: 0;
@@ -481,7 +481,10 @@
 }
 
 .face-stage:has(.graph-stage.has-note) .orb-dial[data-place="dock"] {
-  left: calc(100% - 440px);
+  top: calc(46vh - 48px);
+  left: calc(100% - 468px);
+  width: 156px;
+  transition: none;
 }
 
 .face-column .graph-inspector.is-docked {
@@ -552,8 +555,17 @@
   color: #6fa9bf;
 }
 
+.stage-orb {
+  z-index: 9;
+}
+
+.graph-canvas {
+  z-index: 1;
+}
+
 .force-scene {
   position: absolute;
+  z-index: 1;
   inset: 0;
   transition: opacity 700ms cubic-bezier(0.22, 1, 0.36, 1);
 }
@@ -676,7 +688,7 @@
 
 .face-dock {
   position: absolute;
-  z-index: 7;
+  z-index: 10;
   right: 16px;
   bottom: 16px;
   left: 264px;
@@ -931,7 +943,7 @@
 
 .face-task {
   position: absolute;
-  z-index: 7;
+  z-index: 12;
   top: calc(46vh - 12px);
   right: 280px;
   width: 200px;
@@ -1138,7 +1150,9 @@
   }
 
   .face-stage:has(.graph-stage.has-note) .orb-dial[data-place="dock"] {
+    top: calc(46vh - 76px);
     left: calc(100% - 126px);
+    width: 220px;
   }
 }
 

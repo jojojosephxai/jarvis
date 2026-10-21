@@ -59,6 +59,42 @@ function panelOverlaps() {
   return missing.concat(hits);
 }
 
+function nodeOverlaps() {
+  const raw = document.querySelector(".force-scene")?.getAttribute("data-nodes") || "";
+  if (!raw) return ["graph nodes were not measured"];
+  let nodes = [];
+  try {
+    nodes = JSON.parse(raw);
+  } catch {
+    return ["graph nodes were not readable"];
+  }
+  if (!Array.isArray(nodes) || nodes.length === 0) return ["graph nodes were empty"];
+  const zones = [
+    ["header", "[data-region='header']"],
+    ["left", "[data-region='left']"],
+    ["filter", "[data-region='filter']"],
+    ["inspector", ".graph-inspector"],
+    ["orb", ".orb-dial"],
+    ["chat", "[data-region='chat']"],
+    ["ask", "[data-region='ask']"],
+    ["task", ".face-task"],
+  ];
+  const hits = [];
+  for (const node of nodes) {
+    if (!node || node.w < 1 || node.h < 1) continue;
+    for (const [name, selector] of zones) {
+      const el = document.querySelector(selector);
+      if (!el) continue;
+      const rect = el.getBoundingClientRect();
+      if (rect.width < 2 || rect.height < 2) continue;
+      const overlapX = Math.min(node.x + node.w, rect.right) - Math.max(node.x, rect.left);
+      const overlapY = Math.min(node.y + node.h, rect.bottom) - Math.max(node.y, rect.top);
+      if (overlapX > 1 && overlapY > 1) hits.push(`${node.id} overlaps ${name}`);
+    }
+  }
+  return hits.slice(0, 12);
+}
+
 async function openFace(page, path) {
   await page.goto(path);
   await page.waitForFunction(() => document.querySelector(".face")?.getAttribute("data-intro") === "out");
@@ -97,6 +133,23 @@ const sizes = [
   { width: 1440, height: 900 },
   { width: 1920, height: 1080 },
 ];
+
+for (const size of sizes) {
+  test(`graph nodes stay in the free area at ${size.width} idle`, async ({ page }) => {
+    await page.setViewportSize(size);
+    await openFace(page, "/");
+    await page.waitForTimeout(1200);
+    await expect.poll(async () => page.evaluate(nodeOverlaps), { timeout: 15000 }).toEqual([]);
+  });
+
+  test(`graph nodes stay in the free area at ${size.width} focus`, async ({ page }) => {
+    await page.setViewportSize(size);
+    await openFace(page, "/?hub=School");
+    await page.waitForSelector(".graph-inspector");
+    await page.waitForTimeout(800);
+    await expect.poll(async () => page.evaluate(nodeOverlaps), { timeout: 15000 }).toEqual([]);
+  });
+}
 
 for (const size of sizes) {
   test(`panels stay apart at ${size.width}x${size.height}`, async ({ page }) => {
@@ -225,6 +278,10 @@ test("screenshots of the face", async ({ page }) => {
     if (String(path).includes("working")) await page.waitForSelector(".face-task");
     if (String(path).includes("shot=depth")) await page.waitForTimeout(1700);
     await expect.poll(async () => page.evaluate(panelOverlaps), { timeout: 15000 }).toEqual([]);
+    const pathText = String(path);
+    if (!pathText.includes("speaking") && !pathText.includes("working") && !pathText.includes("shot=depth")) {
+      await expect.poll(async () => page.evaluate(nodeOverlaps), { timeout: 15000 }).toEqual([]);
+    }
     await page.screenshot({ path: `${dir}/${name}.png`, fullPage: false });
   }
   const views = [
@@ -239,11 +296,13 @@ test("screenshots of the face", async ({ page }) => {
     await page.waitForSelector(".graph-inspector");
     await expect(page.locator(".graph-float-label[data-hub='0']").first()).toBeVisible();
     await expect.poll(async () => page.evaluate(panelOverlaps), { timeout: 15000 }).toEqual([]);
+    await expect.poll(async () => page.evaluate(nodeOverlaps), { timeout: 15000 }).toEqual([]);
     await page.screenshot({ path: `${dir}/${size.width}-zoomed.png`, fullPage: false });
     await page.screenshot({ path: `${dir}/${size.width}-clicked.png`, fullPage: false });
     await page.keyboard.press("Escape");
     await page.waitForSelector(".face-filter");
     expect(await hoverNode(page)).toBe(true);
+    await expect.poll(async () => page.evaluate(nodeOverlaps), { timeout: 15000 }).toEqual([]);
     await page.screenshot({ path: `${dir}/${size.width}-hover.png`, fullPage: false });
   }
 });
