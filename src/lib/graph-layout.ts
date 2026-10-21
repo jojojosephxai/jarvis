@@ -293,12 +293,42 @@ export function pickLabels(candidates: LabelCandidate[]): PlacedLabel[] {
   for (const label of ordered) {
     const parked = label.protected ? nudgeLabel(label, placed) : label;
     const hits = placed.some((other) => labelBoxesOverlap(parked, other));
-    if (hits && label.priority < 100) continue;
+    if (hits && label.priority < 90) continue;
     const opacity = parked.protected ? 1 : Math.max(0.86, Math.min(1, 0.86 + parked.depth * 0.14));
     placed.push(parked);
     out.push({ id: parked.id, opacity, x: parked.x, y: parked.y });
   }
   return out;
+}
+
+export type ScreenLabel = {
+  id: string;
+  priority: number;
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+};
+
+/** Drop the lower label when two on-screen boxes overlap. Focus and hover (priority >= 90) stay. */
+export function dropOverlappingLabels<T extends ScreenLabel>(labels: T[]): T[] {
+  const ordered = [...labels].sort((a, b) => {
+    if (b.priority !== a.priority) return b.priority - a.priority;
+    if (a.id < b.id) return -1;
+    if (a.id > b.id) return 1;
+    return 0;
+  });
+  const kept: T[] = [];
+  for (const label of ordered) {
+    const hits = kept.some((other) => {
+      const overlapX = Math.min(label.right, other.right) - Math.max(label.left, other.left);
+      const overlapY = Math.min(label.bottom, other.bottom) - Math.max(label.top, other.top);
+      return overlapX > 1 && overlapY > 1;
+    });
+    if (hits && label.priority < 90) continue;
+    kept.push(label);
+  }
+  return kept;
 }
 
 function nudgeLabel(label: LabelCandidate, placed: LabelCandidate[]): LabelCandidate {

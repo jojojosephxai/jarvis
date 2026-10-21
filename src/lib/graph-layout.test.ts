@@ -5,6 +5,7 @@ import {
   easeFrame,
   frameAroundPoints,
   grabDelta,
+  dropOverlappingLabels,
   labelEligible,
   layoutGalaxy,
   meanDistance,
@@ -169,6 +170,42 @@ describe("graph labels", () => {
     const schedule = placed.find((label) => label.id === "schedule");
     assert.ok(journal && schedule);
     assert.equal(Math.abs(journal.y - schedule.y) >= 30, true);
+  });
+
+  it("hides a lower label that sits on the focused label", () => {
+    const placed = pickLabels([
+      { id: "school", x: 100, y: 100, w: 70, h: 20, depth: 1, priority: 100, protected: true },
+      { id: "rules", x: 108, y: 100, w: 160, h: 20, depth: 1, priority: 55, protected: false },
+      { id: "goals", x: 96, y: 102, w: 110, h: 20, depth: 1, priority: 40, protected: false },
+    ]);
+    assert.deepEqual(
+      placed.map((label) => label.id),
+      ["school"],
+    );
+  });
+
+  it("keeps the hovered label when it overlaps the focus", () => {
+    const placed = pickLabels([
+      { id: "school", x: 0, y: 0, w: 80, h: 20, depth: 1, priority: 100, protected: true },
+      { id: "hover", x: 6, y: 0, w: 80, h: 20, depth: 1, priority: 90, protected: true },
+    ]);
+    assert.deepEqual(
+      placed.map((label) => label.id).sort(),
+      ["hover", "school"],
+    );
+  });
+
+  it("drops the lower on-screen label when the boxes overlap", () => {
+    const kept = dropOverlappingLabels([
+      { id: "school", priority: 100, left: 400, top: 300, right: 470, bottom: 320 },
+      { id: "rules", priority: 55, left: 430, top: 304, right: 590, bottom: 324 },
+      { id: "goals", priority: 40, left: 410, top: 308, right: 520, bottom: 328 },
+      { id: "bell", priority: 55, left: 700, top: 400, right: 820, bottom: 420 },
+    ]);
+    assert.deepEqual(
+      kept.map((label) => label.id).sort(),
+      ["bell", "school"],
+    );
   });
 
   it("keeps overlapping hubs", () => {

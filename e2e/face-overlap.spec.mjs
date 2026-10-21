@@ -114,6 +114,28 @@ function focusNodeRadii() {
   return hits.slice(0, 8);
 }
 
+function labelOverlaps() {
+  const labels = [...document.querySelectorAll(".graph-float-label")].filter((el) => {
+    const style = getComputedStyle(el);
+    const opacity = Number(style.opacity);
+    const rect = el.getBoundingClientRect();
+    return style.visibility !== "hidden" && opacity >= 0.05 && rect.width > 2 && rect.height > 2;
+  });
+  const hits = [];
+  for (let i = 0; i < labels.length; i += 1) {
+    const a = labels[i].getBoundingClientRect();
+    for (let j = i + 1; j < labels.length; j += 1) {
+      const b = labels[j].getBoundingClientRect();
+      const overlapX = Math.min(a.right, b.right) - Math.max(a.left, b.left);
+      const overlapY = Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top);
+      if (overlapX > 1 && overlapY > 1) {
+        hits.push(`${(labels[i].textContent || "").trim()} overlaps ${(labels[j].textContent || "").trim()}`);
+      }
+    }
+  }
+  return hits.slice(0, 8);
+}
+
 async function openFace(page, path) {
   await page.goto(path);
   await page.waitForFunction(() => document.querySelector(".face")?.getAttribute("data-intro") === "out");
@@ -152,6 +174,23 @@ const sizes = [
   { width: 1440, height: 900 },
   { width: 1920, height: 1080 },
 ];
+
+for (const size of sizes) {
+  test(`graph labels stay apart at ${size.width} idle`, async ({ page }) => {
+    await page.setViewportSize(size);
+    await openFace(page, "/");
+    await page.waitForTimeout(400);
+    await expect.poll(async () => page.evaluate(labelOverlaps), { timeout: 15000 }).toEqual([]);
+  });
+
+  test(`graph labels stay apart at ${size.width} focus`, async ({ page }) => {
+    await page.setViewportSize(size);
+    await openFace(page, "/?hub=School");
+    await page.waitForSelector(".graph-inspector");
+    await page.waitForTimeout(400);
+    await expect.poll(async () => page.evaluate(labelOverlaps), { timeout: 15000 }).toEqual([]);
+  });
+}
 
 for (const size of sizes) {
   test(`graph nodes stay in the free area at ${size.width} idle`, async ({ page }) => {

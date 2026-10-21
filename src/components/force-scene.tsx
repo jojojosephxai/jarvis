@@ -3,7 +3,7 @@
 import { useEffect, useRef } from "react";
 import type * as THREE_NS from "three";
 
-import { labelRank, pickLabels, smallLabelFade, type LayoutPoint } from "@/lib/graph-layout";
+import { dropOverlappingLabels, labelRank, pickLabels, smallLabelFade, type LayoutPoint } from "@/lib/graph-layout";
 import { nodeColor, nodeDiameterPx, type GraphEdge, type GraphNode } from "@/lib/note-graph";
 
 type ZoomKind = "fit" | "in" | "out";
@@ -932,10 +932,30 @@ export function ForceScene({
           }
           el.dataset.nodeId = source.id;
           el.dataset.hub = source.hub ? "1" : "0";
+          el.dataset.priority = String(source.priority);
           el.textContent = source.title;
           el.style.left = `${label.x - source.w / 2}px`;
           el.style.top = `${label.y - source.h / 2}px`;
           el.style.opacity = String(Math.max(0, Math.min(1, label.opacity * source.zoomOpacity)));
+        }
+        const measured = [...labelEls.entries()]
+          .filter(([id]) => keep.has(id))
+          .map(([id, el]) => {
+            const rect = el.getBoundingClientRect();
+            return {
+              id,
+              priority: Number(el.dataset.priority || 0),
+              left: rect.left,
+              top: rect.top,
+              right: rect.right,
+              bottom: rect.bottom,
+            };
+          });
+        const shown = new Set(dropOverlappingLabels(measured).map((label) => label.id));
+        for (const [id, el] of labelEls) {
+          if (!keep.has(id) || shown.has(id)) continue;
+          el.remove();
+          labelEls.delete(id);
         }
         for (const [id, el] of labelEls) {
           if (keep.has(id)) continue;

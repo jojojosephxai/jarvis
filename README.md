@@ -43,7 +43,7 @@ More questions:
 
 A refresh clears the talk lines. They stay on this screen only.
 
-On a phone using the same Wi-Fi as the computer, the server is open on port **4721**. On Windows, run `ipconfig` in a terminal and look for the IPv4 address, then open `http://that-address:4721` in Safari. If Windows asks about a firewall, allow Node on private networks.
+`npm run dev` listens only on this computer, at [http://127.0.0.1:4721](http://127.0.0.1:4721). It is not open to other devices on the Wi-Fi.
 
 ## Hands
 
