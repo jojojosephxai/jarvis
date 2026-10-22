@@ -213,8 +213,10 @@ for (const width of [1024, 1440]) {
     await expect(page.locator("#graph-search")).toBeHidden();
     await expect.poll(() => page.evaluate(homeGeometry)).toEqual([]);
     if (width === 1024) await screenshot(page, "1024x576-rail-collapsed");
-    const after = await page.locator(".orb-dial-ring").boundingBox();
-    expect(after.x + after.width / 2).toBeLessThan(before.x + before.width / 2 - 50);
+    await expect.poll(async () => {
+      const after = await page.locator(".orb-dial-ring").boundingBox();
+      return after.x + after.width / 2;
+    }).toBeLessThan(before.x + before.width / 2 - 50);
     await page.reload();
     await expect(page.getByRole("button", { name: "Expand hubs", exact: true })).toBeVisible();
     await page.getByRole("button", { name: "Expand hubs", exact: true }).click();
@@ -348,7 +350,7 @@ for (const failSecond of [false, true]) {
   await expect(page.locator(".face-task")).toHaveCount(0);
   await expect(page.locator(".chat-reply")).toHaveText(chunks.join(" "));
   await expect(page.locator(".chat-log")).not.toContainText("ms to first");
-  await expect(page.locator(".chat-timing")).toHaveText(/\d+\.\ds to first word/);
+  await expect(page.locator(".chat-timing")).toHaveText(/grok-4\.7 · \d+\.\ds/);
   expect(await page.locator(".chat-timing").evaluate((el) => getComputedStyle(el).color)).toBe("rgb(129, 146, 158)");
 });
 

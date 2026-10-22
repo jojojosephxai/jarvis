@@ -21,7 +21,7 @@ import {
 import { decideFaceMode } from "@/lib/view-intent";
 import { butlerSpeech, MIC_BLOCKED_NOTICE } from "@/lib/voice/policy";
 import { createSentenceQueue, unspokenTail } from "@/lib/voice/sentence-queue";
-import { prepareSpeech, type PreparedSpeech } from "@/lib/voice/session";
+import { prepareSpeech, ChatSession, readFastVoicePreference, FAST_VOICE_STORAGE_KEY, type PreparedSpeech } from "@/lib/voice/session";
 import { stripReplyTiming } from "@/lib/reply-text";
 
 const BOOT_KEY = "jarvis-boot";
@@ -135,13 +135,18 @@ function inTimeOrder(items: LogItem[]): LogItem[] {
     .map((row) => row.item);
 }
 
-export function Face() {
+export function Face({ realtimeAllowed = false }: { realtimeAllowed?: boolean }) {
   const [graphOpen, setGraphOpen] = useState(false);
   const [railCollapsed, setRailCollapsed] = useState(false);
   const replySpeaking = useRef(false);
   const [items, setItems] = useState<LogItem[]>([]);
   const [draft, setDraft] = useState("");
   const [spokenReplies, setSpokenReplies] = useState(true);
+  const [realtimeListening, setRealtimeListening] = useState(false);
+  const [fastVoice, setFastVoice] = useState(false);
+  const [voiceMinutes, setVoiceMinutes] = useState(0);
+  const [fastVoiceLog, setFastVoiceLog] = useState("");
+  const chatSession = useRef<ChatSession | null>(null);
   const [showTiming, setShowTiming] = useState(true);
   const [micDismissed, setMicDismissed] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -208,7 +213,7 @@ export function Face() {
   const liveOrb = resolveOrbMode({
     speaking,
     working: working && Boolean(skill),
-    listening: voice.listening,
+    listening: voice.listening || realtimeListening,
     thinking: pending && !speaking,
     ack: ackOn,
   });
@@ -249,6 +254,7 @@ export function Face() {
         setSidebarCollapsed(localStorage.getItem("jarvis-sidebar-collapsed") === "true");
         setRailCollapsed(localStorage.getItem("jarvis-rail-collapsed") === "true");
         setSpokenReplies(localStorage.getItem("jarvis-spoken-replies") !== "false");
+        setFastVoice(readFastVoicePreference(localStorage));
         setShowTiming(localStorage.getItem("jarvis-show-timing") !== "false");
         setMicDismissed(localStorage.getItem("jarvis-mic-blocked-dismissed") === "true");
       } catch {}
@@ -430,6 +436,8 @@ export function Face() {
   function stopWork() {
     jobGen.current += 1;
     job?.abort.abort();
+    chatSession.current?.cancel();
+    setRealtimeListening(false);
     replySpeaking.current = false;
     voice.stop();
     finishJob();
@@ -460,9 +468,92 @@ export function Face() {
     setCue({ token: cueToken.current, ...next });
   }
 
+  function applyGraph(payload: ChatResponse) {
+      const graph = payload.graph;
+      if (graph?.action === "layout") {
+        setGraphOpen(graph.value === "graph" || graph.value === "side");
+        if (graph.value === "side") setSidebarCollapsed(true);
+        if (graph.value === "center" || graph.value === "home") setSidebarCollapsed(false);
+      }
+      if (graph && (graph.action === "filter" || graph.action === "search" || graph.action === "focus" || graph.action === "clear")) {
+        setGraphOpen(true);
+        setSkill("graph");
+        if (graph.action === "clear") pushCue({ clear: true });
+        else if (graph.action === "filter") pushCue({ filterHub: graph.value });
+        else if (graph.action === "search") pushCue({ search: graph.value });
+        else if (["School", "Swim", "Jarvis", "Health", "People", "Journal", "Projects", "Me"].includes(graph.value)) {
+          pushCue({ focusHub: graph.value });
+        } else pushCue({ focusQuery: graph.value });
+      }
+  }
+
+  function session() {
+    if (!chatSession.current) chatSession.current = new ChatSession({
+      realtimeAllowed, onFallback: setFastVoiceLog, onMinutes: setVoiceMinutes, onListening: setRealtimeListening,
+      onSpeaking: (active, level) => {
+        setSpeaking(active);
+        speakingRef.current = active;
+        if (level !== undefined) voice.levelRef.current = level;
+      },
+    });
+    chatSession.current.setEnabled(fastVoice && spokenReplies);
+    return chatSession.current;
+  }
+  useEffect(() => {
+    const refresh = () => chatSession.current?.updateHistory();
+    window.addEventListener("jarvis-board-changed", refresh);
+    return () => { window.removeEventListener("jarvis-board-changed", refresh); chatSession.current?.close(); };
+  }, []);
+
+  async function pressMicrophone() {
+    if (realtimeListening) {
+      chatSession.current?.stopMicrophone(); setRealtimeListening(false); return;
+    }
+    if (fastVoice && realtimeAllowed && voice.micPermission === "granted") {
+      let answerId = "";
+      let micJob: { id: number; abort: AbortController } | null = null;
+      const update = (text: string, sources?: string[]) => {
+        if (!answerId || !micJob || micJob.id !== jobGen.current) return;
+        setLiveLine(text);
+        setItems(current => current.map(item => item.id === answerId && item.kind === "jarvis" ? { ...item, text, sources: sources ?? item.sources } : item));
+      };
+      const messages = items.map((item): ChatMessageInput => ({ role: item.kind === "you" ? "user" : "assistant", content: item.kind === "hand" ? item.reply : item.text })).slice(-8);
+      const started = await session().startMicrophone(messages, {
+        sentence: () => {}, transcript: text => update(text), brain: response => update(response.reply, response.sources),
+        thinking: active => { setWorking(false); if (active) setSkill(null); },
+      }, text => {
+        answerId = makeId("ans");
+        micJob = beginWork(text, "Thinking");
+        setDraft(""); setTab("chat");
+        const at = new Date().toISOString();
+        setItems(current => [...current,
+          { kind: "you", id: makeId("you"), text, at } as LogItem,
+          { kind: "jarvis", id: answerId, text: "", at, model: "voice" } as LogItem,
+        ].slice(-40));
+      }, (payload, standard) => {
+        if (!micJob || micJob.id !== jobGen.current) return;
+        applyGraph(payload);
+        if (isHandsTurn(payload)) {
+          const hand: LogItem = { kind: "hand", id: answerId, at: new Date().toISOString(), reply: payload.reply, plan: payload.plan, receipts: payload.receipts, model: "voice" };
+          setItems(current => current.map(item => item.id === answerId ? hand : item));
+          if (payload.plan?.state === "waiting") setTab("tasks");
+        } else update(payload.reply, payload.sources);
+        if (standard) {setRealtimeListening(false);void speakThenFinish(micJob.id, micJob.abort, payload.reply);}
+        else finishJob(micJob.id);
+      });
+      setRealtimeListening(started);
+      if (started) return;
+    }
+    voice.pressMic((text, isFinal) => { if (isFinal) void send(text); else setDraft(text); });
+  }
+
   async function send(text: string) {
     const trimmed = text.trim();
-    if (!trimmed || pendingRef.current) return;
+    if (!trimmed) return;
+    if (pendingRef.current) {
+      if (!fastVoice || !realtimeAllowed) return;
+      stopWork();
+    }
     userSpoke.current = true;
     replySpeaking.current = false;
     voice.stop();
@@ -501,6 +592,7 @@ export function Face() {
     const skillName = graphAsk ? "graph" : mentionsCalendar(trimmed) ? "calendar" : "brain";
     const { abort, id } = beginWork(trimmed, graphAsk ? "Graph" : "Thinking", skillName);
     let spoken = "";
+    let realtimeReply = false;
     const askedAt = performance.now();
     let tokenAt = 0;
     let timed = false;
@@ -575,6 +667,7 @@ export function Face() {
     const askedCalendar = mentionsCalendar(trimmed);
     let streamed = "";
     const pushSentence = (text: string) => {
+      if (id !== jobGen.current || abort.signal.aborted) return;
       const clean = dropUnaskedCalendar(stripReplyTiming(text).trim(), askedCalendar);
       if (!clean) return;
       if (!tokenAt) tokenAt = performance.now();
@@ -583,48 +676,31 @@ export function Face() {
       queue.enqueue(clean);
     };
     try {
-      const response = await fetch("/api/chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "x-jarvis-turn": answerId },
-        body: JSON.stringify({ messages: [
-          ...items.map((item): ChatMessageInput => ({ role: item.kind === "you" ? "user" : "assistant", content: item.kind === "hand" ? item.reply : item.text })),
-          { role: "user", content: trimmed },
-        ].slice(-8), stream: true }),
-        signal: abort.signal,
-      });
-      const contentType = response.headers.get("content-type") ?? "";
-      let payload: ChatResponse | null = null;
-      if (response.ok && contentType.includes("ndjson") && response.body) {
-        for await (const event of readNdjson(response.body)) {
-          if (isSentenceEvent(event)) pushSentence(event.text);
-          else if (isDoneEvent(event)) payload = event.response;
-        }
-      } else if (response.ok) {
-        const json: unknown = await response.json();
-        if (isChatResponse(json)) payload = json;
-      }
+      const messages: ChatMessageInput[] = [
+        ...items.map((item): ChatMessageInput => ({ role: item.kind === "you" ? "user" : "assistant", content: item.kind === "hand" ? item.reply : item.text })),
+        { role: "user", content: trimmed },
+      ].slice(-8) as ChatMessageInput[];
+      const result = await session().run(messages, abort.signal, {
+        sentence: pushSentence,
+        transcript: (text) => {
+          if (id !== jobGen.current) return;
+          if (!tokenAt) tokenAt = performance.now();
+          upsertJarvis(text);
+          setLiveLine(text);
+        },
+        brain: (response) => { if (id === jobGen.current) { upsertJarvis(response.reply, response.sources); applyGraph(response); } },
+        thinking: (active) => { if (id === jobGen.current) { setWorking(false); if (active) setSkill(null); } },
+      }, answerId);
+      const payload = result.response;
+      realtimeReply = result.path === "realtime";
+      session().updateHistory([...messages, { role: "assistant", content: payload.reply }]);
       if (!payload) {
         upsertJarvis("Jarvis did not answer. Nothing was invented.", undefined, true);
         return;
       }
       pendingTiming.model = payload.model ?? (payload.mode === "grok" ? "grok-4.7" : "local");
       settleJob(id, loadedContext(payload), payload.mode === "grok" ? "grok-4.7" : null);
-      const graph = payload.graph;
-      if (graph?.action === "layout") {
-        setGraphOpen(graph.value === "graph" || graph.value === "side");
-        if (graph.value === "side") setSidebarCollapsed(true);
-        if (graph.value === "center" || graph.value === "home") setSidebarCollapsed(false);
-      }
-      if (graph && (graph.action === "filter" || graph.action === "search" || graph.action === "focus" || graph.action === "clear")) {
-        setGraphOpen(true);
-        setSkill("graph");
-        if (graph.action === "clear") pushCue({ clear: true });
-        else if (graph.action === "filter") pushCue({ filterHub: graph.value });
-        else if (graph.action === "search") pushCue({ search: graph.value });
-        else if (["School", "Swim", "Jarvis", "Health", "People", "Journal", "Projects", "Me"].includes(graph.value)) {
-          pushCue({ focusHub: graph.value });
-        } else pushCue({ focusQuery: graph.value });
-      }
+      applyGraph(payload);
       if (isHandsTurn(payload)) {
         const reply = dropUnaskedCalendar(stripReplyTiming(payload.reply), askedCalendar);
         if (reply || payload.plan) {
@@ -663,7 +739,7 @@ export function Face() {
       }
       upsertJarvis("I couldn't reach Jarvis. Try again.", undefined, true);
     } finally {
-      if (spoken) queue.enqueue(spoken);
+      if (spoken && !realtimeReply) queue.enqueue(spoken);
       try { await queue.drain(); }
       finally {
         if (id === jobGen.current) {
@@ -822,7 +898,7 @@ export function Face() {
                 spellCheck={false}
                 enterKeyHint="send"
                 placeholder="Ask Jarvis"
-                disabled={pending}
+                disabled={pending && !(fastVoice && realtimeAllowed)}
                 onFocus={() => setAskFocus(true)}
                 onBlur={() => setAskFocus(false)}
                 onChange={(event) => setDraft(event.target.value)}
@@ -848,19 +924,11 @@ export function Face() {
                 <VaultIcon />
               </ToolButton>
               <ToolButton
-                label={voice.listening ? "Stop microphone" : "Microphone"}
+                label={voice.listening || realtimeListening ? "Stop microphone" : "Microphone"}
                 tooltip={voice.micPermission === "denied" ? "Microphone blocked (see Settings)" : undefined}
                 dimmed={voice.micPermission === "denied"}
-                on={voice.listening}
-                onClick={() => {
-                  voice.pressMic((text, isFinal) => {
-                    if (isFinal) {
-                      void send(text);
-                      return;
-                    }
-                    setDraft(text);
-                  });
-                }}
+                on={voice.listening || realtimeListening}
+                onClick={() => void pressMicrophone()}
               >
                 <MicIcon />
               </ToolButton>
@@ -877,6 +945,7 @@ export function Face() {
                     <label className="face-check">
                       <input type="checkbox" checked={spokenReplies} onChange={(event) => {
                         setSpokenReplies(event.target.checked);
+                        chatSession.current?.setEnabled(fastVoice && event.target.checked);
                         try { localStorage.setItem("jarvis-spoken-replies", String(event.target.checked)); } catch {}
                       }} />
                       Spoken replies (Altair)
@@ -888,6 +957,15 @@ export function Face() {
                       }} />
                       Show timing meta
                     </label>
+                    <label className="face-check">
+                      <input type="checkbox" checked={fastVoice} onChange={(event) => {
+                        setFastVoice(event.target.checked);
+                        chatSession.current?.setEnabled(event.target.checked && spokenReplies);
+                        try { localStorage.setItem(FAST_VOICE_STORAGE_KEY, String(event.target.checked)); } catch {}
+                      }} />
+                      Fast voice (beta)
+                    </label>
+                    <p className="voice-minutes">Session: {voiceMinutes.toFixed(1)} min</p>
                     <p className="mic-permission">Microphone: {voice.micPermission === "granted" ? "allowed" : voice.micPermission === "denied" ? "blocked" : voice.micPermission === "prompt" ? "not requested" : "status unavailable"}</p>
                   </section>
                 ) : null}
@@ -904,6 +982,7 @@ export function Face() {
         onResizing={setResizing}
         inspectorRef={setInspectorHost}
         items={items}
+        fastVoiceLog={fastVoiceLog}
         tab={tab}
         pending={pending}
         chatRef={chatRef}
@@ -941,6 +1020,7 @@ function WorkingPanel({ job, leaving, onStop }: { job: Job; leaving: boolean; on
 
 function ChatCard({
   items,
+  fastVoiceLog,
   tab,
   pending,
   chatRef,
@@ -962,6 +1042,7 @@ function ChatCard({
   onResizing: (active: boolean) => void;
   inspectorRef: (host: HTMLDivElement | null) => void;
   items: LogItem[];
+  fastVoiceLog: string;
   tab: LogTab;
   pending: boolean;
   chatRef: RefObject<HTMLDivElement | null>;
@@ -1000,7 +1081,7 @@ function ChatCard({
         <div key={tab} className="face-chat chat-log" role="tabpanel" id={`panel-${tab === "inspector" ? "chat" : tab}`} aria-labelledby={`tab-${tab === "inspector" ? "chat" : tab}`} hidden={tab === "inspector"} ref={chatRef}>
           {tab === "chat" ? <ChatLines items={items} /> : null}
           {tab === "tasks" ? <TaskLines items={items} pending={pending} onDecide={onDecide} /> : null}
-          {tab === "log" ? <LogLines items={items} /> : null}
+          {tab === "log" ? <>{fastVoiceLog ? <p className="chat-timing" role="status">{fastVoiceLog}</p> : null}<LogLines items={items} /></> : null}
         </div>
         <div className="sidebar-inspector" role="tabpanel" id="panel-inspector" aria-labelledby="tab-inspector" hidden={tab !== "inspector"}>
           <button type="button" className="back-to-chat" onClick={() => onTab("chat")}>← Back to chat</button>
@@ -1012,7 +1093,7 @@ function ChatCard({
 }
 
 function TimingLine({ tokenMs, voiceMs, model }: { tokenMs?: number; voiceMs?: number; model?: string }) {
-  if (tokenMs === undefined) return null;
+  if (tokenMs === undefined) return model === "voice" ? <p className="chat-timing">voice</p> : null;
   return (
     <p className="chat-timing">
       {model ?? "grok-4.7"} · {((tokenMs + (voiceMs ?? 0)) / 1000).toFixed(1)}s
@@ -1257,59 +1338,6 @@ function GearIcon() {
       <circle cx="8" cy="8" r="2" />
       <path d="M8 2.2v1.6M8 12.2v1.6M2.2 8h1.6M12.2 8h1.6M4 4l1.1 1.1M10.9 10.9 12 12M12 4l-1.1 1.1M5.1 10.9 4 12" />
     </svg>
-  );
-}
-
-async function* readNdjson(body: ReadableStream<Uint8Array>): AsyncGenerator<unknown> {
-  const reader = body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    const lines = buffer.split("\n");
-    buffer = lines.pop() ?? "";
-    for (const line of lines) {
-      const trimmed = line.trim();
-      if (!trimmed) continue;
-      try {
-        yield JSON.parse(trimmed) as unknown;
-      } catch {
-        // Skip a broken line and keep reading.
-      }
-    }
-  }
-  const tail = buffer.trim();
-  if (!tail) return;
-  try {
-    yield JSON.parse(tail) as unknown;
-  } catch {
-    // The last line was not JSON.
-  }
-}
-
-function isSentenceEvent(value: unknown): value is { type: "sentence"; text: string } {
-  if (!value || typeof value !== "object") return false;
-  const record = value as { type?: unknown; text?: unknown };
-  return record.type === "sentence" && typeof record.text === "string";
-}
-
-function isDoneEvent(value: unknown): value is { type: "done"; response: ChatResponse } {
-  if (!value || typeof value !== "object") return false;
-  const record = value as { type?: unknown; response?: unknown };
-  return record.type === "done" && isChatResponse(record.response);
-}
-
-function isChatResponse(value: unknown): value is ChatResponse {
-  if (!value || typeof value !== "object") return false;
-  const record = value as Partial<ChatResponse> & { receipts?: unknown };
-  return (
-    typeof record.reply === "string" &&
-    (record.mode === "grok" || record.mode === "demo") &&
-    Array.isArray(record.receipts) &&
-    record.receipts.every(isReceipt) &&
-    (record.plan === undefined || isHandPlan(record.plan))
   );
 }
 

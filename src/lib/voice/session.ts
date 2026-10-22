@@ -1,3 +1,6 @@
+import type { ChatMessageInput, ChatResponse } from "../types";
+import { butlerSpeech } from "./policy";
+import { RealtimeClient, WorkletPlayback, type PcmPlayback, type RealtimeOptions } from "./realtime";
 import {
   browserMouthSupported,
   describeBrowserVoice,
@@ -337,4 +340,136 @@ export async function browserVoiceSummary(): Promise<{ name: string; british: bo
   const picked = preferredBrowserVoice(voices);
   if (!picked) return null;
   return describeBrowserVoice({ name: picked.name, lang: picked.lang });
+}
+
+export const DEFAULT_VOICE_LAYER = "tts";
+export const FAST_VOICE_STORAGE_KEY = "jarvis-fast-voice";
+export function readFastVoicePreference(storage: Pick<Storage, "getItem">): boolean {
+  try { return storage.getItem(FAST_VOICE_STORAGE_KEY) === "true"; } catch { return false; }
+}
+export type TurnHooks = {
+  sentence: (text: string) => void;
+  transcript: (text: string) => void;
+  brain?: (response: ChatResponse) => void;
+  thinking?: (active: boolean) => void;
+};
+export type ChatSessionOptions = {
+  realtimeAllowed?: boolean;
+  fetchImpl?: typeof fetch;
+  socketFactory?: RealtimeOptions["socketFactory"];
+  playback?: PcmPlayback;
+  onSpeaking?: (active: boolean, level?: number) => void;
+  onFallback?: (line: string) => void;
+  onMinutes?: (minutes: number) => void;
+  onListening?: (active: boolean) => void;
+};
+/** A page owns one health decision. Once fast voice fails, it stays on TTS until reload. */
+export class ChatSession {
+  private realtime: RealtimeClient | null = null;
+  private enabled = false;
+  private failed = false;
+  private hooks: TurnHooks | null = null;
+  private fetchImpl: typeof fetch;
+  private playback: PcmPlayback;
+  private micStop: (() => void) | null = null;
+  private history: ChatMessageInput[] = [];
+  private micText: ((text: string) => void) | null = null;
+  private micResult: ((response: ChatResponse, standard?: boolean) => void) | null = null;
+  private turnId: string | undefined;
+  constructor(private options: ChatSessionOptions = {}) {
+    this.fetchImpl=options.fetchImpl??((input,init)=>fetch(input,init));
+    this.playback=options.playback??new WorkletPlayback(options.onSpeaking);
+  }
+  setEnabled(enabled: boolean) {this.enabled=enabled;if(!enabled){this.stopMicrophone();this.realtime?.close();this.realtime=null;}}
+  get mode() {return this.enabled && this.options.realtimeAllowed && !this.failed ? "realtime" : DEFAULT_VOICE_LAYER;}
+  private client() {
+    if(!this.realtime)this.realtime=new RealtimeClient({
+      fetchImpl:this.fetchImpl,socketFactory:this.options.socketFactory,playback:this.playback,
+      chat:(messages,signal)=>this.standard(messages,signal),
+      onTranscript:text=>this.hooks?.transcript(text),onBrain:response=>this.hooks?.brain?.(response),
+      onThinking:active=>this.hooks?.thinking?.(active),onMinutes:this.options.onMinutes,
+      onFallback:line=>{
+        this.failed=true;this.options.onFallback?.(line);
+        if(this.micStop && this.history.at(-1)?.role === "user") {
+          const callback=this.micResult;
+          this.stopMicrophone();
+          const result=this.realtime?.brainResult??this.standard(this.history,new AbortController().signal);
+          void result.then(response=>callback?.(response,true)).catch(()=>callback?.({reply:"Voice stopped. Please type your request.",mode:"demo",receipts:[]},true));
+        }
+      },
+      onMicText:text=>{this.history=[...this.history.slice(-7),{role:"user",content:text}];this.micText?.(text);},
+      onMicResponse:response=>{this.history=[...this.history.slice(-7),{role:"assistant",content:response.reply}];this.micResult?.(response);},
+      onIdle:()=>this.stopMicrophone(),
+    });
+    return this.realtime;
+  }
+  private async standard(messages: ChatMessageInput[], signal: AbortSignal, sentence?: (text: string) => void): Promise<ChatResponse> {
+    const response=await this.fetchImpl("/api/chat",{method:"POST",headers:{"Content-Type":"application/json",...(this.turnId?{"x-jarvis-turn":this.turnId}:{})},body:JSON.stringify({messages:messages.slice(-16),stream:true}),signal});
+    if(!response.ok)throw new Error("Chat did not answer");
+    if(!(response.headers.get("content-type")??"").includes("ndjson")) {
+      const value=await response.json();if(!chatResponse(value))throw new Error("Invalid chat reply");return value;
+    }
+    if(!response.body)throw new Error("No chat stream");
+    const reader=response.body.getReader(), decoder=new TextDecoder();let pending="", result:ChatResponse|null=null;
+    const line=(text:string)=>{
+      if(!text.trim())return;
+      const event=JSON.parse(text);
+      if(event.type==="sentence"&&typeof event.text==="string")sentence?.(event.text);
+      if(event.type==="done"&&chatResponse(event.response))result=event.response;
+      if(event.type==="error")throw new Error("Chat stream failed");
+    };
+    try {
+      while(true){
+        const {value,done}=await reader.read();
+        pending+=done?decoder.decode():decoder.decode(value,{stream:true});
+        const lines=pending.split("\n");pending=lines.pop()??"";
+        for(const part of lines)line(part);
+        if(done)break;
+      }
+      line(pending);
+    } finally {reader.releaseLock();}
+    if(!result)throw new Error("Chat ended without a reply");return result;
+  }
+  async run(messages: ChatMessageInput[], signal: AbortSignal, hooks: TurnHooks, turnId?: string): Promise<{response:ChatResponse;path:"tts"|"realtime"}> {
+    this.stopMicrophone();this.hooks=hooks;this.history=messages;this.turnId=turnId;
+    if(this.mode==="realtime") {
+      const client=this.client();
+      try {
+        const response=await client.ask(messages.at(-1)!.content,messages,signal);
+        return {response,path:"realtime"};
+      } catch(error) {
+        if(signal.aborted||(error instanceof Error&&error.name==="AbortError"))throw error;
+        if(!client.disabled)client.disable();
+        // An interrupted connection must not replay a command that already reached the brain.
+        const brain=client.brainResult;
+        if(brain) {
+          const response=await brain;
+          hooks.sentence(butlerSpeech(response.reply));
+          return {response,path:"tts"};
+        }
+      }
+    }
+    return {response:await this.standard(messages,signal,hooks.sentence),path:"tts"};
+  }
+  async startMicrophone(messages: ChatMessageInput[], hooks: TurnHooks, onText: (text: string) => void, onResult: (response: ChatResponse, standard?: boolean) => void): Promise<boolean> {
+    if(this.mode!=="realtime" || !(this.playback instanceof WorkletPlayback))return false;
+    const client=this.client();
+    try {
+      client.unlock();
+      await client.connect(messages);
+      this.history=messages;this.hooks=hooks;this.micText=onText;this.micResult=onResult;
+      this.micStop=await this.playback.microphone(data=>client.appendAudio(data));
+      client.setMicrophone(true);this.options.onListening?.(true);
+      return true;
+    } catch {client.disable();return false;}
+  }
+  stopMicrophone() {if(this.micStop)this.options.onListening?.(false);this.micStop?.();this.micStop=null;this.realtime?.setMicrophone(false);}
+  updateHistory(messages: ChatMessageInput[] = this.history) {this.history=messages;if(this.mode==="realtime")void this.realtime?.refresh(messages);}
+  cancel() {this.stopMicrophone();this.realtime?.cancel();}
+  close() {this.cancel();this.realtime?.close();}
+}
+function chatResponse(value: unknown): value is ChatResponse {
+  if(!value||typeof value!=="object")return false;
+  const response=value as Partial<ChatResponse>;
+  return typeof response.reply==="string"&&(response.mode==="grok"||response.mode==="demo")&&Array.isArray(response.receipts);
 }

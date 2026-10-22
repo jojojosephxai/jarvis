@@ -1290,7 +1290,7 @@
   font: 12px/1.5 var(--font-jetbrains), ui-monospace, monospace;
 }
 .face-settings .face-check { margin-top: 12px; }
-.face-settings .mic-permission { margin: 12px 0 0; color: rgba(73, 212, 255, .75); }
+.face-settings .mic-permission, .face-settings .voice-minutes { margin: 12px 0 0; color: rgba(73, 212, 255, .75); }
 .tool-btn[aria-disabled="true"] { opacity: .4; cursor: default; }
 .face[data-timing="false"] .chat-timing { display: none; }
 
