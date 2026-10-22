@@ -22,7 +22,7 @@ describe("grok model lock", () => {
     process.env.GROK_MODEL = "claude-sonnet";
     assert.equal(grokModel(), "grok-4.7");
     assert.equal(LOCKED_XAI_MODEL, HARD_XAI_MODEL);
-    assert.equal(FAST_XAI_MODEL, "grok-4-fast-non-reasoning");
+    assert.equal(FAST_XAI_MODEL, "grok-4.20-0309-non-reasoning");
     delete process.env.XAI_MODEL;
     delete process.env.GROK_MODEL;
     assert.equal(grokModel(), "grok-4.7");

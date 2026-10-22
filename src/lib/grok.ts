@@ -51,7 +51,7 @@ export function brainMode(): BrainMode {
 
 /** Hard questions stay on grok-4.7. Quick asks use the faster model. Names are constants, not env overrides. */
 export const HARD_XAI_MODEL = "grok-4.7";
-export const FAST_XAI_MODEL = "grok-4-fast-non-reasoning";
+export const FAST_XAI_MODEL = "grok-4.20-0309-non-reasoning";
 export const LOCKED_XAI_MODEL = HARD_XAI_MODEL;
 
 export function grokModel(): string {

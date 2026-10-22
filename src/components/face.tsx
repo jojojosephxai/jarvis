@@ -1092,7 +1092,7 @@ function TimingLine({ tokenMs, voiceMs, model }: { tokenMs?: number; voiceMs?: n
   if (tokenMs === undefined) return null;
   return (
     <p className="chat-timing">
-      {model === "grok-4-fast-non-reasoning" ? "fast" : model ?? "grok-4.7"} · {((voiceMs ?? tokenMs) / 1000).toFixed(1)}s
+      {model === "grok-4.20-0309-non-reasoning" ? "fast" : model ?? "grok-4.7"} · {((voiceMs ?? tokenMs) / 1000).toFixed(1)}s
     </p>
   );
 }
