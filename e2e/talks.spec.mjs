@@ -96,7 +96,7 @@ async function fakeRealtime(page, enabled=true) {
       send(raw){
         const event=JSON.parse(raw);this.sent.push(event);
         if(event.type==='response.create')setTimeout(()=>{
-          const text=event.response?.force_message||'Hello Joseph. The quick voice is here.';
+          const text=window.emptyVoiceReply ? '' : event.response?.force_message||'Hello Joseph. The quick voice is here.';
           for(const event of [{type:'response.output_audio.delta',delta:'AAAAAA=='},{type:'response.output_audio_transcript.delta',delta:text},{type:'response.output_audio_transcript.done',transcript:text},{type:'response.done',response:{output:[]}}]) this.onmessage?.({data:JSON.stringify(event)});
         },5);
       }
@@ -135,10 +135,43 @@ test('default toggle off makes no socket or session request',async({page})=>{
   await page.goto('/');await page.waitForTimeout(1800);await ask(page,'Hello');
   expect(sessions).toBe(0);expect(await page.evaluate(()=>window.voiceSockets.length)).toBe(0);
 });
-for(const [width,height] of [[1024,576],[1440,900]])test(`settings fast voice off and local minute counter ${width}`,async({page})=>{
+for(const [width,height] of [[1024,576],[1366,620],[1440,900]])test(`settings fast voice off and local minute counter ${width}`,async({page})=>{
   await page.setViewportSize({width,height});await fakeRealtime(page,false);await page.goto('/');await page.waitForTimeout(1800);
   await page.getByRole('button',{name:'Settings',exact:true}).click();
   await expect(page.getByLabel('Fast voice (beta)',{exact:true})).not.toBeChecked();
   await expect(page.locator('#face-settings')).toContainText('Session: 0.0 min');
-  await capture(page,'artifacts/face/overnight',`talks-${width}-settings`);
+  const settings = page.locator('#face-settings');
+  await expect(settings).toHaveCSS('opacity','1');
+  await expect(settings).toHaveCSS('background-color','rgb(5, 14, 28)');
+  await expect.poll(async () => (await settings.boundingBox()).y + (await settings.boundingBox()).height <= (await page.locator('.face-ask').boundingBox()).y).toBe(true);
+  const mic = settings.locator('.mic-permission');
+  await expect(mic).toBeVisible();
+  expect((await mic.boundingBox()).y + (await mic.boundingBox()).height).toBeLessThanOrEqual(height);
+  await page.mouse.move(400,35);
+  await expect(page.locator('.tool-tip').last()).toHaveCSS('opacity','0');
+  if ([1024,1440].includes(width)) await capture(page,'artifacts/face/overnight',`talks-${width}-settings`);
+});
+
+test('an empty realtime reply and a failed assistant item do not poison the next typed request', async ({page}) => {
+  await fakeRealtime(page);
+  await page.route('**/api/voice/session',r=>r.fulfill({json:voiceConfig}));
+  const requests=[];
+  await page.route('**/api/chat',r=>{
+    const body=r.request().postDataJSON(); requests.push(body);
+    if(requests.length===1)return r.fulfill({status:503,json:{error:'synthetic failure'}});
+    return r.fulfill({json:{reply:'Friday is clear.',mode:'demo',receipts:[]}});
+  });
+  await page.goto('/'); await page.waitForTimeout(1800);
+  // The fake socket completes one turn with an empty transcript, as a mic placeholder can.
+  await page.evaluate(() => { window.emptyVoiceReply=true; });
+  await ask(page,'First question');
+  await page.getByRole('button',{name:'Settings',exact:true}).click();
+  await page.getByLabel('Fast voice (beta)',{exact:true}).uncheck();
+  await page.getByRole('button',{name:'Close settings',exact:true}).click();
+  await ask(page,'Failed question');
+  await expect(page.locator('.chat-reply').last()).toContainText("I couldn't reach Jarvis");
+  await ask(page,'and on Friday?');
+  await expect(page.locator('.chat-reply').last()).toHaveText('Friday is clear.');
+  expect(requests[1].messages.every(m=>m.content.trim().length>0)).toBe(true);
+  expect(requests[1].messages.filter(m=>m.role==='assistant')).toEqual([]);
 });

@@ -230,10 +230,23 @@ export async function* grokStreamSentences(question: string, packet: string, his
   const decoder = new TextDecoder();
   let pending = "";
   let text = "";
+  let firstChunk = true;
   const pull = (): string[] => {
     const split = readySentences(text);
     text = split.rest;
-    return split.ready.filter(Boolean);
+    const ready = split.ready.filter(Boolean);
+    if (ready.length) { firstChunk = false; return ready; }
+    if (firstChunk && (text.includes(",") || text.length >= 32)) {
+      const comma = text.indexOf(",");
+      const end = comma >= 0 ? comma + 1 : text.lastIndexOf(" ", 32);
+      if (end > 0) {
+        const clause = text.slice(0, end).trim();
+        text = text.slice(end);
+        firstChunk = false;
+        return [clause];
+      }
+    }
+    return [];
   };
   while (true) {
     const { done, value } = await reader.read();

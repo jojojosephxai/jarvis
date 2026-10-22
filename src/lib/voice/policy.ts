@@ -1,5 +1,5 @@
 import { readySentences } from "../clock";
-import { stripReplyTiming } from "../reply-text";
+import { stripReplySources, stripReplyTiming } from "../reply-text";
 import {
   DEFAULT_AZURE_VOICE,
   SPEAK_LIMIT,
@@ -38,8 +38,8 @@ const HARNESS_SENTENCE =
   /notes checked|not written down|demo calendar|did not call grok|grok was not called|this brief did not/i;
 
 /** Speak the whole answer, excluding source and harness footers. */
-export function butlerSpeech(text: string): string {
-  const clean = stripReplyTiming(text).replace(/(?:^|\n)\s*Notes used:[\s\S]*$/i, "").replace(/\s*\([A-Z][^()\n]{0,100}\)/g, "").replace(/\[\[([^\]]+)\]\]/g, "").replace(/\s+/g, " ").trim();
+export function butlerSpeech(text: string, sources: string[] = []): string {
+  const clean = stripReplySources(stripReplyTiming(text), ["School", "School-schedule", "Swim", "Goals", "About", "Preferences", "Voice-and-tone", ...sources]).replace(/\[\[([^\]]+)\]\]/g, "").replace(/\s+/g, " ").trim();
   if (!clean) return "";
   const split = readySentences(`${clean} `);
   const sentences = [...split.ready, split.rest];

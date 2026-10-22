@@ -156,7 +156,7 @@ export function NoteReader({
   return (
     <aside className={docked ? "graph-inspector is-docked" : "graph-inspector is-side glass"} aria-label="Inspector">
       <div className="inspector-head">
-        <p className="inspector-kicker">Inspector</p>
+        {!docked ? <p className="inspector-kicker">Inspector</p> : null}
         <button type="button" className="inspector-back" onClick={onBack}>
           Close
         </button>

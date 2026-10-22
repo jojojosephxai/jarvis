@@ -5,7 +5,8 @@ import os from "node:os";
 import path from "node:path";
 import { streamAnswerFromVault } from "./grounded-answer";
 import { grokPhraseNotes, grokStreamSentences } from "./grok";
-import { think, streamTurn } from "./brain";
+import { finishedHistory } from "./thread-storage";
+import { readMessages, think, streamTurn } from "./brain";
 import { butlerSpeech } from "./voice/policy";
 import { unspokenTail } from "./voice/sentence-queue";
 
@@ -73,4 +74,47 @@ test("what did I just say reaches completion with the previous user turn", async
     },
   });
   assert.match(answer.reply, /marigold/);
+});
+
+test("unfinished, empty and failed turns never poison typed or microphone history", () => {
+  const items = [
+    { kind: "you" as const, text: "What is due Thursday?" },
+    { kind: "jarvis" as const, text: "" },
+    { kind: "jarvis" as const, text: "An unfinished reply", pending: true },
+    { kind: "jarvis" as const, text: "Failed reply", failed: true },
+    { kind: "jarvis" as const, text: "Stopped. I do not know if that finished." },
+    { kind: "jarvis" as const, text: "Jarvis did not answer. Nothing was invented." },
+    { kind: "jarvis" as const, text: "I couldn't reach Jarvis. Try again." },
+    { kind: "jarvis" as const, text: "The map worksheet (School).\n\nNotes used: School.", sources: ["School"] },
+  ];
+  const history = finishedHistory(items);
+  assert.deepEqual(history, [{role:"user",content:"What is due Thursday?"},{role:"assistant",content:"The map worksheet."}]);
+  assert.ok(readMessages({messages:[...history,{role:"user",content:"and on Friday?"}]}));
+  assert.deepEqual(finishedHistory([{kind:"you",text:"Notes used: is a label."}]), [{role:"user",content:"Notes used: is a label."}]);
+});
+test("speech keeps real capitalised parentheticals and strips only known source titles", () => {
+  assert.equal(butlerSpeech("Practice is at 5 (Tuesday only)."), "Practice is at 5 (Tuesday only).");
+  assert.equal(butlerSpeech("Study (AP World)."), "Study (AP World).");
+  assert.equal(butlerSpeech("The answer (Long-note).", ["Long-note"]), "The answer.");
+});
+test("the first clause arrives before a long sentence ends, without dropped or repeated words", async () => {
+  const before = process.env.XAI_API_KEY;
+  process.env.XAI_API_KEY = "fake-test-key";
+  const full = "Joseph, the fictional map worksheet is due Thursday and the botany report follows on Friday. Second sentence. Third sentence. Fourth sentence. Fifth sentence.";
+  const encoder = new TextEncoder();
+  let controller!: ReadableStreamDefaultController<Uint8Array>;
+  const body = new ReadableStream<Uint8Array>({start(value) { controller = value; }});
+  const frame = (content: string) => encoder.encode(`data: ${JSON.stringify({choices:[{delta:{content}}]})}\n\n`);
+  const stream = grokStreamSentences("school", "packet", [], async () => new Response(body));
+  try {
+    controller.enqueue(frame("Joseph, "));
+    assert.equal((await stream.next()).value, "Joseph,");
+    controller.enqueue(frame(full.slice("Joseph, ".length)));
+    controller.close();
+    const parts = ["Joseph,"];
+    for await (const part of stream) parts.push(part);
+    assert.equal(parts.join(" "), full);
+  } finally {
+    if (before === undefined) delete process.env.XAI_API_KEY; else process.env.XAI_API_KEY = before;
+  }
 });

@@ -47,6 +47,16 @@ function homeGeometry() {
   }
   const orb = box(".orb-dial-ring"), status = box(".orb-status"), ask = box(".face-ask");
   if (status.top < orb.bottom - 1 || ask.top < status.bottom + 4) hits.push("center elements overlap");
+  if (orb.width < Math.min(320, Math.min(innerWidth, innerHeight) * .30) - 1) hits.push("orb too small");
+  if (innerHeight === 576 && box(".tool-row").bottom - orb.top < innerHeight * .48) hits.push("empty band in center column");
+  const input = document.querySelector("#graph-search");
+  const ctx = document.createElement("canvas").getContext("2d");
+  const style = getComputedStyle(input); ctx.font = `${style.fontSize} ${style.fontFamily}`;
+  if (input.clientWidth && ctx.measureText(input.placeholder).width + input.placeholder.length * parseFloat(style.letterSpacing) > input.clientWidth) hits.push("placeholder truncated");
+  if (left.bottom > innerHeight - 8) hits.push("rail outside viewport");
+  const askInput = document.querySelector(".face-ask input"), askStyle = getComputedStyle(askInput);
+  const placeholder = getComputedStyle(askInput, "::placeholder");
+  if (askStyle.fontFamily !== getComputedStyle(document.querySelector(".face")).fontFamily || askStyle.fontSize !== "13px" || placeholder.color !== "rgb(73, 212, 255)" || Number(placeholder.opacity) >= 1) hits.push("Ask placeholder does not match HUD");
   for (const selector of [".face-column", ".face-sidebar"]) {
     const r = box(selector);
     if (r.width <= 0 || r.height <= 0) hits.push(`${selector} vanished`);
@@ -247,6 +257,8 @@ test("wheel scrolls the rail to its last item and still zooms the graph at 1024x
   await page.setViewportSize({ width: 1024, height: 576 });
   await prepare(page, true);
   await openFace(page);
+  await page.getByRole("button", { name: "Graph", exact: true }).click();
+  await graphReady(page);
   const rail = page.locator(".face-column");
   const r = await rail.boundingBox();
   await page.mouse.move(r.x + r.width / 2, r.y + 50);
@@ -258,8 +270,6 @@ test("wheel scrolls the rail to its last item and still zooms the graph at 1024x
     return last.top >= r.top && last.bottom <= r.bottom;
   })).toBe(true);
   await screenshot(page, "1024x576-rail-scrolled-bottom");
-  await page.getByRole("button", { name: "Graph", exact: true }).click();
-  await graphReady(page);
   const scene = page.locator(".force-scene");
   const before = Number(await scene.getAttribute("data-dist"));
   const area = await scene.boundingBox();

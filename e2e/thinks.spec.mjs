@@ -40,3 +40,38 @@ for (const [width, height] of sizes) test(`sourced reply, meta and follow-up ${w
   await page.getByLabel('Show timing meta',{exact:true}).uncheck();
   await expect(bubble.locator('.chat-timing')).toBeHidden();
 });
+
+for (const [width,height] of [[1024,576],[1440,900]]) test(`graph dock, home rail and narrow People label ${width}`, async ({page}) => {
+  await page.setViewportSize({width,height});
+  await page.addInitScript(()=>{sessionStorage.setItem('jarvis-boot','1');localStorage.setItem('jarvis-spoken-replies','false')});
+  await page.route('**/api/chat',route=>route.fulfill({json:{reply:'Sidebar tucked away.',mode:'demo',receipts:[],graph:{action:'layout',value:'side'}}}));
+  await page.goto('/');
+  await expect(page.locator('.face')).toHaveAttribute('data-intro','out');
+  await expect(page.getByLabel('Repel',{exact:true})).toHaveCount(0);
+  await expect(page.locator('.graph-orbit-hint, .face-totals')).toHaveCount(0);
+  await page.locator('#talk').fill('move to the side'); await page.locator('#talk').press('Enter');
+  await expect(page.locator('.face')).toHaveAttribute('data-view','home');
+  await expect(page.locator('.face')).toHaveAttribute('data-sidebar-collapsed','true');
+  await page.getByRole('button',{name:'Open sidebar',exact:true}).click();
+  await page.getByRole('button',{name:'Graph',exact:true}).click();
+  const scene=page.locator('.force-scene');
+  await expect(scene).toHaveAttribute('data-scene','ready');
+  const geometry=()=>page.evaluate(()=>{
+    const ask=document.querySelector('.face-ask').getBoundingClientRect();
+    const overlap=(a,b)=>a.left<b.right&&a.right>b.left&&a.top<b.bottom&&a.bottom>b.top;
+    return [...document.querySelectorAll('.graph-float-label,.face-column,.face-sidebar')].filter(el=>overlap(ask,el.getBoundingClientRect())).map(el=>el.className);
+  });
+  await expect.poll(geometry).toEqual([]);
+  await expect(page.locator('.graph-canvas')).toHaveCSS('opacity','1');
+  await expect(page.locator('.face-loader')).toHaveCSS('opacity','0');
+  await page.mouse.move(400,35);
+  await capture(page,'artifacts/face/overnight',`thinks-${width}-graph-view`);
+  await page.getByRole('separator',{name:'Resize sidebar'}).focus(); await page.keyboard.press('End');
+  await expect(page.locator('.face')).toHaveAttribute('data-resizing','false');
+  await expect(page.locator('.graph-float-label',{hasText:/^People$/})).toBeVisible();
+  await expect.poll(geometry).toEqual([]);
+  await page.getByRole('button',{name:'Collapse filter',exact:true}).click();
+  await expect(page.getByRole('button',{name:'Expand filter',exact:true})).toHaveText('Filter ›');
+  await page.getByRole('button',{name:'Expand filter',exact:true}).click();
+  await expect(page.getByRole('button',{name:'Collapse filter',exact:true})).toHaveText('Filter ‹');
+});

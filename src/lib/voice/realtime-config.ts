@@ -78,7 +78,7 @@ export async function buildRealtimeConfig(options: ConfigOptions = {}) {
 }
 
 function isLoopbackHost(value: string | null): boolean {
-  return value !== null && /^(?:127\.0\.0\.1|\[::1\])(?::\d{1,5})?$/.test(value);
+  return value !== null && /^(?:localhost|127\.0\.0\.1|\[::1\])(?::\d{1,5})?$/i.test(value);
 }
 export function loopbackRequest(request: Request): boolean {
   const url=new URL(request.url);

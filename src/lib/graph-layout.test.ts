@@ -59,6 +59,16 @@ describe("desktop graph projection", () => {
     for (const node of placed) assert.ok(node.x - node.r >= free.left && node.x + node.r <= free.right && node.y - node.r >= free.top && node.y + node.r <= free.bottom);
   });
 
+  it("spreads a dense Jarvis cluster even when its 3D projection collapses", () => {
+    const hub = {id:"area:jarvis",hubId:"area:jarvis",x:0,y:0,r:12,priority:500};
+    const nodes = [hub, ...Array.from({length:60}, (_,i)=>({id:`note-${i}`,hubId:hub.id,x:0,y:0,r:5,priority:0}))];
+    const free = {left:16,top:16,right:600,bottom:450};
+    const placed = frameScreenNodes(nodes, free, null, new Set());
+    assert.equal(new Set(placed.map(n=>`${n.x}:${n.y}`)).size, nodes.length);
+    assert.ok(Math.max(...placed.map(n=>n.x)) - Math.min(...placed.map(n=>n.x)) > 450);
+    assert.ok(Math.max(...placed.map(n=>n.y)) - Math.min(...placed.map(n=>n.y)) > 330);
+  });
+
   it("clips edges around label boxes, including vertical and parallel segments", () => {
     const box = { left: 40, right: 60, top: 40, bottom: 60 };
     assert.deepEqual(edgePieces({x: 0, y: 50}, {x: 100, y: 50}, [box]), [[0, .37], [.63, 1]]);

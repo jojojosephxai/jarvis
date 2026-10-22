@@ -590,6 +590,7 @@ function GraphReady({
             ))}
           </ul>
         </div>
+        {graphOpen ? <>
         <div className="face-block">
           <p className="face-block-label">Forces</p>
           <label className="face-slider">
@@ -673,6 +674,7 @@ function GraphReady({
           <span>{payload.noteCount} notes</span>
           <span>{payload.connectionCount} links</span>
         </p>
+        </> : null}
         {graphOpen ? (
         <FilterLegend
           collapsed={filterCollapsed}
@@ -688,7 +690,7 @@ function GraphReady({
           }
         />
         ) : null}
-        <p className="graph-orbit-hint">drag = orbit, shift-click = path</p>
+        {graphOpen ? <p className="graph-orbit-hint">drag = orbit, shift-click = path</p> : null}
         {query.trim() ? (
           <p className="face-hint">{matches.length === 0 ? "No matches." : `${matches.length} match${matches.length === 1 ? "" : "es"}`}</p>
         ) : null}
@@ -762,7 +764,7 @@ function FilterLegend({
   const total = legend.reduce((sum, entry) => sum + entry.count, 0);
   return (
     <aside className={collapsed ? "face-filter glass is-collapsed" : "face-filter glass"} aria-label="Filter" data-region="filter">
-      <button type="button" className="filter-toggle" aria-label={collapsed ? "Expand filter" : "Collapse filter"} aria-expanded={!collapsed} onClick={onCollapse}>{collapsed ? "‹" : "Filter ›"}</button>
+      <button type="button" className="filter-toggle" aria-label={collapsed ? "Expand filter" : "Collapse filter"} aria-expanded={!collapsed} onClick={onCollapse}>{collapsed ? "Filter ›" : "Filter ‹"}</button>
       {!collapsed ? <><div className="face-block-head">
         <p>Types</p>
         <p>{total}</p>

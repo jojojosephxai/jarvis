@@ -7,6 +7,7 @@ import { parseGraphCommand } from "@/lib/graph-command";
 import { mentionsCalendar } from "@/lib/intent";
 import { OrbStage } from "@/components/orb-stage";
 import { useVoice } from "@/components/use-voice";
+import { finishedHistory } from "@/lib/thread-storage";
 import { makeId } from "@/lib/ids";
 import { resolveOrbMode, type OrbMode } from "@/lib/orb-mode";
 import {
@@ -52,7 +53,7 @@ let greetedThisLoad = false;
 
 type LogItem =
   | { kind: "you"; id: string; text: string; at: string }
-  | { kind: "jarvis"; id: string; text: string; at: string; sources?: string[]; failed?: boolean; tokenMs?: number; voiceMs?: number; model?: string }
+  | { kind: "jarvis"; id: string; text: string; at: string; sources?: string[]; failed?: boolean; pending?: boolean; tokenMs?: number; voiceMs?: number; model?: string }
   | { kind: "hand"; id: string; at: string; reply: string; plan?: HandPlan; receipts: Receipt[]; cancelled?: boolean; tokenMs?: number; voiceMs?: number; model?: string };
 
 function dropUnaskedCalendar(text: string, asked: boolean): string {
@@ -455,7 +456,7 @@ export function Face({ realtimeAllowed = false }: { realtimeAllowed?: boolean })
   function applyGraph(payload: ChatResponse) {
       const graph = payload.graph;
       if (graph?.action === "layout") {
-        setGraphOpen(graph.value === "graph" || graph.value === "side");
+        setGraphOpen(graph.value === "graph");
         if (graph.value === "side") setSidebarCollapsed(true);
         if (graph.value === "center" || graph.value === "home") setSidebarCollapsed(false);
       }
@@ -496,12 +497,12 @@ export function Face({ realtimeAllowed = false }: { realtimeAllowed?: boolean })
     if (fastVoice && realtimeAllowed && voice.micPermission === "granted") {
       let answerId = "";
       let micJob: { id: number; abort: AbortController } | null = null;
-      const update = (text: string, sources?: string[]) => {
+      const update = (text: string, sources?: string[], finished = false) => {
         if (!answerId || !micJob || micJob.id !== jobGen.current) return;
         setLiveLine(text);
-        setItems(current => current.map(item => item.id === answerId && item.kind === "jarvis" ? { ...item, text, sources: sources ?? item.sources } : item));
+        setItems(current => current.map(item => item.id === answerId && item.kind === "jarvis" ? { ...item, text, sources: sources ?? item.sources, pending: !finished } : item));
       };
-      const messages = items.map((item): ChatMessageInput => ({ role: item.kind === "you" ? "user" : "assistant", content: item.kind === "hand" ? item.reply : item.text })).slice(-8);
+      const messages = finishedHistory(items);
       const started = await session().startMicrophone(messages, {
         sentence: () => {}, transcript: text => update(text), brain: response => update(response.reply, response.sources),
         thinking: active => { setWorking(false); if (active) setSkill(null); },
@@ -512,7 +513,7 @@ export function Face({ realtimeAllowed = false }: { realtimeAllowed?: boolean })
         const at = new Date().toISOString();
         setItems(current => [...current,
           { kind: "you", id: makeId("you"), text, at } as LogItem,
-          { kind: "jarvis", id: answerId, text: "", at, model: "voice" } as LogItem,
+          { kind: "jarvis", id: answerId, text: "", at, model: "voice", pending: true } as LogItem,
         ].slice(-40));
       }, (payload, standard) => {
         if (!micJob || micJob.id !== jobGen.current) return;
@@ -521,7 +522,7 @@ export function Face({ realtimeAllowed = false }: { realtimeAllowed?: boolean })
           const hand: LogItem = { kind: "hand", id: answerId, at: new Date().toISOString(), reply: payload.reply, plan: payload.plan, receipts: payload.receipts, model: "voice" };
           setItems(current => current.map(item => item.id === answerId ? hand : item));
           if (payload.plan?.state === "waiting") setTab("tasks");
-        } else update(payload.reply, payload.sources);
+        } else update(payload.reply, payload.sources, true);
         if (standard) {setRealtimeListening(false);void speakThenFinish(micJob.id, micJob.abort, payload.reply);}
         else finishJob(micJob.id);
       });
@@ -596,7 +597,7 @@ export function Face({ realtimeAllowed = false }: { realtimeAllowed?: boolean })
         current.map((item) => (item.id === targetId && (item.kind === "jarvis" || item.kind === "hand") ? { ...item, tokenMs, voiceMs } : item)),
       );
     };
-    const upsertJarvis = (text: string, sources?: string[], failed?: boolean) => {
+    const upsertJarvis = (text: string, sources?: string[], failed = false, pending = true) => {
       text = stripReplyTiming(text);
       const at = new Date().toISOString();
       setItems((current) => {
@@ -610,6 +611,7 @@ export function Face({ realtimeAllowed = false }: { realtimeAllowed?: boolean })
             text,
             sources: sources ?? prev.sources,
             failed,
+            pending,
             model: pendingTiming.model ?? prev.model,
             tokenMs: pendingTiming.tokenMs ?? prev.tokenMs,
             voiceMs: pendingTiming.voiceMs ?? prev.voiceMs,
@@ -625,6 +627,7 @@ export function Face({ realtimeAllowed = false }: { realtimeAllowed?: boolean })
             at,
             sources,
             failed,
+            pending,
             model: pendingTiming.model,
             tokenMs: pendingTiming.tokenMs,
             voiceMs: pendingTiming.voiceMs,
@@ -661,7 +664,7 @@ export function Face({ realtimeAllowed = false }: { realtimeAllowed?: boolean })
     };
     try {
       const messages: ChatMessageInput[] = [
-        ...items.map((item): ChatMessageInput => ({ role: item.kind === "you" ? "user" : "assistant", content: item.kind === "hand" ? item.reply : item.text })),
+        ...finishedHistory(items),
         { role: "user", content: trimmed },
       ].slice(-8) as ChatMessageInput[];
       const result = await session().run(messages, abort.signal, {
@@ -677,11 +680,11 @@ export function Face({ realtimeAllowed = false }: { realtimeAllowed?: boolean })
       }, answerId);
       const payload = result.response;
       realtimeReply = result.path === "realtime";
-      session().updateHistory([...messages, { role: "assistant", content: payload.reply }]);
       if (!payload) {
-        upsertJarvis("Jarvis did not answer. Nothing was invented.", undefined, true);
+        upsertJarvis("Jarvis did not answer. Nothing was invented.", undefined, true, false);
         return;
       }
+      session().updateHistory(finishedHistory([...items, { kind: "you", text: trimmed }, { kind: "jarvis", text: dropUnaskedCalendar(payload.reply, askedCalendar), sources: payload.sources }]));
       pendingTiming.model = payload.model ?? (payload.mode === "grok" ? "grok-4.7" : "local");
       settleJob(id, loadedContext(payload), payload.mode === "grok" ? "grok-4.7" : null);
       applyGraph(payload);
@@ -709,19 +712,19 @@ export function Face({ realtimeAllowed = false }: { realtimeAllowed?: boolean })
       }
       const brief = payload.brief;
       if (brief && isMorningBrief(brief)) {
-        upsertJarvis(brief.reply, brief.sources);
+        upsertJarvis(brief.reply, brief.sources, false, false);
         spoken = unspokenTail(brief.reply, streamed);
         return;
       }
       const reply = dropUnaskedCalendar(stripReplyTiming(payload.reply), askedCalendar);
-      if (reply) upsertJarvis(reply, payload.sources);
+      if (reply) upsertJarvis(reply, payload.sources, false, false);
       if (reply) spoken = unspokenTail(reply, streamed);
     } catch (error) {
       if (abort.signal.aborted || (error instanceof DOMException && error.name === "AbortError")) {
-        upsertJarvis("Stopped. I do not know if that finished.");
+        upsertJarvis("Stopped. I do not know if that finished.", undefined, true, false);
         return;
       }
-      upsertJarvis("I couldn't reach Jarvis. Try again.", undefined, true);
+      upsertJarvis("I couldn't reach Jarvis. Try again.", undefined, true, false);
     } finally {
       if (spoken && !realtimeReply) queue.enqueue(spoken);
       try { await queue.drain(); }

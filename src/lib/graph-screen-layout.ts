@@ -1,6 +1,6 @@
 export type ScreenRect = { left: number; top: number; right: number; bottom: number };
 export type ScreenNode = {
-  id: string; x: number; y: number; r: number; hubId?: string; priority: number;
+  id: string; x: number; y: number; r: number; hubId?: string; priority: number; anchorId?: string;
 };
 
 export function labelSpots(x: number, y: number, r: number, w: number, h: number): ScreenRect[] {
@@ -78,18 +78,27 @@ export function frameScreenNodes(nodes: ScreenNode[], free: ScreenRect, focusId:
     placed = hubs.flatMap((hub, index) => {
       const members = groups.get(hub.id)!, cell = cells.get(hub.id)!;
       const cellW = cell.right - cell.left, cellH = cell.bottom - cell.top;
-      const radius = Math.max(6, Math.min(cellW, cellH) * .34 - hub.r);
-      const scale = radius / Math.max(1, ...members.map((node) => Math.hypot(node.x - hub.x, node.y - hub.y)));
+      const radiusX = Math.max(6, cellW * .38 - hub.r);
+      const radiusY = Math.max(6, cellH * .34 - hub.r);
       const x = (cell.left + cell.right) / 2 + Math.sin(index * 2.4) * cellW * .05;
-      const y = (cell.top + cell.bottom) / 2 + Math.cos(index * 1.7) * cellH * .05;
-      return members.map((node) => ({ ...node, hubId: hub.id, x: x + (node.x - hub.x) * scale, y: node.id === hub.id ? y - radius - hub.r : y + (node.y - hub.y) * scale }));
+      const y = (cell.top + cell.bottom) / 2 + Math.cos(index * 1.7) * cellH * .08;
+      const notes = members.filter(node => node.id !== hub.id).sort((a, b) => a.id.localeCompare(b.id));
+      const golden = Math.PI * (3 - Math.sqrt(5));
+      const phase = notes.length ? Math.atan2(notes[0].y - hub.y, notes[0].x - hub.x) : 0;
+      const hubY = y - radiusY - hub.r;
+      return [{ ...hub, x, y: hubY }, ...notes.map((node, i) => {
+        if (node.anchorId === hub.id) return { ...node, x: x + hub.r + node.r + 8, y: hubY + hub.r + node.r + 8 };
+        const radius = Math.sqrt((i + .5) / notes.length);
+        return { ...node, hubId: hub.id, x: x + Math.cos(i * golden + phase) * radiusX * radius, y: y + Math.sin(i * golden + phase) * radiusY * radius };
+      })];
     });
   }
   const reach = Math.max(...placed.map((node) => node.r * 1.6)) + 12;
   const minX = Math.min(...placed.map((node) => node.x)), maxX = Math.max(...placed.map((node) => node.x));
   const minY = Math.min(...placed.map((node) => node.y)), maxY = Math.max(...placed.map((node) => node.y));
-  const scale = Math.min((width - reach * 2) / Math.max(1, maxX - minX), (height - reach * 2) / Math.max(1, maxY - minY));
-  return placed.map((node) => ({ ...node, x: (free.left + free.right) / 2 + (node.x - (minX + maxX) / 2) * scale, y: (free.top + free.bottom) / 2 + (node.y - (minY + maxY) / 2) * scale }));
+  const scaleX = (width - reach * 2) / Math.max(1, maxX - minX);
+  const scaleY = (height - reach * 2) / Math.max(1, maxY - minY);
+  return placed.map((node) => ({ ...node, x: (free.left + free.right) / 2 + (node.x - (minX + maxX) / 2) * scaleX, y: (free.top + free.bottom) / 2 + (node.y - (minY + maxY) / 2) * scaleY }));
 }
 
 /** Clip a screen-space edge around label boxes, preserving its visible connection on either side. */

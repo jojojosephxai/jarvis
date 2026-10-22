@@ -1205,7 +1205,7 @@
   padding: 8px 4px;
 }
 .face-column.is-rail > :not(.rail-toggle) { display: none; }
-.face-column.is-rail .rail-toggle { height: 90px; }
+.face-column.is-rail .rail-toggle { height: 90px; border: 0; }
 
 .face-header-start { display: flex; align-items: center; gap: 20px; }
 .view-toggle,
@@ -1277,15 +1277,17 @@
 }
 .settings-control { position: relative; }
 .face-settings {
-  position: fixed;
+  position: absolute;
   z-index: 21;
-  right: var(--center-right);
-  top: calc(var(--orb-top) + var(--orb-size) / 2 + 32px);
+  right: 0;
+  top: auto;
+  bottom: calc(100% + 120px);
   width: min(280px, calc(100vw - var(--center-left) - var(--center-right)));
-  max-height: calc(100vh - var(--orb-top) - var(--orb-size) / 2 - 48px);
+  max-height: calc(100dvh - 220px);
   overflow-y: auto;
   padding: 12px;
-  background-color: rgba(5, 14, 28, .97);
+  background-color: #050e1c;
+  backdrop-filter: none;
   color: #49d4ff;
   font: 12px/1.5 var(--font-jetbrains), ui-monospace, monospace;
 }
@@ -1344,3 +1346,5 @@
 }
 .orb-dial[data-place="center"] { max-width: calc((100vw - var(--center-left) - var(--center-right)) * .86); }
 .face[data-resizing="true"] :is(.orb-dial, .face-dock, .graph-canvas, .face-sidebar) { transition: none; }
+
+.inspector-body :is(strong, b) { color: #49d4ff; }

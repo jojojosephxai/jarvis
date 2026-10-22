@@ -194,3 +194,11 @@ test("an unavailable audio context falls back once and keeps the page on standar
   for(let i=0;i<2;i++)assert.equal((await session.run([{role:"user",content:"Hello"}],new AbortController().signal,hooks)).path,"tts");
   assert.equal(notices.length,1);assert.deepEqual(urls,["/api/chat","/api/chat"]);session.close();
 });
+
+test("localhost with a desktop port is loopback; remote hosts remain forbidden", async () => {
+  for (const host of ["localhost:4721", "127.0.0.1:4721", "[::1]:4721", "evil.com"]) {
+    const request = new Request(`http://${host}/api/voice/session`, {method:"POST",headers:{host,origin:`http://${host}`,"sec-fetch-site":"same-origin"},body:'{"messages":[]}'});
+    const response = await voiceSessionResponse(request, {env:{}});
+    assert.equal(response.status, host === "evil.com" ? 403 : 409);
+  }
+});

@@ -1,3 +1,5 @@
+import { stripReplySources, stripReplyTiming } from "./reply-text";
+import type { ChatMessageInput } from "./types";
 import { isHandPlan, isReceipt, type HandPlan, type Receipt } from "./types";
 
 export type ThreadEntry = {
@@ -69,4 +71,14 @@ export function saveThread(items: ThreadEntry[]) {
   cachedRaw = raw;
   localStorage.setItem(STORAGE_KEY, raw);
   for (const listener of listeners) listener();
+}
+
+/** Use finished, visible turns for both typed and microphone follow-ups. */
+export function finishedHistory(items: Array<{ kind: "you" | "jarvis" | "hand"; text?: string; reply?: string; sources?: string[]; failed?: boolean; pending?: boolean }>): ChatMessageInput[] {
+  return items.flatMap((item): ChatMessageInput[] => {
+    if (item.failed || item.pending) return [];
+    const content = item.kind === "you" ? (item.text ?? "").trim() : stripReplySources(stripReplyTiming(item.reply ?? item.text ?? ""), item.sources);
+    if (!content || (item.kind !== "you" && /^(?:Stopped\. I do not know if that finished\.|Jarvis did not answer|I couldn't reach Jarvis)/i.test(content))) return [];
+    return [{ role: item.kind === "you" ? "user" : "assistant", content }];
+  }).slice(-8);
 }

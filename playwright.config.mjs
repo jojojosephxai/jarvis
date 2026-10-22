@@ -11,10 +11,10 @@ export default defineConfig({
     viewport: { width: 1440, height: 900 },
   },
   webServer: {
-    command: "JARVIS_VOICE_LAYER=realtime npm run start",
-    env: { XAI_API_KEY: "", OBSIDIAN_VAULT_PATH: "work/e2e-vault" },
+    command: "npm run start",
+    env: { JARVIS_VOICE_LAYER: "realtime", XAI_API_KEY: "", AZURE_SPEECH_KEY: "", AZURE_SPEECH_REGION: "", OBSIDIAN_VAULT_PATH: "work/e2e-vault" },
     url: "http://127.0.0.1:4721",
-    reuseExistingServer: false,
+    reuseExistingServer: !process.env.CI,
     timeout: 120000,
   },
 });

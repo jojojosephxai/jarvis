@@ -365,7 +365,7 @@ export function ForceScene({
             const radius = Math.max(hub ? 6 : 3, Math.min(cap, entry.baseScale / worldPerPx));
             return {
               id: entry.id, x: (scratch.x * 0.5 + 0.5) * viewW, y: (-scratch.y * 0.5 + 0.5) * viewH,
-              r: radius * 1.06, hubId: hub ? node.id : node.hubs[0], priority: node.id === framing.selectedId ? 1000 : hub ? 500 : active ? 100 : 0,
+              r: radius * 1.06, hubId: hub ? node.id : node.hubs[0], anchorId: node.ssot && !hub ? node.hubs[0] : undefined, priority: node.id === framing.selectedId ? 1000 : hub ? 500 : active ? 100 : 0,
               z: scratch.z,
             };
           });
