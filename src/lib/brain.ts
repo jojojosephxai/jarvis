@@ -1,5 +1,5 @@
 import { assertNever } from "./assert";
-import { isClockQuestion, isQuickAsk, isSmallTalk, localClockReply, readySentences } from "./clock";
+import { isClockQuestion, isQuickAsk, localClockReply, readySentences } from "./clock";
 import { CALL_REFUSAL } from "./demo-brain";
 import { answerFromVault, streamAnswerFromVault, type AnswerOptions, type GroundedAnswer } from "./grounded-answer";
 import { brainMode, grokConfigured, grokPhraseNotes, grokStreamSentences, pickGrokModel } from "./grok";
@@ -81,10 +81,11 @@ async function dispatchCommand(prepared: ReturnType<typeof prepareTurn>, options
 }
 
 export async function think(messages: ChatMessageInput[], options: AnswerOptions = {}): Promise<ChatResponse> {
-  options = { ...options, history: messages.slice(0, -1) };
+  const digest = await Promise.resolve().then(() => options.boardDigest?.() ?? "").catch(() => "");
+  options = { ...options, history: messages.slice(0, -1), boardDigest: () => digest };
   const prepared = prepareTurn(messages, options);
   const response = await dispatchCommand(prepared, options) ?? await talk(prepared.latest!.content, options);
-  response.model = response.mode === "grok" ? pickGrokModel(prepared.latest?.content ?? "") : "local";
+  response.model = response.mode === "grok" ? pickGrokModel(prepared.latest?.content ?? "", digest) : "local";
   return finishAfterWatch(response, prepared.root, prepared.watching);
 }
 
@@ -111,7 +112,7 @@ async function talk(latest: string, options: AnswerOptions): Promise<ChatRespons
       receipts: [],
     };
   }
-  if (isSmallTalk(latest)) return talkSmall(latest, options);
+  if (isQuickAsk(latest, await options.boardDigest?.())) return talkSmall(latest, options);
 
   return fromGrounded(await answerFromVault(latest, options));
 }
@@ -138,7 +139,8 @@ export async function* streamTurn(
   messages: ChatMessageInput[],
   options: AnswerOptions = {},
 ): AsyncGenerator<SpeakEvent> {
-  options = { ...options, history: messages.slice(0, -1) };
+  const digest = await Promise.resolve().then(() => options.boardDigest?.() ?? "").catch(() => "");
+  options = { ...options, history: messages.slice(0, -1), boardDigest: () => digest };
   let logged = false;
   const logFirst = () => {
     if (logged) return;
@@ -151,7 +153,7 @@ export async function* streamTurn(
       yield { type: "sentence", text };
     }
     if (!logged) logFirst();
-    response.model = response.mode === "grok" ? pickGrokModel(messages.at(-1)?.content ?? "") : "local";
+    response.model = response.mode === "grok" ? pickGrokModel(messages.at(-1)?.content ?? "", digest) : "local";
     yield { type: "done", response };
   };
 
@@ -169,7 +171,7 @@ export async function* streamTurn(
     yield* emitReply(await finishAfterWatch(await talk(latest.content, options), root, watching));
     return;
   }
-  if (isQuickAsk(latest.content)) {
+  if (isQuickAsk(latest.content, digest)) {
     const modelOn = options.useModel ?? grokConfigured();
     if (!modelOn || options.complete) {
       yield* emitReply(await finishAfterWatch(await talk(latest.content, options), root, watching));
@@ -190,7 +192,7 @@ export async function* streamTurn(
     }
     const response = await finishAfterWatch({ reply: answerText, mode: "grok", receipts: [] }, root, watching);
     if (!logged) logFirst();
-    response.model = response.mode === "grok" ? pickGrokModel(messages.at(-1)?.content ?? "") : "local";
+    response.model = response.mode === "grok" ? pickGrokModel(messages.at(-1)?.content ?? "", digest) : "local";
     yield { type: "done", response };
     return;
   }
@@ -212,7 +214,7 @@ export async function* streamTurn(
         }
       }
       if (!logged) logFirst();
-      response.model = response.mode === "grok" ? pickGrokModel(messages.at(-1)?.content ?? "") : "local";
+      response.model = response.mode === "grok" ? pickGrokModel(messages.at(-1)?.content ?? "", digest) : "local";
     yield { type: "done", response };
     }
     return;

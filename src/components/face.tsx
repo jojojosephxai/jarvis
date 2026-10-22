@@ -1077,10 +1077,11 @@ function ChatCard({
 }
 
 function TimingLine({ tokenMs, voiceMs, model }: { tokenMs?: number; voiceMs?: number; model?: string }) {
-  if (tokenMs === undefined) return model === "voice" ? <p className="chat-timing">voice</p> : null;
+  if (model === "voice") return <p className="chat-timing">voice</p>;
+  if (tokenMs === undefined) return null;
   return (
     <p className="chat-timing">
-      {model ?? "grok-4.7"} · {((tokenMs + (voiceMs ?? 0)) / 1000).toFixed(1)}s
+      {model === "grok-4-fast-non-reasoning" ? "fast" : model ?? "grok-4.7"} · {((tokenMs + (voiceMs ?? 0)) / 1000).toFixed(1)}s
     </p>
   );
 }

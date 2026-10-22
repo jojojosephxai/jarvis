@@ -62,8 +62,8 @@ export function grokFastModel(): string {
   return FAST_XAI_MODEL;
 }
 
-export function pickGrokModel(question: string): string {
-  return isQuickAsk(question) ? FAST_XAI_MODEL : HARD_XAI_MODEL;
+export function pickGrokModel(question: string, boardDigest = ""): string {
+  return isQuickAsk(question, boardDigest) ? FAST_XAI_MODEL : HARD_XAI_MODEL;
 }
 
 let grokWarmed = false;
@@ -182,7 +182,7 @@ export function boundedHistory(history: ChatMessageInput[] = []): ChatMessageInp
 }
 
 export async function grokPhraseNotes(question: string, packet: string, history: ChatMessageInput[] = [], fetchImpl: typeof fetch = fetch): Promise<GrokResult> {
-  const model = pickGrokModel(question);
+  const model = pickGrokModel(question, packet.match(/# Life dashboard\n([\s\S]*?)(?:\n\nQuestion:|$)/)?.[1]);
   const user = (packet.startsWith("Question:") ? packet : `Question:\n${question}\n\n${packet}`).slice(0, 12000);
   return postChat(
     chatBody(model, 0.4, 400, [
@@ -197,7 +197,7 @@ export async function grokPhraseNotes(question: string, packet: string, history:
 export async function* grokStreamSentences(question: string, packet: string, history: ChatMessageInput[] = [], fetchImpl: typeof fetch = fetch): AsyncGenerator<string> {
   const key = process.env.XAI_API_KEY?.trim();
   if (!key) return;
-  const model = pickGrokModel(question);
+  const model = pickGrokModel(question, packet.match(/# Life dashboard\n([\s\S]*?)(?:\n\nQuestion:|$)/)?.[1]);
   const user = (packet.startsWith("Current time:") || packet.startsWith("Question:")
     ? packet
     : `Question:\n${question}\n\n${packet}`

@@ -5,7 +5,7 @@ import path from "node:path";
 import { afterEach, describe, it } from "node:test";
 
 import { pinnedContext } from "./pinned-context";
-import { think } from "./brain";
+import { think, streamTurn } from "./brain";
 import { answerFromVault, wordingStaysOnNotes } from "./grounded-answer";
 import type { VaultNote } from "./vault-read";
 
@@ -358,5 +358,20 @@ describe("pinned context and follow-ups", () => {
     await writeFile(path.join(root, "vault", "About.md"), "# About\nSynthetic updated profile: pottery.");
     assert.match(await pinnedContext("hello", options), /pottery/);
     assert.doesNotMatch(await pinnedContext("hello", { ...options, vaultPath: "missing" }), /pottery/);
+  });
+});
+
+describe("personal routing", () => {
+  it("routes board project names through the grounded packet and hard model", async () => {
+    const messages = [{ role: "user" as const, content: "How is Beacon?" }];
+    const options = { vaultPath: path.resolve("tests/fixtures/vault"), boardDigest: () => "Project Beacon: waiting on Joseph.", useModel: true,
+      complete: async (_question: string, packet: string) => {
+        assert.doesNotMatch(packet, /No vault search/);
+        assert.match(packet, /Life dashboard/);
+        return { ok: true as const, text: "Beacon is waiting on you." };
+      },
+    };
+    assert.equal((await think(messages, options)).model, "grok-4.7");
+    for await (const event of streamTurn(messages, options)) if (event.type === "done") assert.equal(event.response.model, "grok-4.7");
   });
 });

@@ -21,8 +21,15 @@ describe("clock questions", () => {
     assert.equal(localClockReply("date", now), "It's Wednesday, October 14.");
   });
 
-  it("sends greetings and short questions to the fast path", () => {
+  it("sends greetings and general questions to the fast path", () => {
     assert.equal(isQuickAsk("hi"), true);
+    assert.equal(isQuickAsk("what's due tomorrow"), false);
+    assert.equal(isQuickAsk("my swim times"), false);
+    for (const word of ["School", "Swim", "Health", "People", "Projects", "Goals", "Jarvis", "Friday", "test", "practice"]) assert.equal(isQuickAsk(`what is ${word}?`), false);
+    assert.equal(isQuickAsk("How is Beacon?", "Project Beacon: waiting on Joseph"), false);
+    assert.equal(isQuickAsk("and on Friday?"), false);
+    assert.equal(isQuickAsk("What did I just say?"), false);
+    assert.equal(isQuickAsk("Explain the difference between a planet and a star"), true);
     assert.equal(isQuickAsk("what time is it"), true);
     assert.equal(isQuickAsk("how is the weather?"), true);
     assert.equal(isQuickAsk("what time is swim practice"), false);

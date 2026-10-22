@@ -39,15 +39,17 @@ export function isSmallTalk(text: string): boolean {
   return SMALL_RE.test(tidy(text));
 }
 
-/** Greetings, the clock, and short questions use the fast model. Vault lookups stay on the hard model. */
-export function isQuickAsk(text: string): boolean {
+/** Only clearly general chat bypasses grounding. Ambiguous follow-ups keep their context. */
+export function isQuickAsk(text: string, boardDigest = ""): boolean {
   const clean = tidy(text);
   if (!clean) return false;
   if (isClockQuestion(clean) || isSmallTalk(clean)) return true;
-  const words = clean.split(" ").filter(Boolean);
-  if (words.length > 8) return false;
-  if (/\b(calendar|schedule|remind|remember|vault|search|filter|focus|swim|school|practice)\b/i.test(clean)) return false;
-  return clean.endsWith("?") || words.length <= 4;
+  if (/\b(my|mine|our|I|Joseph|calendar|schedule|remind|remember|vault|notes?|search|filter|focus|school|swim|health|people|projects?|goals?|Jarvis|today|tomorrow|yesterday|tonight|Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday|due|test|practice|week|deadline|it|that|those|these)\b|\b\d{4}-\d{2}-\d{2}\b/i.test(clean)) return false;
+  const boilerplate = new Set(["the", "and", "for", "with", "waiting", "project", "projects", "next", "now", "status", "review"]);
+  const boardWords = boardDigest.toLowerCase().match(/[a-z][a-z0-9-]{2,}/g) ?? [];
+  const words = new Set(clean.toLowerCase().match(/[a-z0-9-]+/g) ?? []);
+  if (boardWords.some(word => !boilerplate.has(word) && words.has(word))) return false;
+  return /^(?:what(?:'s| is| are)|who (?:is|was|are)|why |how (?:is|are|do|does|can)|explain |define |tell me (?:about|a joke)|write (?:a|an) )/i.test(clean);
 }
 
 export function localClockReply(kind: "time" | "date", now = new Date()): string {
