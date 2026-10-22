@@ -1,6 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
+import { createPortal } from "react-dom";
 import { useEffect, useMemo, useState } from "react";
 
 import { NoteReader, type NoteLink } from "@/components/note-reader";
@@ -145,6 +146,8 @@ export function NoteGraph({
   onHome,
   railCollapsed,
   onToggleRail,
+  inspectorHost,
+  onInspect,
 }: {
   cue?: GraphCue | null;
   suspendEscape?: boolean;
@@ -152,6 +155,8 @@ export function NoteGraph({
   onHome: () => void;
   railCollapsed: boolean;
   onToggleRail: () => void;
+  inspectorHost: HTMLDivElement | null;
+  onInspect: () => void;
 }) {
   const [payload, setPayload] = useState<NoteGraphPayload | null>(null);
   const [failed, setFailed] = useState(false);
@@ -179,7 +184,7 @@ export function NoteGraph({
   const loadNotice = failed
     ? "The note graph could not be loaded. Try reloading."
     : !payload ? "Reading notes…" : payload.status === "ready" ? "" : payload.detail;
-  return <GraphReady payload={payload ?? EMPTY} loadNotice={loadNotice} cue={cue} suspendEscape={suspendEscape} graphOpen={graphOpen} onHome={onHome} railCollapsed={railCollapsed} onToggleRail={onToggleRail} />;
+  return <GraphReady payload={payload ?? EMPTY} loadNotice={loadNotice} cue={cue} suspendEscape={suspendEscape} graphOpen={graphOpen} onHome={onHome} railCollapsed={railCollapsed} onToggleRail={onToggleRail} inspectorHost={inspectorHost} onInspect={onInspect} />;
 }
 
 function matchHub(nodes: GraphNode[], wanted: string): GraphNode | undefined {
@@ -201,6 +206,8 @@ function GraphReady({
   onHome,
   railCollapsed,
   onToggleRail,
+  inspectorHost,
+  onInspect,
 }: {
   payload: NoteGraphPayload;
   loadNotice: string;
@@ -210,6 +217,8 @@ function GraphReady({
   onHome: () => void;
   railCollapsed: boolean;
   onToggleRail: () => void;
+  inspectorHost: HTMLDivElement | null;
+  onInspect: () => void;
 }) {
   const [query, setQuery] = useState("");
   const [pathFromId, setPathFromId] = useState("");
@@ -444,6 +453,7 @@ function GraphReady({
   }
 
   function focusHub(id: string) {
+    onInspect();
     setFilterId(null);
     setClusterId(id);
     setSelectedId(id);
@@ -457,6 +467,7 @@ function GraphReady({
   function openNote(id: string, shift = false) {
     const node = payload.nodes.find((item) => item.id === id);
     if (!node) return;
+    onInspect();
     if (shift && selectedId && selectedId !== id) {
       setPathFromId(selectedId);
       setPathToId(id);
@@ -482,6 +493,10 @@ function GraphReady({
     setHomeToken((token) => token + 1);
   }
 
+  useEffect(() => {
+    if (readerId) onInspect();
+  }, [readerId, onInspect]);
+
   function onSearch(value: string) {
     setQuery(value);
     const found = matchingNodes(payload.nodes, value);
@@ -491,6 +506,7 @@ function GraphReady({
     }
     const first = found[0];
     if (!first) return;
+    setReaderId(first.id);
     setPathFromId("");
     setPathToId("");
     if (first.kind === "folder") {
@@ -657,32 +673,7 @@ function GraphReady({
           <span>{payload.noteCount} notes</span>
           <span>{payload.connectionCount} links</span>
         </p>
-        <p className="graph-orbit-hint">drag = orbit, shift-click = path</p>
-        {query.trim() ? (
-          <p className="face-hint">{matches.length === 0 ? "No matches." : `${matches.length} match${matches.length === 1 ? "" : "es"}`}</p>
-        ) : null}
-      </aside>
-      {graphOpen && clusterId ? (
-        <button type="button" className="graph-crumb" onClick={clearFocus}>
-          GRAPH / {clusterName.toUpperCase()}
-        </button>
-      ) : null}
-      {selected ? (
-        <NoteReader
-          node={selected}
-          links={noteLinks}
-          path={pathNodes}
-          members={
-            selected.file
-              ? []
-              : payload.nodes
-                  .filter((node) => node.hubs.includes(selected.id) && node.id.endsWith(".md") && !node.root)
-                  .map((node) => ({ id: node.id, title: node.title }))
-          }
-          onBack={clearFocus}
-          onOpen={(id) => openNote(id)}
-        />
-      ) : graphOpen ? (
+        {graphOpen ? (
         <FilterLegend
           collapsed={filterCollapsed}
           onCollapse={() => {
@@ -696,12 +687,39 @@ function GraphReady({
             setHiddenTypes((current) => (current.includes(type) ? current.filter((item) => item !== type) : [...current, type]))
           }
         />
+        ) : null}
+        <p className="graph-orbit-hint">drag = orbit, shift-click = path</p>
+        {query.trim() ? (
+          <p className="face-hint">{matches.length === 0 ? "No matches." : `${matches.length} match${matches.length === 1 ? "" : "es"}`}</p>
+        ) : null}
+      </aside>
+      {graphOpen && clusterId ? (
+        <button type="button" className="graph-crumb" onClick={clearFocus}>
+          GRAPH / {clusterName.toUpperCase()}
+        </button>
+      ) : null}
+      {inspectorHost ? createPortal(selected ? (
+        <NoteReader
+          docked
+          node={selected}
+          links={noteLinks}
+          path={pathNodes}
+          members={
+            selected.file
+              ? []
+              : payload.nodes
+                  .filter((node) => node.hubs.includes(selected.id) && node.id.endsWith(".md") && !node.root)
+                  .map((node) => ({ id: node.id, title: node.title }))
+          }
+          onBack={clearFocus}
+          onOpen={(id) => openNote(id)}
+        />
       ) : (
-        <aside className="graph-inspector is-side glass inspector-empty" aria-label="Inspector">
-          <p className="face-block-label">Inspector</p>
-          <p className="face-hint">{loadNotice || "Choose a hub or search your notes."}</p>
+        <aside className="graph-inspector is-docked inspector-empty" aria-label="Inspector">
+          <p className="face-block-label">No node selected</p>
+          <p className="face-hint">{loadNotice || "Choose a hub or click a node to explore its notes and connections."}</p>
         </aside>
-      )}
+      ), inspectorHost) : null}
       {graphOpen && payload.status === "ready" ? <div className="graph-canvas">
         <ForceScene
           nodes={payload.nodes}

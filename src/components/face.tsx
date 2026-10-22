@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
+import { useCallback, useEffect, useRef, useState, type CSSProperties, type ReactNode, type RefObject } from "react";
 
 import { NoteGraph, type GraphCue } from "@/components/note-graph";
 import { parseGraphCommand } from "@/lib/graph-command";
@@ -81,7 +81,7 @@ type Job = {
 
 const STUB_TASKS = new Set(["browser.open", "browser.task", "message.send", "money.spend", "item.delete"]);
 
-type LogTab = "chat" | "tasks" | "log";
+type LogTab = "chat" | "tasks" | "log" | "inspector";
 
 function markBootDone() {
   try {
@@ -153,6 +153,26 @@ export function Face() {
   const [job, setJob] = useState<Job | null>(null);
   const [taskFade, setTaskFade] = useState<Job | null>(null);
   const [tab, setTab] = useState<LogTab>("chat");
+  const [sidebarWidth, setSidebarWidth] = useState(340);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [inspectorHost, setInspectorHost] = useState<HTMLDivElement | null>(null);
+  const [resizing, setResizing] = useState(false);
+  const showTab = useCallback((next: LogTab) => {
+    setTab(next);
+    setSidebarCollapsed(false);
+    try { localStorage.setItem("jarvis-sidebar-collapsed", "false"); } catch {}
+  }, []);
+  const inspect = useCallback(() => showTab("inspector"), [showTab]);
+  function resizeSidebar(width: number) {
+    const next = Math.max(300, Math.min(window.innerWidth / 2, width));
+    setSidebarWidth(next);
+    try { localStorage.setItem("jarvis-sidebar-width", String(next)); } catch {}
+  }
+  function toggleSidebar() {
+    const next = !sidebarCollapsed;
+    setSidebarCollapsed(next);
+    try { localStorage.setItem("jarvis-sidebar-collapsed", String(next)); } catch {}
+  }
   const [intro, setIntro] = useState<"in" | "out">("in");
   const [wake, setWake] = useState(false);
   const [liveLine, setLiveLine] = useState("");
@@ -215,6 +235,9 @@ export function Face() {
     const hub = params.get("hub");
     const timer = window.setTimeout(() => {
       try {
+        const savedWidth = Number(localStorage.getItem("jarvis-sidebar-width"));
+        if (Number.isFinite(savedWidth) && savedWidth >= 300) setSidebarWidth(savedWidth);
+        setSidebarCollapsed(localStorage.getItem("jarvis-sidebar-collapsed") === "true");
         setRailCollapsed(localStorage.getItem("jarvis-rail-collapsed") === "true");
         setSpokenReplies(localStorage.getItem("jarvis-spoken-replies") !== "false");
         setShowTiming(localStorage.getItem("jarvis-show-timing") !== "false");
@@ -685,7 +708,7 @@ export function Face() {
   if (speechLine && speechLine !== captionHold) setCaptionHold(speechLine);
 
   return (
-    <div className="face" data-intro={intro} data-mode={orb} data-view={graphOpen ? "graph" : "home"} data-rail-collapsed={railCollapsed} data-timing={showTiming}>
+    <div className="face" style={{ "--side": `min(50vw, ${sidebarWidth}px)` } as CSSProperties} data-sidebar-collapsed={sidebarCollapsed} data-resizing={resizing} data-intro={intro} data-mode={orb} data-view={graphOpen ? "graph" : "home"} data-rail-collapsed={railCollapsed} data-timing={showTiming}>
       {intro === "in" ? (
         <div className="face-loader" role="status">
           <span />
@@ -693,7 +716,7 @@ export function Face() {
         </div>
       ) : null}
       <div className="face-stage" data-orb="center" data-mode={orb}>
-        <NoteGraph cue={cue} suspendEscape={working} graphOpen={graphOpen} onHome={() => setGraphOpen(false)} railCollapsed={railCollapsed} onToggleRail={() => {
+        <NoteGraph inspectorHost={inspectorHost} onInspect={inspect} cue={cue} suspendEscape={working} graphOpen={graphOpen} onHome={() => setGraphOpen(false)} railCollapsed={railCollapsed} onToggleRail={() => {
           const next = !railCollapsed;
           setRailCollapsed(next);
           try { localStorage.setItem("jarvis-rail-collapsed", String(next)); } catch {}
@@ -792,7 +815,7 @@ export function Face() {
             <div className="tool-row" role="group" aria-label="Tools">
               <ToolButton
                 label="Hands"
-                onClick={() => setTab("tasks")}
+                onClick={() => showTab("tasks")}
               >
                 <HandIcon />
               </ToolButton>
@@ -852,11 +875,16 @@ export function Face() {
           </div>
       </div>
       <ChatCard
+        collapsed={sidebarCollapsed}
+        onCollapse={toggleSidebar}
+        onResize={resizeSidebar}
+        onResizing={setResizing}
+        inspectorRef={setInspectorHost}
         items={items}
         tab={tab}
         pending={pending}
         chatRef={chatRef}
-        onTab={setTab}
+        onTab={showTab}
         onDecide={(id, plan, choice) => void decide(id, plan, choice)}
       />
     </div>
@@ -895,7 +923,17 @@ function ChatCard({
   chatRef,
   onTab,
   onDecide,
+  collapsed,
+  onCollapse,
+  onResize,
+  onResizing,
+  inspectorRef,
 }: {
+  collapsed: boolean;
+  onCollapse: () => void;
+  onResize: (width: number) => void;
+  onResizing: (active: boolean) => void;
+  inspectorRef: (host: HTMLDivElement | null) => void;
   items: LogItem[];
   tab: LogTab;
   pending: boolean;
@@ -904,20 +942,46 @@ function ChatCard({
   onDecide: (id: string, plan: HandPlan, choice: "yes" | "no") => void;
 }) {
   return (
-    <section className="face-chat glass face-chrome" aria-label="Chat" data-region="chat">
-      <div className="chat-tabs" role="tablist">
-        {(["chat", "tasks", "log"] as const).map((name) => (
-          <button key={name} type="button" role="tab" aria-selected={tab === name} data-active={tab === name ? "true" : "false"} onClick={() => onTab(name)}>
-            {name}
-          </button>
-        ))}
+    <aside className="face-sidebar glass face-chrome" aria-label="Workspace sidebar">
+      <button type="button" className="sidebar-reopen" aria-label="Open sidebar" aria-expanded={!collapsed} onClick={onCollapse}>‹ <span>{tab}</span></button>
+      <div className="sidebar-content" inert={collapsed}>
+        <div className="sidebar-resize" role="separator" aria-label="Resize sidebar" aria-orientation="vertical" tabIndex={0}
+          onPointerDown={(event) => { event.currentTarget.setPointerCapture(event.pointerId); onResizing(true); }}
+          onPointerMove={(event) => { if (event.currentTarget.hasPointerCapture(event.pointerId)) onResize(window.innerWidth - event.clientX - 16); }}
+          onPointerUp={(event) => { event.currentTarget.releasePointerCapture(event.pointerId); onResizing(false); }}
+          onLostPointerCapture={() => onResizing(false)}
+          onKeyDown={(event) => {
+            const width = event.currentTarget.parentElement!.parentElement!.getBoundingClientRect().width;
+            if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+            event.preventDefault();
+            onResize(event.key === "Home" ? 300 : event.key === "End" ? window.innerWidth / 2 : width + (event.key === "ArrowLeft" ? 20 : -20));
+          }} />
+        <div className="sidebar-heading"><p className="face-block-label">Workspace</p><button type="button" className="inspector-back" aria-label="Collapse sidebar" aria-expanded={!collapsed} onClick={onCollapse}>›</button></div>
+        <div className="chat-tabs" role="tablist" aria-label="Sidebar">
+          {(["chat", "tasks", "log", "inspector"] as const).map((name) => (
+            <button key={name} id={`tab-${name}`} aria-controls={`panel-${name}`} type="button" role="tab" tabIndex={tab === name ? 0 : -1} aria-selected={tab === name} data-active={tab === name ? "true" : "false"} onClick={() => onTab(name)}
+              onKeyDown={(event) => {
+                const tabs = ["chat", "tasks", "log", "inspector"] as const;
+                if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+                event.preventDefault();
+                const index = event.key === "Home" ? 0 : event.key === "End" ? 3 : (tabs.indexOf(tab) + (event.key === "ArrowRight" ? 1 : 3)) % 4;
+                onTab(tabs[index]); document.getElementById(`tab-${tabs[index]}`)?.focus();
+              }}>
+              {name}
+            </button>
+          ))}
+        </div>
+        <div className="face-chat chat-log" role="tabpanel" id={`panel-${tab === "inspector" ? "chat" : tab}`} aria-labelledby={`tab-${tab === "inspector" ? "chat" : tab}`} hidden={tab === "inspector"} ref={chatRef}>
+          {tab === "chat" ? <ChatLines items={items} /> : null}
+          {tab === "tasks" ? <TaskLines items={items} pending={pending} onDecide={onDecide} /> : null}
+          {tab === "log" ? <LogLines items={items} /> : null}
+        </div>
+        <div className="sidebar-inspector" role="tabpanel" id="panel-inspector" aria-labelledby="tab-inspector" hidden={tab !== "inspector"}>
+          <button type="button" className="back-to-chat" onClick={() => onTab("chat")}>← Back to chat</button>
+          <div className="inspector-host" ref={inspectorRef} />
+        </div>
       </div>
-      <div className="chat-log" ref={chatRef}>
-        {tab === "chat" ? <ChatLines items={items} /> : null}
-        {tab === "tasks" ? <TaskLines items={items} pending={pending} onDecide={onDecide} /> : null}
-        {tab === "log" ? <LogLines items={items} /> : null}
-      </div>
-    </section>
+    </aside>
   );
 }
 

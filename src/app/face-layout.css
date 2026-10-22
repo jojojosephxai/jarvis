@@ -1,10 +1,11 @@
 .face {
-  --side: clamp(200px, 18vw, 300px);
-  --chat-h: clamp(120px, 24vh, 200px);
+  --side: 340px;
+  --sidebar-space: var(--side);
+  --ease: cubic-bezier(.22, 1, .36, 1);
   --edge: 16px;
   --rail: clamp(200px, 14vw, 232px);
   --center-left: calc(var(--edge) + var(--rail) + 16px);
-  --center-right: calc(var(--edge) + var(--side) + 16px);
+  --center-right: calc(var(--edge) + var(--sidebar-space) + 16px);
   --orb-size: min(38vh, 320px, calc((100vw - var(--center-left) - var(--center-right)) * .76));
   --orb-top: calc(50% - 48px);
   position: relative;
@@ -869,18 +870,69 @@
   z-index: 7;
 }
 
-.face-chat {
+.face-sidebar {
   position: absolute;
-  right: var(--edge);
+  z-index: 12;
+  top: 48px;
   bottom: var(--edge);
-  display: flex;
-  width: var(--side);
-  height: var(--chat-h);
-  min-height: 0;
-  max-height: none;
-  flex-direction: column;
-  padding: 8px 10px 10px;
+  right: var(--edge);
+  width: var(--sidebar-space);
+  transition: width 300ms var(--ease);
 }
+.sidebar-content {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-width: 0;
+  padding: 12px;
+}
+.sidebar-heading { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+.sidebar-heading button { padding: 0 4px; font-size: 18px; }
+.sidebar-resize {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -6px;
+  width: 12px;
+  cursor: col-resize;
+  touch-action: none;
+}
+.sidebar-resize:hover, .sidebar-resize:focus-visible { background: rgba(73, 212, 255, .12); outline: none; }
+.sidebar-reopen { display: none; }
+.face[data-sidebar-collapsed="true"] { --sidebar-space: 28px; }
+.face[data-sidebar-collapsed="true"] .sidebar-content { visibility: hidden; opacity: 0; }
+.face[data-sidebar-collapsed="true"] .sidebar-reopen {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 12px;
+  padding-top: 12px;
+  writing-mode: vertical-rl;
+  border: 0;
+  background: transparent;
+  color: #49d4ff;
+  font: 12px var(--font-jetbrains), monospace;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.face-chat.chat-log { position: static; width: auto; height: auto; padding: 12px 0; flex: 1; }
+.sidebar-inspector { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 16px; padding-top: 16px; }
+.sidebar-inspector[hidden], .chat-log[hidden] { display: none; }
+.inspector-host { display: flex; flex: 1; min-height: 0; }
+.back-to-chat { align-self: flex-start; padding: 0; border: 0; background: transparent; color: #49d4ff; font: 12px inherit; cursor: pointer; }
+.face-column .face-filter { position: static; width: 100%; max-height: none; padding: 12px 0 0; border: 0; border-top: 1px solid rgba(73,212,255,.35); background: transparent; backdrop-filter: none; }
+.face-column .face-filter.is-collapsed { height: auto; }
+.face-column .face-filter.is-collapsed .filter-toggle { height: auto; padding: 4px; }
+.face[data-resizing="true"] { cursor: col-resize; user-select: none; }
+.face[data-resizing="true"] .face-sidebar { transition: none; }
+.face-column { transition: width 300ms var(--ease); }
+.face-dock { transition: top 700ms var(--ease), left 300ms var(--ease), right 300ms var(--ease); }
+.face[data-view="graph"] .graph-canvas { transition: left 300ms var(--ease), right 300ms var(--ease); }
+.orb-dial[data-place="center"] { transition: left 300ms var(--ease), top 700ms var(--ease), width 600ms var(--ease); }
+.tool-row { width: 100%; max-width: 286px; justify-content: space-between; gap: 0; }
+.tool-btn, .settings-control { flex: none; }
 
 .chat-tabs {
   justify-content: flex-start;
@@ -1187,10 +1239,7 @@
   left: var(--center-left);
   right: var(--center-right);
 }
-.graph-stage[data-filter-collapsed="true"]:not(.has-note) .graph-canvas {
-  right: 64px;
-  bottom: calc(var(--chat-h) + var(--edge) + 16px);
-}
+
 .graph-crumb { left: calc((100% + var(--center-left) - var(--center-right)) / 2); }
 .inspector-empty { display: flex; flex-direction: column; gap: 16px; }
 .chat-line .chat-timing { color: #81929e; font-size: 11px; margin-top: 6px; }
