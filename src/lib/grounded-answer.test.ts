@@ -337,9 +337,9 @@ describe("pinned context and follow-ups", () => {
     });
     assert.ok(answer.sources.includes("School-schedule"));
   });
-  it("keeps the complete pinned block under 2,000 characters with a full board", async () => {
+  it("keeps the complete pinned block under 1,400 characters with a full board", async () => {
     const block = await pinnedContext("tomorrow", { vaultPath: fixture, now, boardDigest: () => "Waiting on Joseph: model bridge. ".repeat(100) });
-    assert.ok(block.length <= 2000, String(block.length));
+    assert.ok(block.length <= 1400, String(block.length));
     for (const label of ["About", "Preferences", "Voice-and-tone", "Today", "Tomorrow", "Goals", "Life dashboard"]) assert.ok(block.includes(label));
     assert.match(block, /Waiting on Joseph/);
   });

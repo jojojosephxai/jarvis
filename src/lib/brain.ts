@@ -179,7 +179,7 @@ export async function* streamTurn(
     }
     const packet = `${await pinnedContext(latest.content, options)}\n\nQuestion:\n${latest.content}\n\nNotes:\nNo vault search. Answer in one or two short sentences.`;
     let answerText = "";
-    for await (const sentence of (options.stream ?? grokStreamSentences)(latest.content, packet, options.history)) {
+    for await (const sentence of (options.stream ? options.stream(latest.content, packet, options.history) : grokStreamSentences(latest.content, packet, options.history, undefined, options.onToken))) {
       const clean = sentence.trim();
       if (!clean) continue;
       logFirst();

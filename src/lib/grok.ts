@@ -194,7 +194,7 @@ export async function grokPhraseNotes(question: string, packet: string, history:
   );
 }
 
-export async function* grokStreamSentences(question: string, packet: string, history: ChatMessageInput[] = [], fetchImpl: typeof fetch = fetch): AsyncGenerator<string> {
+export async function* grokStreamSentences(question: string, packet: string, history: ChatMessageInput[] = [], fetchImpl: typeof fetch = fetch, onToken?: (text: string) => void): AsyncGenerator<string> {
   const key = process.env.XAI_API_KEY?.trim();
   if (!key) return;
   const model = pickGrokModel(question, packet.match(/# Life dashboard\n([\s\S]*?)(?:\n\nQuestion:|$)/)?.[1]);
@@ -250,10 +250,10 @@ export async function* grokStreamSentences(question: string, packet: string, his
   };
   while (true) {
     const { done, value } = await reader.read();
-    if (done) break;
-    pending += decoder.decode(value, { stream: true });
+    pending += done ? decoder.decode() : decoder.decode(value, { stream: true });
     const lines = pending.split("\n");
     pending = lines.pop() ?? "";
+    if (done && pending.trim()) { lines.push(pending); pending = ""; }
     for (const line of lines) {
       const trimmed = line.trim();
       if (!trimmed.startsWith("data:")) continue;
@@ -261,12 +261,14 @@ export async function* grokStreamSentences(question: string, packet: string, his
       if (!data || data === "[DONE]") continue;
       try {
         const payload: unknown = JSON.parse(data);
-        text += streamDelta(payload);
+        const delta = streamDelta(payload);
+        if (delta) { text += delta; onToken?.(delta); }
       } catch {
         // Ignore a partial SSE frame.
       }
     }
     for (const sentence of pull()) yield sentence;
+    if (done) break;
   }
   const tail = text.trim();
   if (tail) yield tail;

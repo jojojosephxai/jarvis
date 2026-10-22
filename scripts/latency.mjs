@@ -25,10 +25,11 @@ export async function* ndjson(body) {
 }
 export async function measureTurn(base, question, fetchImpl=fetch, now=()=>performance.now()) {
   base=loopbackBase(base);
-  const started=now(); let firstSentenceMs=null, doneMs=null, ttsFirstByteMs=null, speech;
+  const started=now(); let firstTokenMs=null, firstSentenceMs=null, doneMs=null, ttsFirstByteMs=null, timeToFirstAudioMs=null, speech;
   const response=await fetchImpl(`${base}/api/chat`,{method:'POST',redirect:'error',headers:{'Content-Type':'application/json'},body:JSON.stringify({messages:[{role:'user',content:question}],stream:true})});
   if(!response.ok||!response.body) throw new Error(`Chat returned ${response.status}`);
   for await(const event of ndjson(response.body)) {
+    if(event.type==='token' && firstTokenMs===null) firstTokenMs=now()-started;
     if(event.type==='sentence' && firstSentenceMs===null) {
       firstSentenceMs=now()-started;
       speech=(async()=>{
@@ -37,7 +38,7 @@ export async function measureTurn(base, question, fetchImpl=fetch, now=()=>perfo
         if(!audio.ok||!audio.body) return;
         const reader=audio.body.getReader();
         const first=await reader.read();
-        if(!first.done && first.value?.length) ttsFirstByteMs=now()-start;
+        if(!first.done && first.value?.length) { ttsFirstByteMs=now()-start; timeToFirstAudioMs=now()-started; }
         await reader.cancel();
       })();
     }
@@ -45,7 +46,7 @@ export async function measureTurn(base, question, fetchImpl=fetch, now=()=>perfo
   }
   await speech;
   if(doneMs===null) throw new Error('Chat ended without done.');
-  return {firstSentenceMs,doneMs,ttsFirstByteMs};
+  return {firstTokenMs,firstSentenceMs,doneMs,ttsFirstByteMs,timeToFirstAudioMs};
 }
 export async function run(base) {
   base=loopbackBase(base);
@@ -53,7 +54,7 @@ export async function run(base) {
   for(const {question,baseline} of turns) {
     const measured=await measureTurn(base,question);
     const seconds=n=>n===null?'unavailable':`${(n/1000).toFixed(2)}s`;
-    results.push({turn:question,baseline:seconds(baseline),firstSentence:seconds(measured.firstSentenceMs),done:seconds(measured.doneMs),ttsFirstByte:seconds(measured.ttsFirstByteMs),delta:measured.firstSentenceMs===null?'unavailable':seconds(measured.firstSentenceMs-baseline)});
+    results.push({turn:question,baseline:seconds(baseline),ttft:seconds(measured.firstTokenMs),ttfa:seconds(measured.timeToFirstAudioMs),firstSentence:seconds(measured.firstSentenceMs),done:seconds(measured.doneMs),ttsFirstByte:seconds(measured.ttsFirstByteMs),delta:measured.firstSentenceMs===null?'unavailable':seconds(measured.firstSentenceMs-baseline)});
   }
   console.table(results);
 }

@@ -589,7 +589,7 @@ export function Face({ realtimeAllowed = false }: { realtimeAllowed?: boolean })
       timed = true;
       const now = performance.now();
       const tokenMs = Math.max(0, Math.round((tokenAt || now) - askedAt));
-      const voiceMs = tokenAt && voiceAt ? Math.max(0, Math.round(voiceAt - tokenAt)) : 0;
+      const voiceMs = voiceAt !== null ? Math.max(0, Math.round(voiceAt - askedAt)) : undefined;
       pendingTiming.tokenMs = tokenMs;
       pendingTiming.voiceMs = voiceMs;
       const targetId = liveId;
@@ -653,13 +653,14 @@ export function Face({ realtimeAllowed = false }: { realtimeAllowed?: boolean })
     }, abort.signal, spokenReplies ? (text, signal) => prepareSpeech(text, signal, answerId) : undefined);
     const askedCalendar = mentionsCalendar(trimmed);
     let streamed = "";
+    let tokenText = "";
     const pushSentence = (text: string) => {
       if (id !== jobGen.current || abort.signal.aborted) return;
       const clean = dropUnaskedCalendar(stripReplyTiming(text).trim(), askedCalendar);
       if (!clean) return;
       if (!tokenAt) tokenAt = performance.now();
       streamed = streamed ? `${streamed} ${clean}` : clean;
-      upsertJarvis(streamed);
+      if (!tokenText) upsertJarvis(streamed);
       queue.enqueue(clean);
     };
     try {
@@ -668,6 +669,13 @@ export function Face({ realtimeAllowed = false }: { realtimeAllowed?: boolean })
         { role: "user", content: trimmed },
       ].slice(-8) as ChatMessageInput[];
       const result = await session().run(messages, abort.signal, {
+        token: (delta) => {
+          if (id !== jobGen.current || abort.signal.aborted) return;
+          if (!tokenAt) tokenAt = performance.now();
+          pendingTiming.tokenMs = Math.max(0, Math.round(tokenAt - askedAt));
+          tokenText += delta;
+          upsertJarvis(dropUnaskedCalendar(tokenText, askedCalendar));
+        },
         sentence: pushSentence,
         transcript: (text) => {
           if (id !== jobGen.current) return;
@@ -1084,7 +1092,7 @@ function TimingLine({ tokenMs, voiceMs, model }: { tokenMs?: number; voiceMs?: n
   if (tokenMs === undefined) return null;
   return (
     <p className="chat-timing">
-      {model === "grok-4-fast-non-reasoning" ? "fast" : model ?? "grok-4.7"} · {((tokenMs + (voiceMs ?? 0)) / 1000).toFixed(1)}s
+      {model === "grok-4-fast-non-reasoning" ? "fast" : model ?? "grok-4.7"} · {((voiceMs ?? tokenMs) / 1000).toFixed(1)}s
     </p>
   );
 }
@@ -1192,52 +1200,13 @@ function TaskLines({
 }
 
 function LogLines({ items }: { items: LogItem[] }) {
-  const rows = inTimeOrder(collapseCalendar(items));
-  if (rows.length === 0) return <div className="empty-state"><p>No activity yet</p><span>Your conversation and task history will appear here.</span></div>;
-  return (
-    <>
-      {rows.map((item) => {
-        if (item.kind === "you") {
-          return (
-            <article key={item.id} className="chat-line">
-              <p className="chat-meta">
-                {formatStamp(item.at)} · You
-              </p>
-              <p>{item.text}</p>
-            </article>
-          );
-        }
-        if (item.kind === "jarvis") {
-          const shown = replyForChat(item.text, item.sources);
-          return (
-            <article key={item.id} className="chat-line">
-              <p className="chat-meta">
-                {formatStamp(item.at)} · Jarvis
-              </p>
-              <p className="chat-reply">{shown.body}</p>
-              <SourceChips chips={shown.chips} />
-              <TimingLine tokenMs={item.tokenMs} voiceMs={item.voiceMs} model={item.model} />
-            </article>
-          );
-        }
-        if (item.kind === "hand") {
-          const shown = replyForChat(item.reply, undefined);
-          return (
-            <article key={item.id} className="chat-line">
-              <p className="chat-meta">
-                {formatStamp(item.at)} · Jarvis
-              </p>
-              <p className="chat-reply">{shown.body}</p>
-              <SourceChips chips={shown.chips} />
-              <TimingLine tokenMs={item.tokenMs} voiceMs={item.voiceMs} model={item.model} />
-            </article>
-          );
-        }
-        const neverItem: never = item;
-        return neverItem;
-      })}
-    </>
-  );
+  const rows = inTimeOrder(items).filter(item => (item.kind === "jarvis" || item.kind === "hand") && item.tokenMs !== undefined);
+  if (!rows.length) return <div className="empty-state"><p>No timings yet</p></div>;
+  return <>{rows.map(item => (item.kind === "jarvis" || item.kind === "hand") ? (
+    <p key={item.id} className="turn-metrics" data-ttft={item.tokenMs} data-ttfa={item.voiceMs}>
+      TTFT {item.tokenMs} ms · TTFA {item.voiceMs === undefined ? "—" : `${item.voiceMs} ms`}
+    </p>
+  ) : null)}</>;
 }
 
 function ToolButton({

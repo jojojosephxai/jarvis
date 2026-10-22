@@ -52,7 +52,7 @@ export function scheduleSlice(text: string, now: Date): string {
   return lines.filter(line => line.includes(date)).join("\n");
 }
 
-/** All parts share 2,000 characters; a populated board reduces the profile excerpts. */
+/** All parts share 1,400 characters; a populated board reduces the profile excerpts. */
 export async function pinnedContext(question: string, options: PinnedOptions = {}): Promise<string> {
   const directory = resolveVaultPath(options.root ?? process.cwd(), options.vaultPath);
   const now = options.now ?? new Date();
@@ -71,7 +71,7 @@ export async function pinnedContext(question: string, options: PinnedOptions = {
     { label: "Life dashboard", text: digest, limit: 900 },
   ].filter(block => block.text.trim());
   const clock = `Current time: ${clockStamp(now)} (America/New_York).\nPinned profile and today:\n`;
-  const available = 2000 - clock.length - blocks.reduce((n, b) => n + b.label.length + 5, 0);
+  const available = 1400 - clock.length - blocks.reduce((n, b) => n + b.label.length + 5, 0);
   const wanted = blocks.reduce((n, b) => n + Math.min(b.text.length, b.limit), 0);
   return clock + blocks.map(b => `# ${b.label}\n${b.text.slice(0, Math.floor(Math.min(b.text.length, b.limit) * Math.min(1, available / wanted))).trim()}`).join("\n\n");
 }

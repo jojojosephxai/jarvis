@@ -186,6 +186,7 @@ export type GroundedAnswer = {
 
 export type AnswerOptions = PinnedOptions & {
   useModel?: boolean;
+  onToken?: (text: string) => void;
   history?: ChatMessageInput[];
   complete?: (question: string, packet: string, history?: ChatMessageInput[]) => Promise<GrokResult>;
   stream?: (question: string, packet: string, history?: ChatMessageInput[]) => AsyncIterable<string>;
@@ -298,7 +299,7 @@ function localReading(question: string, picked: ScoredNote[], allTitles: string[
   };
 }
 
-const CONTEXT_NOTES = 5;
+const CONTEXT_NOTES = 3;
 
 function packetFor(question: string, picked: ScoredNote[], pinned: string): string {
   const blocks = picked
@@ -439,7 +440,7 @@ export async function* streamAnswerFromVault(
 
   let full = "";
   try {
-    for await (const sentence of (options.stream ?? grokStreamSentences)(question, gathered.packet, options.history)) {
+    for await (const sentence of (options.stream ? options.stream(question, gathered.packet, options.history) : grokStreamSentences(question, gathered.packet, options.history, undefined, options.onToken))) {
       const clean = stripReplySources(sentence, gathered.sources);
       if (!clean) continue;
       full = full ? `${full} ${clean}` : clean;

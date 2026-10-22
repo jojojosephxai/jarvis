@@ -105,15 +105,25 @@ test("the first clause arrives before a long sentence ends, without dropped or r
   let controller!: ReadableStreamDefaultController<Uint8Array>;
   const body = new ReadableStream<Uint8Array>({start(value) { controller = value; }});
   const frame = (content: string) => encoder.encode(`data: ${JSON.stringify({choices:[{delta:{content}}]})}\n\n`);
-  const stream = grokStreamSentences("school", "packet", [], async () => new Response(body));
+  let received!: () => void;
+  const tokenReady = new Promise<void>(resolve => { received = resolve; });
+  const tokens: string[] = [];
+  const stream = grokStreamSentences("school", "packet", [], async () => new Response(body), text => { tokens.push(text); received(); });
   try {
-    controller.enqueue(frame("Joseph, "));
-    assert.equal((await stream.next()).value, "Joseph,");
+    let clauseReady = false;
+    const first = stream.next().then(value => { clauseReady = true; return value; });
+    controller.enqueue(frame("Jo"));
+    await tokenReady;
+    assert.deepEqual(tokens, ["Jo"]);
+    assert.equal(clauseReady, false, "text must arrive before the speech clause");
+    controller.enqueue(frame("seph, "));
+    assert.equal((await first).value, "Joseph,");
     controller.enqueue(frame(full.slice("Joseph, ".length)));
     controller.close();
     const parts = ["Joseph,"];
     for await (const part of stream) parts.push(part);
     assert.equal(parts.join(" "), full);
+    assert.equal(tokens.join(""), full);
   } finally {
     if (before === undefined) delete process.env.XAI_API_KEY; else process.env.XAI_API_KEY = before;
   }
