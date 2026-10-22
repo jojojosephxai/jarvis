@@ -2,12 +2,13 @@ import assert from "node:assert/strict";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { afterEach, describe, it } from "node:test";
+import { afterEach, describe, it, mock } from "node:test";
 
 import { pinnedContext } from "./pinned-context";
 import { think, streamTurn } from "./brain";
 import { answerFromVault, wordingStaysOnNotes } from "./grounded-answer";
-import type { VaultNote } from "./vault-read";
+import { promises as fs } from "node:fs";
+import { chunkVaultNote, loadVaultNotes, type VaultNote } from "./vault-read";
 
 const roots: string[] = [];
 
@@ -126,7 +127,7 @@ describe("answerFromVault", () => {
 
   it("keeps a model answer and still cites the notes that matched", async () => {
     const root = await makeVault();
-    const answer = await answerFromVault("What grade is Joseph in?", {
+    const answer = await answerFromVault("What grade is Joseph in at School?", {
       root,
       vaultPath: path.join(root, "vault"),
       useModel: true,
@@ -373,5 +374,69 @@ describe("personal routing", () => {
     };
     assert.equal((await think(messages, options)).model, "grok-4.7");
     for await (const event of streamTurn(messages, options)) if (event.type === "done") assert.equal(event.response.model, "grok-4.7");
+  });
+});
+
+
+describe("heading retrieval and vault cache", () => {
+  const fixture = path.resolve("tests/fixtures/vault");
+  it("retrieves a deep section beyond the old 900-character clip", async () => {
+    const answer = await answerFromVault("What is the prism calibration?", { vaultPath: fixture, useModel: true,
+      complete: async (_question, packet) => {
+        assert.match(packet, /# Long-note › Long note › Prism calibration/);
+        assert.match(packet, /violet reference at 42 degrees/);
+        assert.doesNotMatch(packet, /Background 0/);
+        return { ok: true, text: "Use a violet reference at 42 degrees." };
+      },
+    });
+    assert.deepEqual(answer.sources, ["Long-note"]);
+  });
+  it("bounds sections at 700 characters and preserves aliases and wikilinks", async () => {
+    const loaded = await loadVaultNotes(fixture);
+    assert.ok(loaded.ok);
+    const chunks = loaded.notes.flatMap(chunkVaultNote);
+    assert.ok(chunks.every(chunk => chunk.text.length <= 700));
+    assert.ok(chunks.some(chunk => chunk.aliases.includes("Beacon")));
+    assert.ok(chunks.some(chunk => chunk.links.includes("Spectrum lab")));
+    for (const question of ["Beacon prism", "Spectrum lab"]) {
+      const answer = await answerFromVault(question, { vaultPath: fixture, useModel: false });
+      assert.ok(answer.sources.includes("Long-note"));
+      assert.match(answer.reply, /42 degrees/);
+    }
+  });
+  it("prefers a recent Journal entry when the terms match both dates", async () => {
+    const answer = await answerFromVault("model bridge rehearsal", { vaultPath: fixture, now: new Date("2026-10-22T16:00:00Z"), useModel: false });
+    assert.equal(answer.sources[0], "2026-10-22");
+  });
+  it("never promotes unknown model source ids into chips", async () => {
+    const answer = await answerFromVault("prism calibration", { vaultPath: fixture, useModel: true,
+      complete: async () => ({ ok: true, text: "Use 42 degrees.\n\nNotes used: Invented-private-note." }),
+    });
+    assert.deepEqual(answer.sources, ["Long-note"]);
+    assert.doesNotMatch(answer.reply, /Notes used:|Invented-private-note/);
+  });
+  it("coalesces loads, checks at most every ten seconds, and reuses unchanged mtimes", async () => {
+    const root = await makeVault();
+    const directory = path.join(root, "vault");
+    const read = mock.method(fs, "readFile", fs.readFile);
+    const stat = mock.method(fs, "stat", fs.stat);
+    try {
+      await Promise.all([loadVaultNotes(directory, 1000), loadVaultNotes(directory, 1000)]);
+      const reads = read.mock.callCount(), stats = stat.mock.callCount();
+      assert.ok(reads > 0);
+      await loadVaultNotes(directory, 9000);
+      assert.equal(read.mock.callCount(), reads);
+      assert.equal(stat.mock.callCount(), stats);
+      await loadVaultNotes(directory, 11001);
+      assert.equal(read.mock.callCount(), reads);
+      assert.ok(stat.mock.callCount() > stats);
+      await writeFile(path.join(directory, "School.md"), "# School\nA synthetic amended timetable.");
+      const changed = await loadVaultNotes(directory, 21002);
+      assert.ok(changed.ok && changed.notes.some(note => note.text.includes("amended timetable")));
+      assert.equal(read.mock.callCount(), reads + 1);
+      await rm(path.join(directory, "School.md"));
+      const removed = await loadVaultNotes(directory, 31003);
+      assert.ok(removed.ok && !removed.notes.some(note => note.title === "School"));
+    } finally { read.mock.restore(); stat.mock.restore(); }
   });
 });

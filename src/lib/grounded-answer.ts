@@ -4,7 +4,7 @@ import { stripReplySources } from "./reply-text";
 import { pinnedContext, type PinnedOptions } from "./pinned-context";
 import { grokConfigured, grokPhraseNotes, grokStreamSentences, type GrokResult } from "./grok";
 import type { BrainMode, ChatMessageInput } from "./types";
-import { loadVaultNotes, resolveVaultPath, type VaultNote } from "./vault-read";
+import { loadVaultNotes, resolveVaultPath, chunkVaultNote, type VaultChunk, type VaultNote } from "./vault-read";
 
 /**
  * Answers with grok-4.7 when a key is set. Matching vault notes are context.
@@ -191,8 +191,7 @@ export type AnswerOptions = PinnedOptions & {
   stream?: (question: string, packet: string, history?: ChatMessageInput[]) => AsyncIterable<string>;
 };
 
-type ScoredNote = {
-  note: VaultNote;
+type ScoredNote = VaultChunk & {
   score: number;
   hitTerms: number;
 };
@@ -209,44 +208,39 @@ export function questionTerms(question: string): string[] {
   return terms;
 }
 
-function occurrenceScore(hay: string, term: string): number {
-  const pattern = new RegExp(`\\b${escapeRegExp(term)}\\b`, "g");
-  const hits = hay.match(pattern);
-  return hits ? Math.min(hits.length, 4) : 0;
+function occurrences(text: string, term: string): number {
+  return (text.toLowerCase().match(new RegExp(`\\b${term}\\b`, "g")) ?? []).length;
 }
 
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
-function scoreNote(note: VaultNote, terms: string[], question: string): ScoredNote {
-  const title = note.title.toLowerCase();
-  const body = note.text.toLowerCase();
-  let score = 0;
-  let hitTerms = 0;
-  for (const term of terms) {
-    const inTitle = occurrenceScore(title, term);
-    const inBody = occurrenceScore(body, term);
-    if (inTitle + inBody === 0) continue;
-    hitTerms += 1;
-    score += inTitle * 8 + inBody;
-  }
-  if (hitTerms === 0) return { note, score: 0, hitTerms: 0 };
-  // Prefer notes that cover more of the question, not one loud word like "project".
-  score += hitTerms * 10;
-  if (terms.length >= 2) {
-    const phrase = terms.join(" ");
-    if (body.includes(phrase) || title.includes(phrase)) score += 6;
-  }
-  // A multi-word ask needs more than one overlapping word (e.g. "email" alone ≠ overnight mail).
-  if (terms.length >= 2 && hitTerms < 2) {
-    score = Math.round(score * 0.15);
-  }
-  const asksForGuide = /\b(obsidian|vault|open|readme)\b/i.test(question);
-  if (path.basename(note.filePath).toLowerCase() === "readme.md" && !asksForGuide) {
-    score = Math.round(score * 0.3);
-  }
-  return { note, score, hitTerms };
+function rankChunks(notes: VaultNote[], terms: string[], question: string, now = new Date()): ScoredNote[] {
+  const chunks = notes.flatMap(chunkVaultNote);
+  const length = (text: string) => (text.match(/[a-z0-9]+/gi) ?? []).length;
+  const average = chunks.reduce((n, chunk) => n + length(chunk.text), 0) / (chunks.length || 1);
+  const idf = new Map(terms.map(term => {
+    const count = chunks.filter(c => occurrences(`${c.note.title} ${c.heading} ${c.text} ${c.aliases} ${c.links}`, term)).length;
+    return [term, Math.log(1 + (chunks.length - count + 0.5) / (count + 0.5))];
+  }));
+  return chunks.map(chunk => {
+    let score = 0, hitTerms = 0;
+    for (const term of terms) {
+      const tf = occurrences(chunk.text, term);
+      const boost = occurrences(chunk.note.title, term) * 3 + occurrences(chunk.heading, term) * 2
+        + occurrences(chunk.aliases, term) * 3 + occurrences(chunk.links, term) * 2;
+      if (!tf && !boost) continue;
+      hitTerms++;
+      const bm25 = tf * 2.2 / (tf + 1.2 * (0.25 + 0.75 * length(chunk.text) / (average || 1)));
+      score += (idf.get(term) ?? 0) * (bm25 + boost);
+    }
+    // A multi-term ask still needs more than one overlapping word.
+    if (terms.length >= 2 && hitTerms < 2) score *= 0.15;
+    if (path.basename(chunk.note.filePath).toLowerCase() === "readme.md" && !/\b(obsidian|vault|open|readme)\b/i.test(question)) score *= 0.3;
+    const dated = chunk.note.filePath.replace(/\\/g, "/").match(/\/Journal\/(\d{4}-\d{2}-\d{2})[^/]*\.md$/i);
+    if (dated) {
+      const age = Math.max(0, Math.floor((now.getTime() - Date.parse(dated[1])) / 86_400_000));
+      score *= 1 + 0.3 / (1 + age);
+    }
+    return { ...chunk, score, hitTerms };
+  }).filter(chunk => chunk.score >= 0.8).sort((a, b) => b.score - a.score);
 }
 
 function contentLines(text: string): string[] {
@@ -289,8 +283,8 @@ function localReading(question: string, picked: ScoredNote[], allTitles: string[
   const sources: string[] = [];
   const parts: string[] = [];
   for (const scored of picked) {
-    sources.push(scored.note.title);
-    const lines = matchingLines(scored.note.text, terms).slice(0, 3);
+    if (!sources.includes(scored.note.title)) sources.push(scored.note.title);
+    const lines = matchingLines(scored.text, terms).slice(0, 3);
     for (const line of lines) {
       parts.push(`${scored.note.title}: ${line}`);
     }
@@ -304,19 +298,12 @@ function localReading(question: string, picked: ScoredNote[], allTitles: string[
   };
 }
 
-const CONTEXT_NOTES = 3;
-const NOTE_CLIP = 900;
-
-function clipNote(text: string): string {
-  const clean = text.trim();
-  if (clean.length <= NOTE_CLIP) return clean;
-  return `${clean.slice(0, NOTE_CLIP).trim()}…`;
-}
+const CONTEXT_NOTES = 5;
 
 function packetFor(question: string, picked: ScoredNote[], pinned: string): string {
   const blocks = picked
     .slice(0, CONTEXT_NOTES)
-    .map((scored) => `# ${scored.note.title}\n${clipNote(scored.note.text)}`)
+    .map((scored) => `# ${scored.note.title} › ${scored.heading}\n${scored.text}`)
     .join("\n\n");
   return `${pinned}\n\nQuestion:\n${question}\n\nNotes:\n${blocks}`;
 }
@@ -368,13 +355,7 @@ async function gatherAnswer(question: string, options: AnswerOptions): Promise<G
   const followup = question.split(/\s+/).length <= 6 || /\b(it|that|what about|and on)\b/i.test(question);
   const query = previous && followup ? `${previous} ${question}` : question;
   const terms = questionTerms(query);
-  const ranked =
-    terms.length === 0
-      ? []
-      : loaded.notes
-          .map((note) => scoreNote(note, terms, query))
-          .filter((scored) => scored.score >= 4)
-          .sort((a, b) => b.score - a.score);
+  const ranked = terms.length ? rankChunks(loaded.notes, terms, query, options.now) : [];
 
   const best = ranked[0];
   const picked = best

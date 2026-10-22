@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./fixtures.mjs";
 import { capture } from "./capture.mjs";
 
 const sizes = [

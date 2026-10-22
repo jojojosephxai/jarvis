@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './fixtures.mjs';
 import { capture } from './capture.mjs';
 
 const sentences = ['First sentence is here.', 'Second sentence follows.', 'Third sentence keeps going.', 'Fourth sentence is included.', 'Fifth sentence finishes the reply.'];

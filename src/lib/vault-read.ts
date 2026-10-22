@@ -44,7 +44,7 @@ async function walkMarkdown(dir: string, rootReal: string, depth: number, acc: s
 
   for (const entry of entries) {
     if (acc.length >= MAX_FILES) return;
-    if (entry.name.startsWith(".") || entry.name === "node_modules") continue;
+    if (entry.name.startsWith(".") || entry.name === "node_modules" || entry.name.startsWith("_sync-backups")) continue;
     const full = path.join(dir, entry.name);
     let real: string;
     try {
@@ -61,67 +61,91 @@ async function walkMarkdown(dir: string, rootReal: string, depth: number, acc: s
   }
 }
 
-export async function loadVaultNotes(directory: string): Promise<VaultLoad> {
-  let stat;
-  try {
-    stat = await fs.stat(directory);
-  } catch {
-    return {
-      ok: false,
-      directory,
-      problem: "that folder was not found",
-    };
-  }
+type CachedVault = { checkedAt: number; files: Map<string, { stamp: string; note: VaultNote }>; result: VaultLoad };
+const vaultCache = new Map<string, CachedVault>();
+const loading = new Map<string, Promise<VaultLoad>>();
 
-  if (!stat.isDirectory()) {
-    return {
-      ok: false,
-      directory,
-      problem: "that path is not a folder",
-    };
-  }
+export async function loadVaultNotes(directory: string, now = Date.now()): Promise<VaultLoad> {
+  const key = path.resolve(directory);
+  const old = vaultCache.get(key);
+  if (old && now - old.checkedAt < 10_000) return old.result;
+  const pending = loading.get(key);
+  if (pending) return pending;
+  const read = refreshVault(key, old, now);
+  loading.set(key, read);
+  try { return await read; } finally { loading.delete(key); }
+}
 
+async function refreshVault(directory: string, old: CachedVault | undefined, now: number): Promise<VaultLoad> {
   let rootReal: string;
   try {
+    const stat = await fs.stat(directory);
+    if (!stat.isDirectory()) return { ok: false, directory, problem: "that path is not a folder" };
     rootReal = await fs.realpath(directory);
   } catch {
-    return {
-      ok: false,
-      directory,
-      problem: "that folder could not be opened",
-    };
+    vaultCache.delete(directory);
+    return { ok: false, directory, problem: "that folder was not found" };
   }
-
-  const files: string[] = [];
-  await walkMarkdown(directory, rootReal, 0, files);
-  const notes: VaultNote[] = [];
-
-  for (const filePath of files) {
+  const paths: string[] = [];
+  await walkMarkdown(directory, rootReal, 0, paths);
+  const files: CachedVault["files"] = new Map();
+  for (const filePath of paths) {
     try {
-      const fileStat = await fs.stat(filePath);
-      if (!fileStat.isFile() || fileStat.size > MAX_BYTES) continue;
-      const text = await fs.readFile(filePath, "utf8");
-      notes.push({
-        title: noteTitle(filePath),
-        filePath,
-        text,
+      const stat = await fs.stat(filePath);
+      if (!stat.isFile() || stat.size > MAX_BYTES) continue;
+      const stamp = `${await fs.realpath(filePath)}:${stat.mtimeMs}:${stat.ctimeMs}:${stat.size}`;
+      const previous = old?.files.get(filePath);
+      const note = previous?.stamp === stamp ? previous.note : {
+        title: noteTitle(filePath), filePath, text: await fs.readFile(filePath, "utf8"),
+      };
+      files.set(filePath, { stamp, note });
+    } catch { continue; }
+  }
+  const notes = [...files.values()].map(file => file.note).sort((a, b) => a.title.localeCompare(b.title));
+  const result: VaultLoad = notes.length ? { ok: true, notes, directory }
+    : { ok: false, directory, problem: "that folder has no markdown notes" };
+  if (vaultCache.size >= 8 && !vaultCache.has(directory)) vaultCache.delete(vaultCache.keys().next().value!);
+  vaultCache.set(directory, { checkedAt: now, files, result });
+  return result;
+}
+
+export type VaultChunk = { note: VaultNote; heading: string; text: string; aliases: string; links: string };
+
+/** Heading sections stay together; long sections get bounded, word-aligned windows. */
+export function chunkVaultNote(note: VaultNote): VaultChunk[] {
+  const front = note.text.match(/^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/);
+  const aliases = front?.[1].match(/^aliases:\s*([^\n]*(?:\n[ \t]+-[^\n]*)*)/m)?.[1].replace(/[\[\]"',]/g, " ") ?? "";
+  const body = front ? note.text.slice(front[0].length) : note.text;
+  const sections: Array<{ heading: string; lines: string[] }> = [];
+  const headings: string[] = [];
+  let section = { heading: "Overview", lines: [] as string[] };
+  for (const line of body.split(/\r?\n/)) {
+    const heading = line.match(/^(#{1,6})\s+(.+?)\s*#*$/);
+    if (heading) {
+      if (section.lines.join("").trim()) sections.push(section);
+      headings.length = heading[1].length - 1;
+      headings.push(heading[2]);
+      section = { heading: headings.filter(Boolean).join(" › "), lines: [] };
+    } else section.lines.push(line);
+  }
+  if (section.lines.join("").trim()) sections.push(section);
+  const chunks: VaultChunk[] = [];
+  for (const section of sections) {
+    let text = section.lines.join("\n").trim();
+    while (text) {
+      let end = Math.min(text.length, 700);
+      if (end < text.length) {
+        const boundary = Math.max(text.lastIndexOf("\n", end), text.lastIndexOf(" ", end));
+        if (boundary > 350) end = boundary;
+      }
+      const excerpt = text.slice(0, end).trim();
+      chunks.push({ note, heading: section.heading, text: excerpt, aliases,
+        links: [...excerpt.matchAll(/\[\[([^\]]+)\]\]/g)].map(match => match[1].replace(/\|/g, " ")).join(" "),
       });
-    } catch {
-      continue;
+      text = text.slice(end).trim();
     }
   }
-
-  notes.sort((a, b) => a.title.localeCompare(b.title));
-
-  if (notes.length === 0) {
-    return {
-      ok: false,
-      directory,
-      problem: "that folder has no markdown notes",
-    };
-  }
-
-  return { ok: true, notes, directory };
+  return chunks;
 }
 
 /** Read one vault note by its path relative to the vault. Refuses anything outside that folder. */

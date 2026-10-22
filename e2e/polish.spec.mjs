@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './fixtures.mjs';
 
 for (const status of ['empty','missing','not-wired']) {
   test(`${status} vault has an explicit Inspector empty state`,async({page})=>{

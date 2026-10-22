@@ -1,5 +1,5 @@
 import { capture } from "./capture.mjs";
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./fixtures.mjs";
 
 const sizes = [[1024,576],[1280,650],[1280,800],[1366,620],[1366,768],[1440,900],[1920,1080]];
 function geometry() {
