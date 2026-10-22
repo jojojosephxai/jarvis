@@ -57,7 +57,7 @@ describe("answerFromVault", () => {
       useModel: false,
     });
     assert.match(answer.reply, /9th/);
-    assert.match(answer.reply, /Notes used: .*School/);
+    assert.doesNotMatch(answer.reply, /Notes used:/);
     assert.ok(answer.sources.includes("School") || answer.sources.includes("About"));
     assert.doesNotMatch(answer.reply, /Lincoln|emailed|overnight/i);
     assert.equal(answer.mode, "demo");
@@ -73,7 +73,7 @@ describe("answerFromVault", () => {
     assert.match(answer.reply, /light/);
     assert.match(answer.reply, /plants/);
     assert.match(answer.reply, /Goals|School/);
-    assert.match(answer.reply, /Notes used:/);
+    assert.doesNotMatch(answer.reply, /Notes used:/);
   });
 
   it("admits a blank swim time", async () => {
@@ -136,8 +136,9 @@ describe("answerFromVault", () => {
     });
     assert.equal(answer.mode, "grok");
     assert.match(answer.reply, /9th grade/);
-    assert.match(answer.reply, /\(School\)/);
-    assert.match(answer.reply, /Notes used:/);
+    assert.doesNotMatch(answer.reply, /\(School\)/);
+    assert.ok(answer.sources.length > 0);
+    assert.doesNotMatch(answer.reply, /Notes used:/);
     assert.match(answer.notice ?? "", /Notes used as context/);
   });
 
@@ -187,7 +188,7 @@ describe("think vault answers", () => {
     );
     assert.equal(result.receipts.length, 0);
     assert.match(result.reply, /light/);
-    assert.match(result.reply, /Notes used:/);
+    assert.doesNotMatch(result.reply, /Notes used:/);
     assert.doesNotMatch(result.reply, /orange/);
   });
 
@@ -211,7 +212,7 @@ describe("think vault answers", () => {
       vaultPath: path.join(root, "vault"),
       useModel: false,
     });
-    assert.match(result.reply, /Notes used:/);
+    assert.doesNotMatch(result.reply, /Notes used:/);
     assert.match(result.reply, /Swim/);
   });
 
@@ -269,7 +270,7 @@ describe("starter vault", () => {
       useModel: false,
     });
     assert.match(grade.reply, /9th/);
-    assert.match(grade.reply, /Notes used:/);
+    assert.doesNotMatch(grade.reply, /Notes used:/);
     assert.ok(grade.sources.includes("School") || grade.sources.includes("About"));
     assert.doesNotMatch(grade.reply, /Lincoln|emailed/i);
 

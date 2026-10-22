@@ -22,7 +22,7 @@ import { decideFaceMode } from "@/lib/view-intent";
 import { butlerSpeech, MIC_BLOCKED_NOTICE } from "@/lib/voice/policy";
 import { createSentenceQueue, unspokenTail } from "@/lib/voice/sentence-queue";
 import { prepareSpeech, ChatSession, readFastVoicePreference, FAST_VOICE_STORAGE_KEY, type PreparedSpeech } from "@/lib/voice/session";
-import { stripReplyTiming } from "@/lib/reply-text";
+import { stripReplySources, stripReplyTiming } from "@/lib/reply-text";
 
 const BOOT_KEY = "jarvis-boot";
 const EXAMPLES = ["remind me…", "good morning", "show swim times"] as const;
@@ -108,24 +108,8 @@ function formatStamp(iso: string): string {
 }
 
 function replyForChat(text: string, sources: string[] | undefined): { body: string; chips: string[] } {
-  text = stripReplyTiming(text);
-  const footer = text.match(/(?:^|\n)\s*Notes used:\s*([\s\S]+?)\s*$/i);
-  const bodyWithoutFooter = text.replace(/(?:^|\n)\s*Notes used:\s*[\s\S]+$/i, "").trim();
-  const parsed = footer
-    ? footer[1]
-        .replace(/\.\s*$/, "")
-        .split(/,|\band\b/i)
-        .map((part) => part.trim())
-        .filter((part) => part.length > 0 && part.toLowerCase() !== "none")
-    : [];
-  const chips = [...new Set([...(sources ?? []), ...parsed].map((part) => part.trim()).filter(Boolean))];
-  let body = bodyWithoutFooter;
-  for (const chip of [...chips].sort((a, b) => b.length - a.length)) {
-    const escaped = chip.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    body = body.replace(new RegExp(`\\s*\\(${escaped}\\)`, "gi"), "");
-  }
-  body = body.replace(/[ \t]{2,}/g, " ").replace(/\s+([,.!?])/g, "$1").trim();
-  return { body, chips };
+  const chips = [...new Set(sources ?? [])];
+  return { body: stripReplySources(stripReplyTiming(text), chips), chips };
 }
 
 function inTimeOrder(items: LogItem[]): LogItem[] {

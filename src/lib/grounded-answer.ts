@@ -1,5 +1,6 @@
 import path from "node:path";
 
+import { stripReplySources } from "./reply-text";
 import { clockStamp } from "./clock";
 import { grokConfigured, grokPhraseNotes, grokStreamSentences, type GrokResult } from "./grok";
 import type { BrainMode, ChatMessageInput } from "./types";
@@ -301,7 +302,7 @@ function localReading(question: string, picked: ScoredNote[], allTitles: string[
   const blank = parts.some((line) => /:\s*$/.test(line));
   const blankNote = blank ? "\n\nA matching line is blank, so that part is not written down." : "";
   return {
-    reply: `${parts.join("\n")}${blankNote}\n\nNotes used: ${joinTitles(sources)}.`,
+    reply: `${parts.join("\n")}${blankNote}`,
     sources,
   };
 }
@@ -337,11 +338,6 @@ export function wordingStaysOnNotes(reply: string, notes: VaultNote[]): boolean 
   return true;
 }
 
-function withSourcesFooter(reply: string, sources: string[]): string {
-  if (sources.length === 0) return reply.trim();
-  if (/notes used:/i.test(reply)) return reply.trim();
-  return `${reply.trim()}\n\nNotes used: ${joinTitles(sources)}.`;
-}
 
 type GatheredAnswer = {
   modelOn: boolean;
@@ -414,7 +410,7 @@ export async function answerFromVault(question: string, options: AnswerOptions =
   const result = await complete(question, gathered.packet, options.history);
   if (result.ok && result.text.trim()) {
     return {
-      reply: withSourcesFooter(result.text, gathered.sources),
+      reply: stripReplySources(result.text, gathered.sources),
       mode: "grok",
       sources: gathered.sources,
       // Quiet on a miss — shouting “no vault note matched” under hello-style chat feels unfinished.
@@ -462,7 +458,7 @@ export async function* streamAnswerFromVault(
   let full = "";
   try {
     for await (const sentence of (options.stream ?? grokStreamSentences)(question, gathered.packet, options.history)) {
-      const clean = sentence.trim();
+      const clean = stripReplySources(sentence, gathered.sources);
       if (!clean) continue;
       full = full ? `${full} ${clean}` : clean;
       yield { type: "sentence", text: clean };
@@ -487,7 +483,7 @@ export async function* streamAnswerFromVault(
   yield {
     type: "done",
     answer: {
-      reply: withSourcesFooter(full, gathered.sources),
+      reply: stripReplySources(full, gathered.sources),
       mode: "grok",
       sources: gathered.sources,
       notice: gathered.sources.length > 0 ? "Notes used as context." : undefined,

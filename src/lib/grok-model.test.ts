@@ -70,7 +70,9 @@ describe("grok model lock", () => {
 
   it("treats vault notes as context and still answers without a hit", () => {
     assert.match(BUTLER_PROMPT, /butler/i);
-    assert.match(BUTLER_PROMPT, /cite the note title/i);
+    assert.match(BUTLER_PROMPT, /Joseph/);
+    assert.ok(BUTLER_PROMPT.split("\n").length < 25);
+    assert.match(BUTLER_PROMPT, /sources travel separately as chips/i);
     assert.match(BUTLER_PROMPT, /still answer/i);
     assert.doesNotMatch(BUTLER_PROMPT, /reply exactly/);
   });
