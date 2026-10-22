@@ -16,7 +16,11 @@ export function createSentenceQueue(play: (text: string) => Promise<unknown>, si
           const end = rest.length <= SPEAK_LIMIT ? rest.length : space > 0 ? space : SPEAK_LIMIT;
           const chunk = rest.slice(0, end).trim();
           rest = rest.slice(end).trim();
-          tail = tail.then(async () => { if (!signal.aborted) await play(chunk); });
+          tail = tail.then(async () => {
+            if (signal.aborted) return;
+            try { await play(chunk); }
+            catch (error) { if (!signal.aborted) console.error("Speech chunk failed; continuing reply.", error); }
+          });
         }
       }
     },

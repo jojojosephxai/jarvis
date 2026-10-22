@@ -1,7 +1,7 @@
 .face {
   --side: clamp(200px, 18vw, 300px);
   --chat-h: clamp(120px, 24vh, 200px);
-  --edge: 12px;
+  --edge: 16px;
   --rail: clamp(200px, 14vw, 232px);
   --center-left: calc(var(--edge) + var(--rail) + 16px);
   --center-right: calc(var(--edge) + var(--side) + 16px);
@@ -780,15 +780,15 @@
   height: 34px;
   flex: 1;
   color: #cfefff;
-  font-family: ui-sans-serif, system-ui, sans-serif;
-  font-size: 15px;
+  font-family: inherit;
+  font-size: 13px;
   font-variant-ligatures: none;
   line-height: 34px;
 }
 
 .face-ask input::placeholder {
-  color: #b7dff0;
-  opacity: 1;
+  color: #49d4ff;
+  opacity: .65;
 }
 
 .face-ask input:placeholder-shown {
@@ -1210,3 +1210,5 @@
 .inspector-empty { display: flex; flex-direction: column; gap: 16px; }
 .chat-line .chat-timing { color: #81929e; font-size: 11px; margin-top: 6px; }
 .face-task { top: 48px; right: var(--center-right); width: 200px; }
+
+.graph-inspector.inspector-empty::after { content: none; }

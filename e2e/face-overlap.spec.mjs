@@ -52,10 +52,19 @@ function homeGeometry() {
   const style = getComputedStyle(input); ctx.font = `${style.fontSize} ${style.fontFamily}`;
   if (input.clientWidth && ctx.measureText(input.placeholder).width + input.placeholder.length * parseFloat(style.letterSpacing) > input.clientWidth) hits.push("placeholder truncated");
   if (left.bottom > innerHeight - 8) hits.push("rail outside viewport");
+  const empty = document.querySelector(".inspector-empty");
+  if (empty && getComputedStyle(empty, "::after").content !== "none") hits.push("empty Inspector has a placeholder bar");
+  const askInput = document.querySelector(".face-ask input"), askStyle = getComputedStyle(askInput);
+  const placeholder = getComputedStyle(askInput, "::placeholder");
+  if (askStyle.fontFamily !== getComputedStyle(document.querySelector(".face")).fontFamily || askStyle.fontSize !== "13px" || placeholder.color !== "rgb(73, 212, 255)" || Number(placeholder.opacity) >= 1) hits.push("Ask placeholder does not match HUD");
+  for (const selector of [".face-column", ".graph-inspector", ".face-chat"]) {
+    const r = box(selector);
+    if (r.left < 16 || r.right > innerWidth - 16 || r.bottom > innerHeight - 16) hits.push(`${selector} misses 16px window margin`);
+  }
   return hits;
 }
 
-function graphGeometry(focusId = null) {
+async function graphGeometry(focusId = null) {
   const scene = document.querySelector(".force-scene");
   const area = scene.getBoundingClientRect();
   const nodes = JSON.parse(scene.dataset.nodes || "[]");
@@ -66,14 +75,42 @@ function graphGeometry(focusId = null) {
     if (n.x < area.left + 16 || n.y < area.top + 16 || n.x + n.w > area.right - 16 || n.y + n.h > area.bottom - 16) hits.push(`${n.id} outside graph margin`);
   }
   const limit = Math.min(area.width, area.height) * .35;
-  const spokes = edges.filter((edge) => edge.from === focusId || edge.to === focusId);
-  if (focusId && !spokes.length) hits.push("no focused hub edges");
-  for (const edge of spokes) if (edge.length > limit) hits.push(`long edge ${edge.length} > ${limit}`);
+  const visibleEdges = edges.filter((edge) => edge.opacity > .1);
+  if (focusId && !visibleEdges.some((edge) => edge.from === focusId || edge.to === focusId)) hits.push("no focused hub edges");
+  if (focusId) for (const edge of visibleEdges) if (edge.length > limit) hits.push(`long edge ${edge.length} > ${limit}`);
+  if (!focusId && nodes.length) {
+    const height = Math.max(...nodes.map((n) => n.y + n.h)) - Math.min(...nodes.map((n) => n.y));
+    if (height < (area.height - 32) * .8) hits.push("idle graph does not fill the height");
+  }
+  const payload = await (await fetch("/api/graph")).json();
+  let neighbors = null;
+  if (focusId) {
+    neighbors = new Set([focusId, ...payload.nodes.filter((node) => node.hubs.includes(focusId)).map((node) => node.id)]);
+    for (const edge of payload.edges) {
+      if (edge.from === focusId) neighbors.add(edge.to);
+      if (edge.to === focusId) neighbors.add(edge.from);
+    }
+  }
   const labels = [...document.querySelectorAll(".graph-float-label")];
   if (!labels.length) hits.push("no labels");
+  if (!focusId) for (const hub of payload.nodes.filter((node) => node.kind === "folder")) {
+    if (!labels.some((label) => label.dataset.nodeId === hub.id)) hits.push(`missing hub label: ${hub.title}`);
+  }
   for (const label of labels) {
     const r = label.getBoundingClientRect();
     const text = label.textContent;
+    if (neighbors && !neighbors.has(label.dataset.nodeId)) hits.push("non-neighbor label is visible in focus");
+    for (const other of labels) {
+      if (other === label) continue;
+      const o = other.getBoundingClientRect();
+      if (r.left < o.right && r.right > o.left && r.top < o.bottom && r.bottom > o.top) hits.push("graph labels overlap");
+    }
+    for (const n of nodes) {
+      if (n.id === label.dataset.nodeId) continue;
+      const x = n.x + n.w / 2, y = n.y + n.h / 2;
+      const closestX = Math.max(r.left, Math.min(r.right, x)), closestY = Math.max(r.top, Math.min(r.bottom, y));
+      if (Math.hypot(x - closestX, y - closestY) < n.r) hits.push("label overlaps another node");
+    }
     if (/\b[0-9a-f]{8}-[0-9a-f-]{27,}\b/i.test(text)) hits.push("UUID label");
     if (r.left < area.left + 16 || r.right > area.right - 16 || r.top < area.top + 16 || r.bottom > area.bottom - 16) hits.push("label outside graph margin");
     const font = getComputedStyle(label);
@@ -86,6 +123,12 @@ function graphGeometry(focusId = null) {
       if (Math.hypot(dx, dy) > node.r + 30) hits.push("label detached from node");
     }
   }
+  for (const selector of [".face-column", ".graph-inspector", ".face-chat", ".face-filter"]) {
+    const el = document.querySelector(selector);
+    if (!el) continue;
+    const r = el.getBoundingClientRect();
+    if (r.left < 16 || r.right > innerWidth - 16 || r.bottom > innerHeight - 16) hits.push(`${selector} misses 16px window margin`);
+  }
   return hits.slice(0, 10);
 }
 
@@ -97,12 +140,12 @@ async function graphReady(page) {
 async function screenshot(page, name) {
   await mkdir(shotDir, { recursive: true });
   const png = await page.screenshot({ fullPage: true });
-  if (png.length < 250 * 1024) {
+  if (png.length < 250000) {
     await writeFile(`${shotDir}/${name}.png`, png);
     await rm(`${shotDir}/${name}.jpg`, { force: true });
   } else {
     await page.screenshot({ path: `${shotDir}/${name}.jpg`, fullPage: true, type: "jpeg", quality: 80 });
-    expect((await stat(`${shotDir}/${name}.jpg`)).size).toBeLessThan(250 * 1024);
+    expect((await stat(`${shotDir}/${name}.jpg`)).size).toBeLessThan(250000);
     await rm(`${shotDir}/${name}.png`, { force: true });
   }
 }
@@ -133,12 +176,29 @@ for (const size of sizes) {
     const panelGap = await page.evaluate(() => document.querySelector(".face-chat").getBoundingClientRect().top - document.querySelector(".graph-inspector").getBoundingClientRect().bottom);
     expect(panelGap).toBeGreaterThanOrEqual(8);
     await screenshot(page, `${size.width}x${size.height}-graph-hub-selected`);
+    await page.getByLabel("Search notes", { exact: true }).focus();
+    await page.keyboard.press("Escape");
+    await expect(page.locator(".face")).toHaveAttribute("data-view", "graph");
+    await expect(page.locator(".inspector-title")).toHaveText("School");
+    await page.locator(".graph-crumb").focus();
+    await page.keyboard.press("Escape");
+    await expect(page.locator(".face")).toHaveAttribute("data-view", "graph");
+    await expect(page.locator(".inspector-title")).toHaveCount(0);
+    await graphReady(page);
+    await page.locator(".hub-list button", { hasText: "School" }).click();
     const node = page.locator(".graph-float-label[data-hub='0']").first();
     await expect(node).toBeVisible();
     const title = await node.textContent();
     await node.click();
     await expect(page.locator(".inspector-title")).toHaveText(title);
     await page.keyboard.press("Escape");
+    await expect(page.locator(".face")).toHaveAttribute("data-view", "graph");
+    await expect(page.locator(".inspector-title")).toHaveCount(0);
+    await page.keyboard.press("Escape");
+    await expect(page.locator(".face")).toHaveAttribute("data-view", "home");
+    await page.getByLabel("Ask Jarvis", { exact: true }).fill("Still typing");
+    await page.keyboard.press("Escape");
+    await expect(page.getByLabel("Ask Jarvis", { exact: true })).toHaveValue("Still typing");
     await expect(page.locator(".face")).toHaveAttribute("data-view", "home");
     await expect(page.locator(".graph-canvas")).toHaveCount(0);
     await page.getByRole("button", { name: "Graph", exact: true }).click();
@@ -158,6 +218,7 @@ for (const width of [1024, 1440]) {
     await expect(page.getByRole("button", { name: "Expand hubs", exact: true })).toHaveAttribute("aria-expanded", "false");
     await expect(page.locator("#graph-search")).toBeHidden();
     await expect.poll(() => page.evaluate(homeGeometry)).toEqual([]);
+    if (width === 1024) await screenshot(page, "1024x576-rail-collapsed");
     const after = await page.locator(".orb-dial-ring").boundingBox();
     expect(after.x + after.width / 2).toBeLessThan(before.x + before.width / 2 - 50);
     await page.reload();
@@ -198,6 +259,7 @@ test("wheel scrolls the rail to its last item and still zooms the graph at 1024x
     const r = el.getBoundingClientRect(), last = el.lastElementChild.getBoundingClientRect();
     return last.top >= r.top && last.bottom <= r.bottom;
   })).toBe(true);
+  await screenshot(page, "1024x576-rail-scrolled-bottom");
   await page.getByRole("button", { name: "Graph", exact: true }).click();
   await graphReady(page);
   const scene = page.locator(".force-scene");
@@ -213,7 +275,8 @@ test("wheel scrolls the rail to its last item and still zooms the graph at 1024x
   expect(Number(await scene.getAttribute("data-dist"))).toBe(dist);
 });
 
-test("streamed speech plays every chunk and starts the orb growth only once", async ({ page }) => {
+for (const failSecond of [false, true]) {
+ test(`streamed speech ${failSecond ? "survives a failed chunk and finishes the job" : "plays every chunk and starts the orb growth only once"}`, async ({ page }) => {
   await page.setViewportSize({ width: 1024, height: 576 });
   await prepare(page);
   const chunks = ["These first words", "finish sentence one.", "Sentence two.", "Sentence three!", "Sentence four?", "The final sentence."];
@@ -227,7 +290,8 @@ test("streamed speech plays every chunk and starts the orb growth only once", as
   });
   await page.unroute("**/api/voice/speak");
   await page.route("**/api/voice/speak", (route) => route.fulfill({ contentType: "audio/mpeg", body: "fake audio for controlled playback" }));
-  await page.addInitScript(() => {
+  await page.addInitScript(({ failSecond }) => {
+    window.failSecond = failSecond;
     window.played = [];
     window.finished = [];
     window.Audio = class {
@@ -236,13 +300,14 @@ test("streamed speech plays every chunk and starts the orb growth only once", as
         this.index = window.played.length;
         window.played.push(this.index);
         window.currentAudio = this;
+        if (window.replyStarted && window.failSecond && this.index === 1) return Promise.reject(new Error("Controlled second chunk failure"));
         return Promise.resolve();
       }
       pause() {}
       finish() { window.finished.push(this.index); this.onended?.(); }
     };
     window.AudioContext = undefined;
-  });
+  }, { failSecond });
   await openFace(page);
   await expect.poll(() => page.evaluate(() => window.played.length)).toBeGreaterThan(0);
   await page.evaluate(() => window.currentAudio.finish());
@@ -253,7 +318,7 @@ test("streamed speech plays every chunk and starts the orb growth only once", as
     document.querySelector(".orb-dial").addEventListener("transitionrun", (e) => {
       if (e.propertyName === "width" && document.querySelector(".face").dataset.mode === "speaking") window.growthStarts++;
     });
-    window.played = []; window.finished = [];
+    window.played = []; window.finished = []; window.replyStarted = true;
   });
   const requested = [];
   page.on("request", (request) => {
@@ -269,7 +334,7 @@ test("streamed speech plays every chunk and starts the orb growth only once", as
     await page.waitForTimeout(i === 0 ? 800 : 80);
     expect(await page.evaluate(() => window.growthStarts)).toBe(1);
     expect(await page.evaluate(() => document.querySelector(".orb-canvas") === window.orbCanvas)).toBe(true);
-    await page.evaluate(() => window.currentAudio.finish());
+    if (!failSecond || i !== 1) await page.evaluate(() => window.currentAudio.finish());
     await page.waitForTimeout(80);
     if (i < chunks.length - 1) {
       await expect(page.locator(".face")).toHaveAttribute("data-mode", "speaking");
@@ -282,9 +347,13 @@ test("streamed speech plays every chunk and starts the orb growth only once", as
   }, chunks.join(" ") + " Brain 1871 ms to first token · 210 ms to voice");
   await expect(page.getByLabel("Ask Jarvis", { exact: true })).toBeEnabled();
   expect(requested).toEqual(chunks);
-  expect(await page.evaluate(() => window.finished)).toEqual([0, 1, 2, 3, 4, 5]);
+  expect(await page.evaluate(() => window.finished)).toEqual(failSecond ? [0, 2, 3, 4, 5] : [0, 1, 2, 3, 4, 5]);
+  await expect(page.locator(".face")).toHaveAttribute("data-mode", "standby");
+  await expect(page.locator(".face-task")).toHaveCount(0);
   await expect(page.locator(".chat-reply")).toHaveText(chunks.join(" "));
   await expect(page.locator(".chat-log")).not.toContainText("ms to first");
   await expect(page.locator(".chat-timing")).toHaveText(/\d+\.\ds to first word/);
   expect(await page.locator(".chat-timing").evaluate((el) => getComputedStyle(el).color)).toBe("rgb(129, 146, 158)");
 });
+
+}

@@ -142,12 +142,14 @@ export function NoteGraph({
   cue = null,
   suspendEscape = false,
   graphOpen,
+  onHome,
   railCollapsed,
   onToggleRail,
 }: {
   cue?: GraphCue | null;
   suspendEscape?: boolean;
   graphOpen: boolean;
+  onHome: () => void;
   railCollapsed: boolean;
   onToggleRail: () => void;
 }) {
@@ -200,7 +202,7 @@ export function NoteGraph({
     case "empty":
       return <GraphEmpty payload={payload} />;
     case "ready":
-      return <GraphReady payload={payload} cue={cue} suspendEscape={suspendEscape} graphOpen={graphOpen} railCollapsed={railCollapsed} onToggleRail={onToggleRail} />;
+      return <GraphReady payload={payload} cue={cue} suspendEscape={suspendEscape} graphOpen={graphOpen} onHome={onHome} railCollapsed={railCollapsed} onToggleRail={onToggleRail} />;
     default: {
       const neverStatus: never = payload.status;
       return neverStatus;
@@ -234,6 +236,7 @@ function GraphReady({
   cue,
   suspendEscape,
   graphOpen,
+  onHome,
   railCollapsed,
   onToggleRail,
 }: {
@@ -241,6 +244,7 @@ function GraphReady({
   cue: GraphCue | null;
   suspendEscape: boolean;
   graphOpen: boolean;
+  onHome: () => void;
   railCollapsed: boolean;
   onToggleRail: () => void;
 }) {
@@ -366,6 +370,13 @@ function GraphReady({
     if (suspendEscape) return;
     function onKey(event: KeyboardEvent) {
       if (event.key !== "Escape") return;
+      const target = event.target;
+      if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || (target instanceof HTMLElement && target.isContentEditable)) return;
+      if (!selectedId && !clusterId && !filterId && !pathFromId && !pathToId) {
+        if (graphOpen) onHome();
+        return;
+      }
+      event.preventDefault();
       setSelectedId(null);
       setReaderId(null);
       setClusterId(null);
@@ -377,7 +388,7 @@ function GraphReady({
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [suspendEscape]);
+  }, [suspendEscape, graphOpen, onHome, selectedId, clusterId, filterId, pathFromId, pathToId]);
 
   const layoutNodes = useMemo(
     () =>

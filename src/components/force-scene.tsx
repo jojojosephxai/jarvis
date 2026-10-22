@@ -108,8 +108,6 @@ export function ForceScene({
       const raycaster = new THREE.Raycaster();
       const pointer = new THREE.Vector2();
       const target = new THREE.Vector3();
-      const overviewTarget = new THREE.Vector3();
-      const overviewCamera = camera.clone();
       const sphere = new THREE.SphereGeometry(1, 14, 12);
       let group: THREE_NS.Group | null = null;
       const meshes: {
@@ -230,7 +228,7 @@ export function ForceScene({
             dist = Math.min(limit, dist + push);
           }
         }
-        if (rememberOverview) { overviewDist = dist; overviewTarget.copy(target); }
+        if (rememberOverview) overviewDist = dist;
         publishDist();
         placeCamera();
       };
@@ -263,9 +261,9 @@ export function ForceScene({
         pickables.length = 0;
       };
 
-      const sharedLine = new THREE.LineBasicMaterial({ color: LINK, transparent: true, opacity: 0.85 });
+      const sharedLine = new THREE.LineBasicMaterial({ color: LINK, transparent: true, opacity: 0.3 });
       const crossLine = new THREE.LineBasicMaterial({ color: LINK, transparent: true, opacity: 0.08 });
-      const spineLine = new THREE.LineBasicMaterial({ color: LINK, transparent: true, opacity: 0.62 });
+      const spineLine = new THREE.LineBasicMaterial({ color: LINK, transparent: true, opacity: 0.3 });
       const hotLine = new THREE.LineBasicMaterial({ color: LINK, transparent: true, opacity: 0.92 });
       const haloMat = new THREE.MeshBasicMaterial({
         color: 0x49d4ff,
@@ -339,14 +337,6 @@ export function ForceScene({
         if (stamp !== placementStamp) {
           placementStamp = stamp;
           camera.updateMatrixWorld();
-          overviewCamera.copy(camera);
-          overviewCamera.position.set(
-            overviewTarget.x + Math.sin(yaw) * Math.cos(pitch) * overviewDist,
-            overviewTarget.y + Math.sin(pitch) * overviewDist,
-            overviewTarget.z + Math.cos(yaw) * Math.cos(pitch) * overviewDist,
-          );
-          overviewCamera.lookAt(overviewTarget);
-          overviewCamera.updateMatrixWorld();
           const near = new Set<string>();
           const focusId = framing.clusterId ?? framing.selectedId;
           if (focusId) {
@@ -362,7 +352,7 @@ export function ForceScene({
             const node = framing.nodes.find((node) => node.id === entry.id)!;
             const hub = node.kind === "folder" || node.nodeType === "hub";
             const active = near.has(node.id);
-            const projectionCamera = focused && !active ? overviewCamera : camera;
+            const projectionCamera = camera;
             scratch.set(point.x, point.y, point.z);
             const depth = scratch.clone().applyMatrix4(projectionCamera.matrixWorldInverse);
             depth.z = Math.min(depth.z, -dist * 0.35);
@@ -372,12 +362,12 @@ export function ForceScene({
             const radius = Math.max(hub ? 6 : 3, Math.min(cap, entry.baseScale / worldPerPx));
             return {
               id: entry.id, x: (scratch.x * 0.5 + 0.5) * viewW, y: (-scratch.y * 0.5 + 0.5) * viewH,
-              r: radius * 1.06, hubId: node.hubs[0], priority: node.id === framing.selectedId ? 1000 : hub ? 500 : active ? 100 : 0,
+              r: radius * 1.06, hubId: hub ? node.id : node.hubs[0], priority: node.id === framing.selectedId ? 1000 : hub ? 500 : active ? 100 : 0,
               z: scratch.z,
             };
           });
           const source = new Map(projected.map((node) => [node.id, node]));
-          screenNodes = frameScreenNodes(projected, safe, focusId, near);
+          screenNodes = frameScreenNodes(projected, safe, focusId, new Set(meshes.map((entry) => entry.id)), framing.edges);
           const entryOf = new Map(meshes.map((entry) => [entry.id, entry]));
           for (const node of screenNodes) {
             const entry = entryOf.get(node.id)!;
@@ -415,14 +405,14 @@ export function ForceScene({
         }
         host.dataset.nodes = JSON.stringify(boxes);
         host.dataset.area = JSON.stringify({ left: hostBox.left + safe.left, top: hostBox.top + safe.top, right: hostBox.left + safe.right, bottom: hostBox.top + safe.bottom });
-        const drawnEdges: { from: string; to: string; length: number }[] = [];
+        const drawnEdges: { from: string; to: string; length: number; opacity: number }[] = [];
         group?.traverse((object) => {
           if (!(object instanceof THREE.LineSegments)) return;
           const ids = object.userData.nodeIds as string[] | undefined;
           if (!ids) return;
           for (let i = 0; i < ids.length; i += 2) {
             const a = byId.get(ids[i]); const b = byId.get(ids[i + 1]);
-            if (a && b) drawnEdges.push({ from: a.id, to: b.id, length: Math.hypot(a.x - b.x, a.y - b.y) });
+            if (a && b) drawnEdges.push({ from: a.id, to: b.id, length: Math.hypot(a.x - b.x, a.y - b.y), opacity: (object.material as THREE_NS.LineBasicMaterial).opacity });
           }
         });
         host.dataset.edges = JSON.stringify(drawnEdges);
@@ -520,7 +510,7 @@ export function ForceScene({
         let nearZ = Infinity;
         let farZ = -Infinity;
         for (const node of current.nodes) {
-          if (!current.visibleIds.has(node.id)) continue;
+          if (!current.visibleIds.has(node.id) || (dim && !hot.has(node.id))) continue;
           const point = pointOf.get(node.id);
           if (!point) continue;
           nearZ = Math.min(nearZ, point.z);
@@ -529,14 +519,14 @@ export function ForceScene({
         const zSpan = Math.max(1, farZ - nearZ);
 
         for (const node of current.nodes) {
-          if (!current.visibleIds.has(node.id)) continue;
+          if (!current.visibleIds.has(node.id) || (dim && !hot.has(node.id))) continue;
           const point = pointOf.get(node.id);
           if (!point) continue;
           const closeness = (point.z - nearZ) / zSpan;
           const depthScale = 0.72 + 0.28 * closeness;
           const px = nodeDiameterPx(node, degree.get(node.id) ?? 0);
           const color = new THREE.Color(nodeColor(node.nodeType));
-          const baseDim = (dim && !hot.has(node.id) ? 0.35 : 1) * (0.82 + 0.18 * closeness);
+          const baseDim = 0.82 + 0.18 * closeness;
           const material = new THREE.ShaderMaterial({
             transparent: true,
             depthWrite: false,
@@ -641,7 +631,7 @@ export function ForceScene({
               routeSet.has(edge.from) &&
               routeSet.has(edge.to) &&
               Math.abs((current.route ?? []).indexOf(edge.from) - (current.route ?? []).indexOf(edge.to)) === 1;
-            if (onFocus || onRoute) {
+            if (focused || onFocus || onRoute) {
               push(hotPositions, a, b);
               continue;
             }
@@ -736,7 +726,7 @@ export function ForceScene({
             const rect = spot;
             return rect.left >= safe.left && rect.right <= safe.right && rect.top >= safe.top && rect.bottom <= safe.bottom &&
               !placed.some((other) => rectsIntersect(rect, other, 6)) &&
-              !screenNodes.some((node) => node.id !== source.id && !source.hub && rectIntersectsCircle(rect, node, 3));
+              !screenNodes.some((node) => node.id !== source.id && rectIntersectsCircle(rect, node, 3));
           });
           if (!spot) continue;
           keep.add(source.id);

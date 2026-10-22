@@ -45,3 +45,20 @@ test("an explicit stop cancels the remaining chunks", async () => {
   await queue.drain();
   assert.deepEqual(played, ["One."]);
 });
+
+test("a rejected second chunk is logged, later chunks play, and the reply job finishes", async (t) => {
+  const logged: unknown[][] = [];
+  t.mock.method(console, "error", (...args: unknown[]) => { logged.push(args); });
+  const played: string[] = [];
+  let speaking = true, finished = false;
+  const queue = createSentenceQueue(async (text) => {
+    played.push(text);
+    if (played.length === 2) throw new Error("audio failed");
+  }, new AbortController().signal);
+  queue.enqueue("One. Two. Three. Four.");
+  await queue.drain().finally(() => { speaking = false; finished = true; });
+  assert.deepEqual(played, ["One.", "Two.", "Three.", "Four."]);
+  assert.equal(logged.length, 1);
+  assert.equal(speaking, false);
+  assert.equal(finished, true);
+});

@@ -298,18 +298,9 @@ export function Face() {
   }, [items, tab]);
 
   useEffect(() => {
-    if (!graphOpen) return;
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setGraphOpen(false);
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [graphOpen]);
-
-  useEffect(() => {
     if (!working) return;
     const onKey = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
+      if (event.key !== "Escape" || event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement) return;
       event.preventDefault();
       event.stopPropagation();
       setGraphOpen(false);
@@ -403,19 +394,23 @@ export function Face() {
   }
 
   async function speakThenFinish(id: number, abort: AbortController, line: string) {
-    if (line.trim() && id === jobGen.current && !abort.signal.aborted) {
-      replySpeaking.current = true;
-      const queue = createSentenceQueue(async (chunk) => {
-        setLiveLine(chunk);
-        await speakRef.current(chunk);
-      }, abort.signal);
-      queue.enqueue(line);
-      await queue.drain();
-      if (id !== jobGen.current) return;
-      replySpeaking.current = false;
-      setSpeaking(false);
+    try {
+      if (line.trim() && id === jobGen.current && !abort.signal.aborted) {
+        replySpeaking.current = true;
+        const queue = createSentenceQueue(async (chunk) => {
+          setLiveLine(chunk);
+          await speakRef.current(chunk);
+        }, abort.signal);
+        queue.enqueue(line);
+        await queue.drain();
+      }
+    } finally {
+      if (id === jobGen.current) {
+        replySpeaking.current = false;
+        setSpeaking(false);
+        finishJob(id);
+      }
     }
-    finishJob(id);
   }
 
   function pushCue(next: Omit<GraphCue, "token">) {
@@ -615,13 +610,15 @@ export function Face() {
       upsertJarvis("I couldn't reach Jarvis. Try again.", undefined, true);
     } finally {
       if (heard === 0 && spoken) queue.enqueue(spoken);
-      await queue.drain();
-      if (id === jobGen.current) {
-        replySpeaking.current = false;
-        speakingRef.current = false;
-        setSpeaking(false);
-        stampTiming(null);
-        finishJob(id);
+      try { await queue.drain(); }
+      finally {
+        if (id === jobGen.current) {
+          replySpeaking.current = false;
+          speakingRef.current = false;
+          setSpeaking(false);
+          stampTiming(null);
+          finishJob(id);
+        }
       }
     }
   }
@@ -691,7 +688,7 @@ export function Face() {
         </div>
       ) : null}
       <div className="face-stage" data-orb="center" data-mode={orb}>
-        <NoteGraph cue={cue} suspendEscape={working} graphOpen={graphOpen} railCollapsed={railCollapsed} onToggleRail={() => {
+        <NoteGraph cue={cue} suspendEscape={working} graphOpen={graphOpen} onHome={() => setGraphOpen(false)} railCollapsed={railCollapsed} onToggleRail={() => {
           const next = !railCollapsed;
           setRailCollapsed(next);
           try { localStorage.setItem("jarvis-rail-collapsed", String(next)); } catch {}
