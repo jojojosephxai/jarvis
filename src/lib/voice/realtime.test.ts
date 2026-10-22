@@ -117,7 +117,7 @@ async function configRoot() {
   await writeFile(path.join(root,"vault","School-schedule.md"),"# Monday\nMath\n# Thursday\nScience at 9am\n# Friday\nArt");return root;
 }
 test("server instructions include bounded local context in order, speed and routing rules",async()=>{
-  const config=await buildRealtimeConfig({root:await configRoot(),now:new Date("2026-10-22T16:00:00Z"),history:Array.from({length:9},()=>({role:"user",content:"x".repeat(300)})),speed:"9",digestProvider:async()=>"Waiting on a review."});
+  const config=await buildRealtimeConfig({root:await configRoot(),vaultPath:"vault",now:new Date("2026-10-22T16:00:00Z"),history:Array.from({length:9},()=>({role:"user",content:"x".repeat(300)})),speed:"9",digestProvider:async()=>"Waiting on a review."});
   assert.equal(config.voice,"altair");assert.equal(config.model,"grok-voice-3.0");assert.equal(config.reasoning.effort,"none");assert.equal(config.audio.output.speed,1.5);
   assert.equal(config.replace.UMLY,"U M L Y");assert.ok(config.tools.every(t=>t.type==="function"));
   const text=config.instructions;assert.match(text,/Joseph is 14/);assert.match(text,/Quiet and warm/);assert.match(text,/Science at 9am/);assert.doesNotMatch(text,/\nArt/);
@@ -139,7 +139,7 @@ test("session rejects remote Host/source/origin before upstream access and defau
 test("minting sends only expires_after and returns the ephemeral token, never the server key",async()=>{
   const root=await configRoot();let requests=0;
   const request=new Request("http://127.0.0.1/api/voice/session",{method:"POST",headers:{host:"127.0.0.1"},body:JSON.stringify({messages:history})});
-  const response=await voiceSessionResponse(request,{root,env:{JARVIS_VOICE_LAYER:"realtime",XAI_API_KEY:"server-test-key"},fetchImpl:async(url,init)=>{
+  const response=await voiceSessionResponse(request,{root,vaultPath:"vault",env:{JARVIS_VOICE_LAYER:"realtime",XAI_API_KEY:"server-test-key"},fetchImpl:async(url,init)=>{
     requests++;assert.equal(String(url),"https://api.x.ai/v1/realtime/client_secrets");assert.deepEqual(JSON.parse(String(init?.body)),{expires_after:{seconds:300}});
     assert.equal(new Headers(init?.headers).get("authorization"),"Bearer server-test-key");return Response.json({value:"ephemeral-test",expires_at:123});
   }});

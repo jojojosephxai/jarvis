@@ -86,7 +86,7 @@ describe("executeTool", () => {
     const kept = await executeTool(
       { tool: "notes.keep", input: { text: "I like quiet reminders" } },
       root,
-      { approved: true },
+      { approved: true, vaultDir: path.join(root, "vault") },
     );
     assert.equal(kept.status, "done");
     assert.equal(kept.input.file, "Preferences.md");

@@ -18,7 +18,7 @@ async function vault() {
 const sentences = ["First sentence.", "Second sentence.", "Third sentence.", "Fourth sentence.", "Fifth sentence."];
 test("vault stream yields all five sentences before done", async () => {
   const events = [];
-  for await (const event of streamAnswerFromVault("school", { root: await vault(), useModel: true,
+  for await (const event of streamAnswerFromVault("school", { root: await vault(), vaultPath: "vault", useModel: true,
     stream: async function* () { yield* sentences; },
   })) events.push(event);
   assert.deepEqual(events.filter(e => e.type === "sentence").map(e => e.text), sentences);
@@ -60,6 +60,17 @@ test("streaming and non-streaming brain pass previous turns to completion", asyn
     assert.deepEqual(history, messages.slice(0,-1));
     return {ok:true as const,text:"Friday."};
   };
-  await think(messages, {root, useModel:true, complete});
-  for await (const event of streamTurn(messages, {root, useModel:true, complete})) assert.ok(event);
+  await think(messages, {root, vaultPath:"vault", useModel:true, complete});
+  for await (const event of streamTurn(messages, {root, vaultPath:"vault", useModel:true, complete})) assert.ok(event);
+});
+
+test("what did I just say reaches completion with the previous user turn", async () => {
+  const messages = [{role:"user" as const,content:"The fictional codeword is marigold."},{role:"assistant" as const,content:"Understood."},{role:"user" as const,content:"What did I just say?"}];
+  const answer = await think(messages, { vaultPath:path.resolve("tests/fixtures/vault"), useModel:true,
+    complete:async (_q, _packet, history) => {
+      assert.equal(history?.[0].content, messages[0].content);
+      return {ok:true,text:"You said the fictional codeword is marigold."};
+    },
+  });
+  assert.match(answer.reply, /marigold/);
 });

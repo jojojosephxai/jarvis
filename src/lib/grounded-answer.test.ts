@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, it } from "node:test";
 
+import { pinnedContext } from "./pinned-context";
 import { think } from "./brain";
 import { answerFromVault, wordingStaysOnNotes } from "./grounded-answer";
 import type { VaultNote } from "./vault-read";
@@ -262,9 +263,9 @@ describe("think vault answers", () => {
   });
 });
 
-describe("starter vault", () => {
+describe("synthetic fixture vault", () => {
   it("answers grade, the science fair, a blank swim time, and an email gap", async () => {
-    const vault = path.resolve("vault");
+    const vault = path.resolve("tests/fixtures/vault");
     const grade = await answerFromVault("What grade is Joseph in?", {
       vaultPath: vault,
       useModel: false,
@@ -296,5 +297,66 @@ describe("starter vault", () => {
     assert.match(email.reply, /don't have that in the vault notes/);
     assert.equal(email.sources.length, 0);
     assert.doesNotMatch(email.reply, /\b(sent|emailed|inbox)\b/i);
+  });
+});
+
+describe("pinned context and follow-ups", () => {
+  const fixture = path.resolve("tests/fixtures/vault");
+  const now = new Date("2026-10-22T16:00:00Z");
+  it("pins About and today's Eastern weekday even without a retrieval hit", async () => {
+    await answerFromVault("zebras", { vaultPath: fixture, now, useModel: true,
+      complete: async (_question, packet) => {
+        assert.match(packet, /About/);
+        assert.match(packet, /Thursday/);
+        assert.match(packet, /Map worksheet due Thursday/);
+        assert.match(packet, /No vault note matched/);
+        return { ok: true, text: "Zebras have stripes." };
+      },
+    });
+  });
+  it("answers tomorrow from the pinned schedule without a keyword hit", async () => {
+    await answerFromVault("What do I have tomorrow?", { vaultPath: fixture, now, useModel: true,
+      complete: async (_question, packet) => {
+        assert.match(packet, /Tomorrow/);
+        assert.match(packet, /Botany report due Friday/);
+        assert.match(packet, /No vault note matched/);
+        return { ok: true, text: "Your botany report is due Friday." };
+      },
+    });
+  });
+  it("uses the previous user question to retrieve a short follow-up", async () => {
+    const answer = await answerFromVault("and on Friday?", { vaultPath: fixture, now, useModel: true,
+      history: [{ role: "user", content: "what's due Thursday" }, { role: "assistant", content: "A map worksheet." }],
+      complete: async (_question, packet, history) => {
+        assert.match(packet, /# School-schedule/);
+        assert.match(packet, /Botany report due Friday/);
+        assert.equal(history?.[0].content, "what's due Thursday");
+        return { ok: true, text: "The botany report is due Friday." };
+      },
+    });
+    assert.ok(answer.sources.includes("School-schedule"));
+  });
+  it("keeps the complete pinned block under 2,000 characters with a full board", async () => {
+    const block = await pinnedContext("tomorrow", { vaultPath: fixture, now, boardDigest: () => "Waiting on Joseph: model bridge. ".repeat(100) });
+    assert.ok(block.length <= 2000, String(block.length));
+    for (const label of ["About", "Preferences", "Voice-and-tone", "Today", "Tomorrow", "Goals", "Life dashboard"]) assert.ok(block.includes(label));
+    assert.match(block, /Waiting on Joseph/);
+  });
+  it("includes the same profile in quick brain calls", async () => {
+    await think([{ role: "user", content: "hi" }], { vaultPath: fixture, now, useModel: true,
+      complete: async (_question, packet) => {
+        assert.match(packet, /About/);
+        assert.match(packet, /Map worksheet due Thursday/);
+        return { ok: true, text: "Hello, Joseph." };
+      },
+    });
+  });
+  it("refreshes the profile when its file mtime changes and skips missing files", async () => {
+    const root = await makeVault();
+    const options = { root, vaultPath: "vault", now };
+    assert.match(await pinnedContext("hello", options), /9th/);
+    await writeFile(path.join(root, "vault", "About.md"), "# About\nSynthetic updated profile: pottery.");
+    assert.match(await pinnedContext("hello", options), /pottery/);
+    assert.doesNotMatch(await pinnedContext("hello", { ...options, vaultPath: "missing" }), /pottery/);
   });
 });

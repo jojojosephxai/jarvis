@@ -1,8 +1,9 @@
 import { assertNever } from "./assert";
-import { clockStamp, isClockQuestion, isQuickAsk, isSmallTalk, localClockReply, readySentences } from "./clock";
+import { isClockQuestion, isQuickAsk, isSmallTalk, localClockReply, readySentences } from "./clock";
 import { CALL_REFUSAL } from "./demo-brain";
 import { answerFromVault, streamAnswerFromVault, type AnswerOptions, type GroundedAnswer } from "./grounded-answer";
 import { brainMode, grokConfigured, grokPhraseNotes, grokStreamSentences, pickGrokModel } from "./grok";
+import { pinnedContext } from "./pinned-context";
 import { resolveHand } from "./hands";
 import { describeGraphCommand } from "./graph-command";
 import { parseIntent } from "./intent";
@@ -116,9 +117,8 @@ async function talk(latest: string, options: AnswerOptions): Promise<ChatRespons
 }
 
 async function talkSmall(latest: string, options: AnswerOptions): Promise<ChatResponse> {
-  const now = options.now ?? new Date();
   const modelOn = options.useModel ?? grokConfigured();
-  const packet = `Current time: ${clockStamp(now)} (America/New_York).\n\nQuestion:\n${latest}\n\nNotes:\nNo vault search. Answer in one or two short sentences.`;
+  const packet = `${await pinnedContext(latest, options)}\n\nQuestion:\n${latest}\n\nNotes:\nNo vault search. Answer in one or two short sentences.`;
   if (!modelOn && !options.complete) {
     return { reply: "Hello. I am here.", mode: "demo", receipts: [] };
   }
@@ -175,7 +175,7 @@ export async function* streamTurn(
       yield* emitReply(await finishAfterWatch(await talk(latest.content, options), root, watching));
       return;
     }
-    const packet = `Current time: ${clockStamp(options.now ?? new Date())} (America/New_York).\n\nQuestion:\n${latest.content}\n\nNotes:\nNo vault search. Answer in one or two short sentences.`;
+    const packet = `${await pinnedContext(latest.content, options)}\n\nQuestion:\n${latest.content}\n\nNotes:\nNo vault search. Answer in one or two short sentences.`;
     let answerText = "";
     for await (const sentence of (options.stream ?? grokStreamSentences)(latest.content, packet, options.history)) {
       const clean = sentence.trim();

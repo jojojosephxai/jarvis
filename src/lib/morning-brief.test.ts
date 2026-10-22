@@ -158,7 +158,7 @@ describe("loadMorningBrief", () => {
       JSON.stringify([event("Soccer", "tomorrow at 4pm")]),
     );
 
-    const brief = await loadMorningBrief({ root, now: NOW, timeZone: "UTC" });
+    const brief = await loadMorningBrief({ root, vaultPath: "vault", now: NOW, timeZone: "UTC" });
     assert.equal(brief.calendarEmpty, true);
     assert.equal(brief.events.length, 0);
     assert.match(brief.reply, /Calendar not connected/);
@@ -168,6 +168,7 @@ describe("loadMorningBrief", () => {
 
     const response = await think([{ role: "user", content: "morning brief" }], {
       root,
+      vaultPath: "vault",
       useModel: true,
       complete: async () => {
         throw new Error("Grok should not be called for the morning brief");
@@ -187,7 +188,7 @@ describe("loadMorningBrief", () => {
     await mkdir(path.join(root, "vault"), { recursive: true });
     await writeFile(path.join(root, "vault", "Goals.md"), "# Goals\n\nAdd yours below this line.\n\n-\n");
 
-    const brief = await loadMorningBrief({ root, now: NOW, timeZone: "UTC" });
+    const brief = await loadMorningBrief({ root, vaultPath: "vault", now: NOW, timeZone: "UTC" });
     assert.equal(brief.calendarEmpty, true);
     assert.equal(brief.events.length, 0);
     assert.equal(brief.priorities.length, 0);

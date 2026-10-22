@@ -215,7 +215,7 @@ describe("loadVaultGraph", () => {
 
   it("reads the project vault notes without inventing any", async () => {
     const previous = process.env.OBSIDIAN_VAULT_PATH;
-    delete process.env.OBSIDIAN_VAULT_PATH;
+    process.env.OBSIDIAN_VAULT_PATH = path.resolve("tests/fixtures/vault");
     try {
       const graph = await loadVaultGraph();
       assert.equal(graph.status, "ready");
@@ -250,7 +250,7 @@ describe("loadVaultGraph", () => {
       assert.equal(swimHubs.length, 1);
       assert.equal(swimHubs[0]?.id, "area:swim");
       assert.equal(swimHubs[0]?.ssot, true);
-      assert.match(swimHubs[0]?.text ?? "", /UMLY/);
+      assert.match(swimHubs[0]?.text ?? "", /Fictional swim club/);
       assert.equal(graph.nodes.some((node) => node.id === "tag:swim"), false);
       const hubNames = graph.nodes
         .filter((node) => node.kind === "folder" || node.nodeType === "hub")

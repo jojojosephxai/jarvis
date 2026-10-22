@@ -1,7 +1,7 @@
 import path from "node:path";
 
 import { stripReplySources } from "./reply-text";
-import { clockStamp } from "./clock";
+import { pinnedContext, type PinnedOptions } from "./pinned-context";
 import { grokConfigured, grokPhraseNotes, grokStreamSentences, type GrokResult } from "./grok";
 import type { BrainMode, ChatMessageInput } from "./types";
 import { loadVaultNotes, resolveVaultPath, type VaultNote } from "./vault-read";
@@ -184,11 +184,8 @@ export type GroundedAnswer = {
   notice?: string;
 };
 
-export type AnswerOptions = {
-  root?: string;
-  vaultPath?: string | null;
+export type AnswerOptions = PinnedOptions & {
   useModel?: boolean;
-  now?: Date;
   history?: ChatMessageInput[];
   complete?: (question: string, packet: string, history?: ChatMessageInput[]) => Promise<GrokResult>;
   stream?: (question: string, packet: string, history?: ChatMessageInput[]) => AsyncIterable<string>;
@@ -316,12 +313,12 @@ function clipNote(text: string): string {
   return `${clean.slice(0, NOTE_CLIP).trim()}…`;
 }
 
-function packetFor(question: string, picked: ScoredNote[], now?: Date): string {
+function packetFor(question: string, picked: ScoredNote[], pinned: string): string {
   const blocks = picked
     .slice(0, CONTEXT_NOTES)
     .map((scored) => `# ${scored.note.title}\n${clipNote(scored.note.text)}`)
     .join("\n\n");
-  return `Current time: ${clockStamp(now)} (America/New_York).\n\nQuestion:\n${question}\n\nNotes:\n${blocks}`;
+  return `${pinned}\n\nQuestion:\n${question}\n\nNotes:\n${blocks}`;
 }
 
 function replyWords(text: string): string[] {
@@ -367,12 +364,15 @@ async function gatherAnswer(question: string, options: AnswerOptions): Promise<G
     };
   }
 
-  const terms = questionTerms(question);
+  const previous = options.history?.filter(message => message.role === "user").at(-1)?.content;
+  const followup = question.split(/\s+/).length <= 6 || /\b(it|that|what about|and on)\b/i.test(question);
+  const query = previous && followup ? `${previous} ${question}` : question;
+  const terms = questionTerms(query);
   const ranked =
     terms.length === 0
       ? []
       : loaded.notes
-          .map((note) => scoreNote(note, terms, question))
+          .map((note) => scoreNote(note, terms, query))
           .filter((scored) => scored.score >= 4)
           .sort((a, b) => b.score - a.score);
 
@@ -382,11 +382,12 @@ async function gatherAnswer(question: string, options: AnswerOptions): Promise<G
     : [];
 
   const allTitles = loaded.notes.map((note) => note.title);
-  const local = localReading(question, picked, allTitles);
+  const local = localReading(query, picked, allTitles);
+  const pinned = await pinnedContext(question, options);
   const packet =
     picked.length > 0
-      ? packetFor(question, picked, options.now)
-      : `Current time: ${clockStamp(options.now)} (America/New_York).\n\nQuestion:\n${question}\n\nNotes:\nNo vault note matched. Answer anyway.`;
+      ? packetFor(question, picked, pinned)
+      : `${pinned}\n\nQuestion:\n${question}\n\nNotes:\nNo vault note matched. Answer anyway.`;
   return {
     modelOn: options.useModel ?? grokConfigured(),
     packet,

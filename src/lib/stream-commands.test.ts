@@ -15,7 +15,7 @@ async function root() {
 }
 test("streaming note, changes, brief and layout dispatch before quick answers without a model", async () => {
   const directory=await root();
-  const options={root:directory,useModel:true,complete:async()=>{throw new Error("A deterministic command called the model");}};
+  const options={root:directory,vaultPath:"vault",useModel:true,complete:async()=>{throw new Error("A deterministic command called the model");}};
   const replies=[];
   for(const content of ["note that birds sing","what changed","move to the side","Morning brief"]){
     for await(const event of streamTurn([{role:"user",content}],options)) if(event.type==="done") replies.push(event.response);
@@ -34,9 +34,9 @@ test("layout intents and a bare yes preserve the on-screen confirmation boundary
 });
 test("streamed conversation observes edits before it completes",async()=>{
   const directory=await root();
-  for await(const event of streamTurn([{role:"user",content:"hello"}],{root:directory,useModel:false})) assert.ok(event);
+  for await(const event of streamTurn([{role:"user",content:"hello"}],{root:directory,vaultPath:"vault",useModel:false})) assert.ok(event);
   await writeFile(path.join(directory,"vault","About.md"),"# About\nJoseph likes birds.");
-  for await(const event of streamTurn([{role:"user",content:"hello"}],{root:directory,useModel:false})) assert.ok(event);
+  for await(const event of streamTurn([{role:"user",content:"hello"}],{root:directory,vaultPath:"vault",useModel:false})) assert.ok(event);
   const ledger=await readFile(path.join(directory,"data","vault-ledger.json"),"utf8");
   assert.match(ledger,/About/);
 });
