@@ -16,7 +16,7 @@ export type GrokTtsConfig =
   | { state: "ready"; key: string; voiceId: string; speed: number };
 
 export type GrokSynthResult =
-  | { ok: true; bytes: Uint8Array; contentType: "audio/mpeg"; voice: string; clipped: boolean; speed: number }
+  | { ok: true; bytes: Uint8Array; contentType: "audio/mpeg"; voice: string; clipped: boolean; speed: number; firstByteMs: number }
   | (ServerSpeakFailure & { ok: false; httpStatus: number });
 
 const MISSING = "No Grok voice is set. This computer's voice is the fallback.";
@@ -73,12 +73,12 @@ export function grokTtsPublicStatus(env?: GrokTtsEnv): VoicePublicStatus {
 let ttsWarmed = false;
 
 /** Open the Altair connection once when the page loads. */
-export function warmTtsConnection(): void {
+export function warmTtsConnection(fetchImpl: typeof fetch = fetch): void {
   if (ttsWarmed) return;
   ttsWarmed = true;
   const config = readGrokTtsConfig();
   if (config.state !== "ready") return;
-  void fetch(TTS_URL, {
+  void fetchImpl(TTS_URL, {
     method: "OPTIONS",
     headers: { Authorization: `Bearer ${config.key}` },
     cache: "no-store",
@@ -138,6 +138,7 @@ export async function synthesizeGrok(
     return { ok: false, httpStatus: 503, live: false, reason: "unconfigured", detail: config.detail };
   }
 
+  const started = performance.now();
   let response: Response;
   try {
     response = await fetchImpl(TTS_URL, {
@@ -151,6 +152,7 @@ export async function synthesizeGrok(
         voice_id: config.voiceId,
         language: "en",
         speed: config.speed,
+        optimize_streaming_latency: 1,
       }),
     });
   } catch {
@@ -168,7 +170,24 @@ export async function synthesizeGrok(
     return upstreamFailure(response.status);
   }
 
-  const bytes = new Uint8Array(await response.arrayBuffer());
+  const reader = response.body?.getReader();
+  const chunks: Uint8Array[] = [];
+  let size = 0, firstByteMs = -1;
+  if (reader) {
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        if (!value.length) continue;
+        if (firstByteMs < 0) firstByteMs = performance.now() - started;
+        chunks.push(value); size += value.length;
+      }
+    } catch { return { ok: false, httpStatus: 502, live: false, reason: "failed", detail: "xAI audio stopped arriving." }; }
+    finally { reader.releaseLock(); }
+  }
+  const bytes = new Uint8Array(size);
+  let offset = 0;
+  for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.length; }
   if (bytes.byteLength === 0) {
     return {
       ok: false,
@@ -186,5 +205,6 @@ export async function synthesizeGrok(
     voice: config.voiceId,
     clipped: clipped.clipped,
     speed: config.speed,
+    firstByteMs,
   };
 }

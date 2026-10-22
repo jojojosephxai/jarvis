@@ -2,7 +2,7 @@ import { assertNever } from "./assert";
 import { clockStamp, isClockQuestion, isQuickAsk, isSmallTalk, localClockReply, readySentences } from "./clock";
 import { CALL_REFUSAL } from "./demo-brain";
 import { answerFromVault, streamAnswerFromVault, type AnswerOptions, type GroundedAnswer } from "./grounded-answer";
-import { brainMode, grokConfigured, grokPhraseNotes, grokStreamSentences } from "./grok";
+import { brainMode, grokConfigured, grokPhraseNotes, grokStreamSentences, pickGrokModel } from "./grok";
 import { resolveHand } from "./hands";
 import { describeGraphCommand } from "./graph-command";
 import { parseIntent } from "./intent";
@@ -38,69 +38,53 @@ export function readMessages(body: unknown): ChatMessageInput[] | null {
   return parsed;
 }
 
-export async function think(
-  messages: ChatMessageInput[],
-  options: AnswerOptions = {},
-): Promise<ChatResponse> {
+/** Both transports share command dispatch and vault observation before quick answers. */
+function prepareTurn(messages: ChatMessageInput[], options: AnswerOptions) {
   const latest = messages.at(-1);
-  if (!latest || latest.role !== "user") {
-    return { reply: "Say that once more?", mode: brainMode(), receipts: [] };
-  }
-
-  options = { ...options, history: messages.slice(0, -1) };
   const root = options.root ?? process.cwd();
   const vaultDir = resolveVaultPath(root, options.vaultPath);
-  const clockOnly = isClockQuestion(latest.content) !== null;
-  const watching = clockOnly ? null : observeVault(root, vaultDir);
+  const watching = latest && !isClockQuestion(latest.content) ? observeVault(root, vaultDir) : null;
+  // Attach a handler immediately; observation is awaited before completing the turn.
+  void watching?.catch(() => {});
+  return { latest, root, vaultDir, watching, parsed: parseIntent(latest?.content ?? "") };
+}
 
-  const done = (response: ChatResponse) => finishAfterWatch(response, root, watching);
-
-  if (isMorningBriefRequest(latest.content)) {
-    return done(await morningBriefResponse(options));
-  }
-
-  const parsed = parseIntent(latest.content);
+async function dispatchCommand(prepared: ReturnType<typeof prepareTurn>, options: AnswerOptions): Promise<ChatResponse | null> {
+  const { latest, root, vaultDir, watching, parsed } = prepared;
+  if (!latest || latest.role !== "user") return { reply: "Say that once more?", mode: brainMode(), receipts: [] };
+  if (isMorningBriefRequest(latest.content)) return morningBriefResponse(options);
   switch (parsed.kind) {
-    case "refuse-call":
-      return done({ reply: CALL_REFUSAL, mode: brainMode(), receipts: [] });
-    case "changes": {
+    case "refuse-call": return { reply: CALL_REFUSAL, mode: brainMode(), receipts: [] };
+    case "changes":
       if (watching) await watching;
-      return {
-        reply: await describeChanges(root),
-        mode: brainMode(),
-        receipts: [],
-      };
-    }
+      return { reply: await describeChanges(root), mode: brainMode(), receipts: [] };
     case "graph": {
-      const graph = await loadVaultGraph(vaultDir);
-      const described = describeGraphCommand(parsed.command, graph.nodes);
-      return done({ reply: described.reply, mode: brainMode(), receipts: [], graph: described.directive });
+      const nodes = parsed.command.action === "layout" ? [] : (await loadVaultGraph(vaultDir)).nodes;
+      const described = describeGraphCommand(parsed.command, nodes);
+      return { reply: described.reply, mode: brainMode(), receipts: [], graph: described.directive };
     }
     case "tool": {
       if (parsed.request.tool === "notes.recall") {
         const query = parsed.request.input.query?.trim() ?? "";
-        if (!query) {
-          return done({
-            reply: "Tell me what to look for in the vault notes.",
-            mode: brainMode(),
-            receipts: [],
-          });
-        }
-        return done(fromGrounded(await answerFromVault(query, options)));
+        return query ? fromGrounded(await answerFromVault(query, options)) : { reply: "Tell me what to look for in the vault notes.", mode: brainMode(), receipts: [] };
       }
-      if (parsed.request.tool === "notes.keep") {
-        const enriched = await enrichKeepInput(parsed.request.input.text ?? "", vaultDir);
-        const hand = await resolveHand({ tool: "notes.keep", input: enriched }, undefined, root, vaultDir);
-        return done({ reply: hand.reply, mode: brainMode(), receipts: hand.receipts, plan: hand.plan });
-      }
-      const hand = await resolveHand(parsed.request, undefined, root, vaultDir);
-      return done({ reply: hand.reply, mode: brainMode(), receipts: hand.receipts, plan: hand.plan });
+      const request = parsed.request.tool === "notes.keep"
+        ? { tool: "notes.keep" as const, input: await enrichKeepInput(parsed.request.input.text ?? "", vaultDir) }
+        : parsed.request;
+      const hand = await resolveHand(request, undefined, root, vaultDir);
+      return { reply: hand.reply, mode: brainMode(), receipts: hand.receipts, plan: hand.plan };
     }
-    case "chat":
-      return done(await talk(latest.content, options));
-    default:
-      return assertNever(parsed);
+    case "chat": return null;
+    default: return assertNever(parsed);
   }
+}
+
+export async function think(messages: ChatMessageInput[], options: AnswerOptions = {}): Promise<ChatResponse> {
+  options = { ...options, history: messages.slice(0, -1) };
+  const prepared = prepareTurn(messages, options);
+  const response = await dispatchCommand(prepared, options) ?? await talk(prepared.latest!.content, options);
+  response.model = response.mode === "grok" ? pickGrokModel(prepared.latest?.content ?? "") : "local";
+  return finishAfterWatch(response, prepared.root, prepared.watching);
 }
 
 async function finishAfterWatch(
@@ -155,12 +139,11 @@ export async function* streamTurn(
   options: AnswerOptions = {},
 ): AsyncGenerator<SpeakEvent> {
   options = { ...options, history: messages.slice(0, -1) };
-  const started = Date.now();
   let logged = false;
   const logFirst = () => {
     if (logged) return;
     logged = true;
-    console.info(`time-to-first-word ${Date.now() - started}`);
+
   };
   const emitReply = function* (response: ChatResponse): Generator<SpeakEvent> {
     for (const text of spokenParts(response.reply)) {
@@ -168,24 +151,28 @@ export async function* streamTurn(
       yield { type: "sentence", text };
     }
     if (!logged) logFirst();
+    response.model = response.mode === "grok" ? pickGrokModel(messages.at(-1)?.content ?? "") : "local";
     yield { type: "done", response };
   };
 
-  const latest = messages.at(-1);
-  if (!latest || latest.role !== "user") {
-    yield* emitReply({ reply: "Say that once more?", mode: brainMode(), receipts: [] });
+  const prepared = prepareTurn(messages, options);
+  const { latest, root, watching } = prepared;
+  const command = await dispatchCommand(prepared, options);
+  if (command) {
+    yield* emitReply(await finishAfterWatch(command, root, watching));
     return;
   }
+  if (!latest) return;
 
   const clockKind = isClockQuestion(latest.content);
   if (clockKind) {
-    yield* emitReply(await talk(latest.content, options));
+    yield* emitReply(await finishAfterWatch(await talk(latest.content, options), root, watching));
     return;
   }
   if (isQuickAsk(latest.content)) {
     const modelOn = options.useModel ?? grokConfigured();
     if (!modelOn || options.complete) {
-      yield* emitReply(await talk(latest.content, options));
+      yield* emitReply(await finishAfterWatch(await talk(latest.content, options), root, watching));
       return;
     }
     const packet = `Current time: ${clockStamp(options.now ?? new Date())} (America/New_York).\n\nQuestion:\n${latest.content}\n\nNotes:\nNo vault search. Answer in one or two short sentences.`;
@@ -198,39 +185,17 @@ export async function* streamTurn(
       yield { type: "sentence", text: clean };
     }
     if (!answerText) {
-      yield* emitReply(await talk(latest.content, options));
+      yield* emitReply(await finishAfterWatch(await talk(latest.content, options), root, watching));
       return;
     }
-    const response = await finish(
-      { reply: answerText, mode: "grok", receipts: [] },
-      options.root ?? process.cwd(),
-    );
+    const response = await finishAfterWatch({ reply: answerText, mode: "grok", receipts: [] }, root, watching);
     if (!logged) logFirst();
+    response.model = response.mode === "grok" ? pickGrokModel(messages.at(-1)?.content ?? "") : "local";
     yield { type: "done", response };
     return;
   }
 
-  const parsed = parseIntent(latest.content);
-  if (parsed.kind === "graph") {
-    const root = options.root ?? process.cwd();
-    const vaultDir = resolveVaultPath(root, options.vaultPath);
-    const watching = observeVault(root, vaultDir);
-    const graph = await loadVaultGraph(vaultDir);
-    const described = describeGraphCommand(parsed.command, graph.nodes);
-    for (const text of spokenParts(described.reply)) {
-      logFirst();
-      yield { type: "sentence", text };
-    }
-    const response = await finishAfterWatch(
-      { reply: described.reply, mode: brainMode(), receipts: [], graph: described.directive },
-      root,
-      watching,
-    );
-    if (!logged) logFirst();
-    yield { type: "done", response };
-    return;
-  }
-  if (parsed.kind === "chat") {
+  {
     let answerText = "";
     for await (const event of streamAnswerFromVault(latest.content, options)) {
       if (event.type === "sentence") {
@@ -239,7 +204,7 @@ export async function* streamTurn(
         yield { type: "sentence", text: event.text };
         continue;
       }
-      const response = await finish(fromGrounded(event.answer), options.root ?? process.cwd());
+      const response = await finishAfterWatch(fromGrounded(event.answer), root, watching);
       if (!answerText) {
         for (const text of spokenParts(response.reply)) {
           logFirst();
@@ -247,12 +212,12 @@ export async function* streamTurn(
         }
       }
       if (!logged) logFirst();
-      yield { type: "done", response };
+      response.model = response.mode === "grok" ? pickGrokModel(messages.at(-1)?.content ?? "") : "local";
+    yield { type: "done", response };
     }
     return;
   }
 
-  yield* emitReply(await think(messages, options));
 }
 
 function spokenParts(text: string): string[] {
@@ -271,4 +236,33 @@ function fromGrounded(answer: GroundedAnswer): ChatResponse {
     notice: answer.notice,
     sources: answer.sources,
   };
+}
+
+export type TimingKind = "quick" | "grounded" | "command";
+type TurnTiming = { kind: TimingKind; firstSentenceMs: number; doneMs: number; ttsFirstByteMs: number };
+const turnTimings = new Map<string, TurnTiming>();
+function timingLine(sample: TurnTiming) {
+  console.info(`[timing] kind=${sample.kind} firstSentenceMs=${sample.firstSentenceMs} doneMs=${sample.doneMs} ttsFirstByteMs=${sample.ttsFirstByteMs}`);
+}
+/** -1 means audio has not been requested/observed; a later audio sample updates the same durations. */
+export function startChatTiming(question: string, id: string | null, now = () => performance.now()) {
+  const kind: TimingKind = parseIntent(question).kind !== "chat" || isMorningBriefRequest(question) ? "command" : isQuickAsk(question) ? "quick" : "grounded";
+  const started = now();
+  const sample: TurnTiming = { kind, firstSentenceMs: -1, doneMs: -1, ttsFirstByteMs: -1 };
+  if (id && /^[a-zA-Z0-9_-]{1,100}$/.test(id)) {
+    if (turnTimings.size >= 300) turnTimings.delete(turnTimings.keys().next().value!);
+    turnTimings.set(id, sample);
+    const expiry = setTimeout(() => turnTimings.delete(id), 120_000);
+    expiry.unref();
+  }
+  return {
+    first() { if (sample.firstSentenceMs < 0) sample.firstSentenceMs = Math.round(now() - started); },
+    done() { if (sample.doneMs >= 0) return; sample.doneMs = Math.round(now() - started); timingLine(sample); },
+  };
+}
+export function recordVoiceFirstByte(id: string | undefined, milliseconds: number) {
+  const sample = id ? turnTimings.get(id) : undefined;
+  if (!sample || sample.ttsFirstByteMs >= 0) return;
+  sample.ttsFirstByteMs = Math.round(milliseconds);
+  if (sample.doneMs >= 0) timingLine(sample);
 }

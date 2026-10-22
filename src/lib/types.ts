@@ -95,6 +95,7 @@ export type MorningBrief = {
 };
 
 export type ChatResponse = {
+  model?: string;
   reply: string;
   mode: BrainMode;
   receipts: Receipt[];
@@ -103,7 +104,7 @@ export type ChatResponse = {
   sources?: string[];
   brief?: MorningBrief;
   graph?: {
-    action: "filter" | "search" | "focus" | "clear";
+    action: "filter" | "search" | "focus" | "clear" | "layout";
     value: string;
   };
 };

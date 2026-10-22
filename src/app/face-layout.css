@@ -1226,11 +1226,12 @@
 .face-filter.is-collapsed { width: 36px; height: 110px; padding: 8px 4px; }
 .face-filter.is-collapsed .filter-toggle { height: 90px; padding: 0; margin: 0; }
 
-.face[data-view="graph"] .stage-orb,
-.face[data-view="graph"] .face-dock { display: none; }
+.face[data-view="graph"] .stage-orb { display: none; }
+.face[data-view="graph"] .face-dock { top: auto; bottom: 24px; }
+.face[data-view="graph"] .tool-row, .face[data-view="graph"] .wake-hint { display: none; }
 .face[data-view="graph"] .graph-canvas {
   top: 76px;
-  bottom: var(--edge);
+  bottom: 88px;
   left: var(--center-left);
   right: var(--center-right);
 }

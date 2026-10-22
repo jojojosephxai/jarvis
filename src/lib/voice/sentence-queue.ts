@@ -3,8 +3,14 @@ import { butlerSpeech } from "./policy";
 import { SPEAK_LIMIT } from "./types";
 
 /** One reply owns one promise chain, so arriving chunks never interrupt playback. */
-export function createSentenceQueue(play: (text: string) => Promise<unknown>, signal: AbortSignal) {
+export function createSentenceQueue<T = unknown>(play: (text: string, prepared?: Promise<T>) => Promise<unknown>, signal: AbortSignal, prepare?: (text: string, signal: AbortSignal) => Promise<T>) {
   let tail = Promise.resolve();
+  const pending: Array<{ text: string; prepared?: Promise<T> }> = [];
+  let playing = 0;
+  const prime = (index: number) => {
+    const item = pending[index];
+    if (item && !item.prepared && prepare && !signal.aborted) item.prepared = prepare(item.text, signal);
+  };
   return {
     enqueue(text: string) {
       const split = readySentences(`${butlerSpeech(text)} `);
@@ -16,9 +22,15 @@ export function createSentenceQueue(play: (text: string) => Promise<unknown>, si
           const end = rest.length <= SPEAK_LIMIT ? rest.length : space > 0 ? space : SPEAK_LIMIT;
           const chunk = rest.slice(0, end).trim();
           rest = rest.slice(end).trim();
+          const index = pending.length;
+          pending.push({ text: chunk });
+          if (index <= playing + 1) prime(index);
           tail = tail.then(async () => {
             if (signal.aborted) return;
-            try { await play(chunk); }
+            playing = index;
+            prime(index);
+            prime(index + 1);
+            try { await play(chunk, pending[index].prepared); }
             catch (error) { if (!signal.aborted) console.error("Speech chunk failed; continuing reply.", error); }
           });
         }

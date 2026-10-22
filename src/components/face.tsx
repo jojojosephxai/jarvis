@@ -21,6 +21,7 @@ import {
 import { decideFaceMode } from "@/lib/view-intent";
 import { butlerSpeech, MIC_BLOCKED_NOTICE } from "@/lib/voice/policy";
 import { createSentenceQueue, unspokenTail } from "@/lib/voice/sentence-queue";
+import { prepareSpeech, type PreparedSpeech } from "@/lib/voice/session";
 import { stripReplyTiming } from "@/lib/reply-text";
 
 const BOOT_KEY = "jarvis-boot";
@@ -51,8 +52,8 @@ let greetedThisLoad = false;
 
 type LogItem =
   | { kind: "you"; id: string; text: string; at: string }
-  | { kind: "jarvis"; id: string; text: string; at: string; sources?: string[]; failed?: boolean; tokenMs?: number; voiceMs?: number }
-  | { kind: "hand"; id: string; at: string; reply: string; plan?: HandPlan; receipts: Receipt[]; cancelled?: boolean; tokenMs?: number; voiceMs?: number };
+  | { kind: "jarvis"; id: string; text: string; at: string; sources?: string[]; failed?: boolean; tokenMs?: number; voiceMs?: number; model?: string }
+  | { kind: "hand"; id: string; at: string; reply: string; plan?: HandPlan; receipts: Receipt[]; cancelled?: boolean; tokenMs?: number; voiceMs?: number; model?: string };
 
 function dropUnaskedCalendar(text: string, asked: boolean): string {
   if (asked) return text;
@@ -438,10 +439,10 @@ export function Face() {
     try {
       if (line.trim() && id === jobGen.current && !abort.signal.aborted) {
         replySpeaking.current = true;
-        const queue = createSentenceQueue(async (chunk) => {
+        const queue = createSentenceQueue<PreparedSpeech>(async (chunk, prepared) => {
           setLiveLine(chunk);
-          await speakRef.current(chunk);
-        }, abort.signal);
+          await speakRef.current(chunk, { prepared });
+        }, abort.signal, spokenReplies ? prepareSpeech : undefined);
         queue.enqueue(line);
         await queue.drain();
       }
@@ -467,8 +468,9 @@ export function Face() {
     voice.stop();
     const decision = decideFaceMode(trimmed);
     const at = new Date().toISOString();
-    if (decision.exclusive) {
+    if (decision.exclusive && !parseGraphCommand(trimmed)) {
       if (decision.view === "graph") {
+        setGraphOpen(true);
         pushCue({
           focusQuery: decision.focusQuery,
           pathFrom: decision.pathFrom,
@@ -504,7 +506,7 @@ export function Face() {
     let timed = false;
     const answerId = makeId("ans");
     let liveId = answerId;
-    const pendingTiming: { tokenMs?: number; voiceMs?: number } = {};
+    const pendingTiming: { tokenMs?: number; voiceMs?: number; model?: string } = {};
     const stampTiming = (voiceAt: number | null) => {
       if (timed) return;
       timed = true;
@@ -532,6 +534,7 @@ export function Face() {
             text,
             sources: sources ?? prev.sources,
             failed,
+            model: pendingTiming.model ?? prev.model,
             tokenMs: pendingTiming.tokenMs ?? prev.tokenMs,
             voiceMs: pendingTiming.voiceMs ?? prev.voiceMs,
           };
@@ -546,6 +549,7 @@ export function Face() {
             at,
             sources,
             failed,
+            model: pendingTiming.model,
             tokenMs: pendingTiming.tokenMs,
             voiceMs: pendingTiming.voiceMs,
           },
@@ -555,10 +559,10 @@ export function Face() {
     let loggedWord = false;
     replySpeaking.current = true;
     let count = 0;
-    const queue = createSentenceQueue(async (sentence) => {
+    const queue = createSentenceQueue<PreparedSpeech>(async (sentence, prepared) => {
       setLiveLine(sentence);
       const first = count++ === 0;
-      await speakRef.current(sentence, first ? {
+      await speakRef.current(sentence, { prepared, ...(first ? {
         onStart: () => {
           if (!tokenAt) tokenAt = performance.now();
           stampTiming(performance.now());
@@ -566,8 +570,8 @@ export function Face() {
           loggedWord = true;
           console.info(`time-to-first-word ${Math.round(performance.now() - askedAt)}`);
         },
-      } : undefined);
-    }, abort.signal);
+      } : {}) });
+    }, abort.signal, spokenReplies ? (text, signal) => prepareSpeech(text, signal, answerId) : undefined);
     const askedCalendar = mentionsCalendar(trimmed);
     let streamed = "";
     const pushSentence = (text: string) => {
@@ -581,7 +585,7 @@ export function Face() {
     try {
       const response = await fetch("/api/chat", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "x-jarvis-turn": answerId },
         body: JSON.stringify({ messages: [
           ...items.map((item): ChatMessageInput => ({ role: item.kind === "you" ? "user" : "assistant", content: item.kind === "hand" ? item.reply : item.text })),
           { role: "user", content: trimmed },
@@ -603,9 +607,16 @@ export function Face() {
         upsertJarvis("Jarvis did not answer. Nothing was invented.", undefined, true);
         return;
       }
+      pendingTiming.model = payload.model ?? (payload.mode === "grok" ? "grok-4.7" : "local");
       settleJob(id, loadedContext(payload), payload.mode === "grok" ? "grok-4.7" : null);
       const graph = payload.graph;
+      if (graph?.action === "layout") {
+        setGraphOpen(graph.value === "graph" || graph.value === "side");
+        if (graph.value === "side") setSidebarCollapsed(true);
+        if (graph.value === "center" || graph.value === "home") setSidebarCollapsed(false);
+      }
       if (graph && (graph.action === "filter" || graph.action === "search" || graph.action === "focus" || graph.action === "clear")) {
+        setGraphOpen(true);
         setSkill("graph");
         if (graph.action === "clear") pushCue({ clear: true });
         else if (graph.action === "filter") pushCue({ filterHub: graph.value });
@@ -626,6 +637,7 @@ export function Face() {
             reply: reply || stripReplyTiming(payload.reply),
             plan: payload.plan,
             receipts: payload.receipts,
+            model: pendingTiming.model,
             tokenMs: pendingTiming.tokenMs,
             voiceMs: pendingTiming.voiceMs,
           };
@@ -999,11 +1011,11 @@ function ChatCard({
   );
 }
 
-function TimingLine({ tokenMs, voiceMs }: { tokenMs?: number; voiceMs?: number }) {
+function TimingLine({ tokenMs, voiceMs, model }: { tokenMs?: number; voiceMs?: number; model?: string }) {
   if (tokenMs === undefined) return null;
   return (
     <p className="chat-timing">
-      {((tokenMs + (voiceMs ?? 0)) / 1000).toFixed(1)}s to first word
+      {model ?? "grok-4.7"} · {((tokenMs + (voiceMs ?? 0)) / 1000).toFixed(1)}s
     </p>
   );
 }
@@ -1042,7 +1054,7 @@ function ChatLines({ items }: { items: LogItem[] }) {
               <p className="chat-meta">Jarvis · {formatStamp(item.at)}</p>
               <p className="chat-reply">{shown.body}</p>
               <SourceChips chips={shown.chips} />
-              <TimingLine tokenMs={item.tokenMs} voiceMs={item.voiceMs} />
+              <TimingLine tokenMs={item.tokenMs} voiceMs={item.voiceMs} model={item.model} />
             </article>
           );
         }
@@ -1053,7 +1065,7 @@ function ChatLines({ items }: { items: LogItem[] }) {
               <p className="chat-meta">Jarvis · {formatStamp(item.at)}</p>
               <p className="chat-reply">{shown.body}</p>
               <SourceChips chips={shown.chips} />
-              <TimingLine tokenMs={item.tokenMs} voiceMs={item.voiceMs} />
+              <TimingLine tokenMs={item.tokenMs} voiceMs={item.voiceMs} model={item.model} />
             </article>
           );
         }
@@ -1135,7 +1147,7 @@ function LogLines({ items }: { items: LogItem[] }) {
               </p>
               <p className="chat-reply">{shown.body}</p>
               <SourceChips chips={shown.chips} />
-              <TimingLine tokenMs={item.tokenMs} voiceMs={item.voiceMs} />
+              <TimingLine tokenMs={item.tokenMs} voiceMs={item.voiceMs} model={item.model} />
             </article>
           );
         }
@@ -1148,7 +1160,7 @@ function LogLines({ items }: { items: LogItem[] }) {
               </p>
               <p className="chat-reply">{shown.body}</p>
               <SourceChips chips={shown.chips} />
-              <TimingLine tokenMs={item.tokenMs} voiceMs={item.voiceMs} />
+              <TimingLine tokenMs={item.tokenMs} voiceMs={item.voiceMs} model={item.model} />
             </article>
           );
         }

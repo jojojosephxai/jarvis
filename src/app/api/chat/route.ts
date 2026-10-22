@@ -1,4 +1,4 @@
-import { readMessages, streamTurn, think } from "@/lib/brain";
+import { readMessages, streamTurn, think, startChatTiming } from "@/lib/brain";
 
 export async function POST(request: Request) {
   let body: unknown;
@@ -15,9 +15,12 @@ export async function POST(request: Request) {
 
   const stream = Boolean(body && typeof body === "object" && (body as { stream?: unknown }).stream === true);
 
+  const timing = startChatTiming(messages.at(-1)!.content, request.headers.get("x-jarvis-turn"));
   try {
     if (!stream) {
       const result = await think(messages);
+      timing.first();
+      timing.done();
       return Response.json(result);
     }
 
@@ -26,11 +29,14 @@ export async function POST(request: Request) {
       async start(controller) {
         try {
           for await (const event of streamTurn(messages)) {
+            if (event.type === "sentence") timing.first();
+            if (event.type === "done") timing.done();
             controller.enqueue(encoder.encode(`${JSON.stringify(event)}\n`));
           }
         } catch {
           controller.enqueue(encoder.encode(`${JSON.stringify({ type: "error" })}\n`));
         } finally {
+          timing.done();
           controller.close();
         }
       },
@@ -43,6 +49,7 @@ export async function POST(request: Request) {
       },
     });
   } catch {
+    timing.done();
     return Response.json({ error: "The brain hit a problem." }, { status: 500 });
   }
 }

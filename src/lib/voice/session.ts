@@ -238,7 +238,34 @@ async function playBrowser(text: string, still: () => boolean, hooks: SpeakHooks
   return still();
 }
 
-export async function speakAloud(text: string, hooks: SpeakHooks): Promise<SpeakOutcome> {
+export type PreparedSpeech = {
+  failure: ServerSpeakFailure | null;
+  audioBlob: Blob | null;
+  serverMouth: "grok" | "azure";
+  clipped: boolean;
+};
+
+/** Fetching the next sentence is independent of the currently playing audio. */
+export async function prepareSpeech(text: string, signal: AbortSignal, turnId?: string): Promise<PreparedSpeech> {
+  const clipped = clipSpeechText(text);
+  try {
+    const response = await fetch("/api/voice/speak", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text: clipped.text, turnId }), signal,
+    });
+    if (response.ok && (response.headers.get("content-type") ?? "").includes("audio")) {
+      return { failure: null, audioBlob: await response.blob(),
+        serverMouth: response.headers.get("x-voice-mouth") === "azure" ? "azure" : "grok",
+        clipped: clipped.clipped || response.headers.get("x-voice-clipped") === "true" };
+    }
+    const payload: unknown = await response.json().catch(() => null);
+    return { failure: parseFailure(payload) ?? { live: false, reason: "failed", detail: "The voice service did not return audio." }, audioBlob: null, serverMouth: "grok", clipped: clipped.clipped };
+  } catch {
+    return { failure: { live: false, reason: "failed", detail: "The voice server could not be reached." }, audioBlob: null, serverMouth: "grok", clipped: clipped.clipped };
+  }
+}
+
+export async function speakAloud(text: string, hooks: SpeakHooks, prepared?: Promise<PreparedSpeech>): Promise<SpeakOutcome> {
   stopSpeaking();
   const mine = token;
   const still = () => token === mine;
@@ -256,41 +283,9 @@ export async function speakAloud(text: string, hooks: SpeakHooks): Promise<Speak
   const abort = new AbortController();
   speakAbort = abort;
 
-  let failure: ServerSpeakFailure | null = null;
-  let audioBlob: Blob | null = null;
-  let serverMouth: "grok" | "azure" = "grok";
-  let azureClipped = clipped.clipped;
-
-  try {
-    const response = await fetch("/api/voice/speak", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text: clipped.text }),
-      signal: abort.signal,
-    });
-    if (!still()) return { played: false, mouth: "not-live", notice: null };
-    const type = response.headers.get("content-type") ?? "";
-    if (response.ok && type.includes("audio")) {
-      audioBlob = await response.blob();
-      if (response.headers.get("x-voice-mouth") === "azure") serverMouth = "azure";
-      if (response.headers.get("x-voice-clipped") === "true") azureClipped = true;
-    } else {
-      const payload: unknown = await response.json().catch(() => null);
-      failure =
-        parseFailure(payload) ?? {
-          live: false,
-          reason: "failed",
-          detail: "The voice service did not return audio.",
-        };
-    }
-  } catch {
-    if (!still()) return { played: false, mouth: "not-live", notice: null };
-    failure = {
-      live: false,
-      reason: "failed",
-      detail: "The voice server could not be reached.",
-    };
-  }
+  const result = await (prepared ?? prepareSpeech(clipped.text, abort.signal));
+  const { failure, audioBlob, serverMouth } = result;
+  const azureClipped = result.clipped;
 
   if (!still()) return { played: false, mouth: "not-live", notice: null };
 

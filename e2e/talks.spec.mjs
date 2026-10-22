@@ -65,3 +65,14 @@ test('done speaks a missing tail and does not repeat the streamed prefix',async(
   await ask(page,'Complete the response.');
   expect(spoken).toEqual(sentences);
 });
+test('typed graph commands change the Face view and go home restores it',async({page})=>{
+  await setup(page);
+  await page.addInitScript(()=>localStorage.setItem('jarvis-spoken-replies','false'));
+  await page.route('**/api/chat',r=>{
+    const text=r.request().postDataJSON().messages.at(-1).content;
+    return r.fulfill({json:{reply:'Done.',mode:'demo',receipts:[],graph:{action:'layout',value:text==='show the graph'?'graph':'home'}}});
+  });
+  await page.goto('/');
+  await ask(page,'show the graph');await expect(page.locator('.face')).toHaveAttribute('data-view','graph');
+  await ask(page,'go home');await expect(page.locator('.face')).toHaveAttribute('data-view','home');
+});

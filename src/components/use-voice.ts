@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState, type RefObject } from "react"
 
 import { browserEarsSupported, browserMouthSupported, startBrowserListen } from "@/lib/voice/browser";
 import { EARS_UNAVAILABLE, MIC_BLOCKED_NOTICE, voiceSnapshot, type VoiceSnapshot } from "@/lib/voice/policy";
-import { browserVoiceSummary, speakAloud, stopSpeaking } from "@/lib/voice/session";
+import { browserVoiceSummary, speakAloud, stopSpeaking, type PreparedSpeech } from "@/lib/voice/session";
 import type { EarsKind, MouthKind, VoicePublicStatus } from "@/lib/voice/types";
 
 const CHECKING_LINE = "Checking the microphone and speaker.";
@@ -83,7 +83,7 @@ export function useVoice(onSpeakingChange: (active: boolean) => void, spokenRepl
   notice: string | null;
   dismissNotice: () => void;
   micPermission: PermissionState | "unavailable";
-  speak: (text: string, hooks?: { onStart?: () => void }) => Promise<{ played: boolean; blocked: boolean }>;
+  speak: (text: string, hooks?: { onStart?: () => void; prepared?: Promise<PreparedSpeech> }) => Promise<{ played: boolean; blocked: boolean }>;
   pressMic: (onText: (text: string, isFinal: boolean) => void) => void;
   stop: () => void;
   levelRef: RefObject<number>;
@@ -220,7 +220,7 @@ export function useVoice(onSpeakingChange: (active: boolean) => void, spokenRepl
     onSpeakingChangeRef.current(false);
   }, [disarmMeter]);
 
-  const speak = useCallback(async (text: string, hooks?: { onStart?: () => void }): Promise<{ played: boolean; blocked: boolean }> => {
+  const speak = useCallback(async (text: string, hooks?: { onStart?: () => void; prepared?: Promise<PreparedSpeech> }): Promise<{ played: boolean; blocked: boolean }> => {
     if (!spokenReplies) return { played: false, blocked: false };
     levelRef.current = 0;
     try {
@@ -236,7 +236,7 @@ export function useVoice(onSpeakingChange: (active: boolean) => void, spokenRepl
           levelRef.current = 0;
           onSpeakingChangeRef.current(false);
         },
-      });
+      }, hooks?.prepared);
       const blocked = !result.played && /blocked the sound/i.test(result.notice ?? "");
       if (result.notice && !blocked) setNotice(result.notice);
       if (!result.played && result.notice && /did not speak|can't speak|Speaker is not live/.test(result.notice)) {

@@ -5,7 +5,8 @@ export type GraphCommand =
   | { action: "filter"; hub: string }
   | { action: "search"; query: string }
   | { action: "focus"; target: string }
-  | { action: "clear" };
+  | { action: "clear" }
+  | { action: "layout"; value: "side" | "center" | "graph" | "home" };
 
 export type GraphDirective = {
   action: GraphCommand["action"];
@@ -34,6 +35,8 @@ export function hubLabel(raw: string): string {
 export function parseGraphCommand(text: string): GraphCommand | null {
   const clean = text.replace(/\s+/g, " ").replace(/^(?:hey|hi|ok|okay|jarvis)[,!\s]+/i, "").trim();
   if (!clean) return null;
+  const layout = /^(?:please\s+)?(?:can you\s+)?(?:move(?:\s+(?:yourself|the orb))?\s+to\s+(?:the\s+)?(side|center)|show\s+(?:the\s+)?(graph)|hide\s+(?:the\s+)?graph|(go home|home))$/i.exec(tidy(clean));
+  if (layout) return { action: "layout", value: layout[1]?.toLowerCase() as "side" | "center" || (layout[2] ? "graph" : "home") };
   if (CLEAR_RE.test(clean)) return { action: "clear" };
   const filter = FILTER_RE.exec(clean);
   if (filter?.[1]) return { action: "filter", hub: hubLabel(filter[1]) };
@@ -56,6 +59,8 @@ function findHub(nodes: GraphNode[], title: string): GraphNode | undefined {
 
 export function describeGraphCommand(command: GraphCommand, nodes: GraphNode[]): { reply: string; directive: GraphDirective } {
   switch (command.action) {
+    case "layout":
+      return { reply: command.value === "graph" ? "Showing the graph." : command.value === "side" ? "Moving to the side." : "Back in the center, Joseph.", directive: { action: "layout", value: command.value } };
     case "clear":
       return { reply: "Filter cleared", directive: { action: "clear", value: "" } };
     case "filter": {

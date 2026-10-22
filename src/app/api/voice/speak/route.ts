@@ -1,3 +1,4 @@
+import { recordVoiceFirstByte } from "@/lib/brain";
 import { synthesizeGrok } from "@/lib/voice/grok-tts";
 
 export const dynamic = "force-dynamic";
@@ -35,6 +36,8 @@ export async function POST(request: Request) {
     );
   }
 
+  const turnId = body && typeof body === "object" && "turnId" in body && typeof body.turnId === "string" ? body.turnId : undefined;
+  recordVoiceFirstByte(turnId, result.firstByteMs);
   const copy = new ArrayBuffer(result.bytes.byteLength);
   new Uint8Array(copy).set(result.bytes);
   return new Response(copy, {
@@ -43,6 +46,7 @@ export async function POST(request: Request) {
       "Content-Type": result.contentType,
       "Cache-Control": "no-store",
       "X-Voice-Mouth": "grok",
+      "Server-Timing": `ttsFirstByte;dur=${Math.round(result.firstByteMs)}`,
       "X-Voice-Name": result.voice,
       "X-Voice-Clipped": result.clipped ? "true" : "false",
     },

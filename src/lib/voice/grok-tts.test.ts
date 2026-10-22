@@ -61,9 +61,10 @@ describe("synthesizeGrok", () => {
     assert.equal(seenUrl.includes("secret-key"), false);
     assert.equal(seenBody.includes("secret-key"), false);
     assert.equal(seenAuth, "Bearer secret-key");
-    const body = JSON.parse(seenBody) as { text: string; voice_id: string; language: string; speed: number };
+    const body = JSON.parse(seenBody) as { text: string; voice_id: string; language: string; speed: number; optimize_streaming_latency: number };
     assert.equal(body.voice_id, "altair");
     assert.equal(body.language, "en");
+    assert.equal(body.optimize_streaming_latency, 1);
     assert.equal(body.speed, 0.7);
     assert.equal(body.text, "Hello & welcome");
     assert.equal(result.voice, "altair");
