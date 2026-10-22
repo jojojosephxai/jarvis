@@ -197,11 +197,13 @@ export function isBritishBrowserVoice(voice: VoiceCandidate | null): boolean {
   return code.startsWith("en-gb") || /british|uk english|united kingdom/.test(name);
 }
 
+export const MIC_BLOCKED_NOTICE = "Microphone blocked. Click the lock icon in the address bar, set Microphone to Allow, then reload.";
+
 export function listenFailureMessage(code: string): string | null {
   switch (code) {
     case "not-allowed":
     case "service-not-allowed":
-      return "The microphone is blocked. Allow the mic in the browser, or type instead.";
+      return MIC_BLOCKED_NOTICE;
     case "no-speech":
       return "No speech was heard. Try the mic again.";
     case "audio-capture":

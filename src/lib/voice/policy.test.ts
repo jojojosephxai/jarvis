@@ -8,6 +8,7 @@ import {
   escapeSsml,
   isBritishBrowserVoice,
   listenFailureMessage,
+  MIC_BLOCKED_NOTICE,
   pickBrowserVoice,
   planAfterServer,
   publicVoiceStatus,
@@ -140,7 +141,10 @@ describe("pickBrowserVoice", () => {
 
 describe("listenFailureMessage", () => {
   it("explains a blocked microphone", () => {
-    assert.match(listenFailureMessage("not-allowed") ?? "", /blocked/);
+    const notice = "Microphone blocked. Click the lock icon in the address bar, set Microphone to Allow, then reload.";
+    assert.equal(MIC_BLOCKED_NOTICE, notice);
+    assert.equal(listenFailureMessage("not-allowed"), notice);
+    assert.equal(listenFailureMessage("service-not-allowed"), notice);
   });
 
   it("stays quiet when the user pressed stop", () => {

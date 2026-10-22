@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
 
 import { browserEarsSupported, browserMouthSupported, startBrowserListen } from "@/lib/voice/browser";
-import { EARS_UNAVAILABLE, voiceSnapshot, type VoiceSnapshot } from "@/lib/voice/policy";
+import { EARS_UNAVAILABLE, MIC_BLOCKED_NOTICE, voiceSnapshot, type VoiceSnapshot } from "@/lib/voice/policy";
 import { browserVoiceSummary, speakAloud, stopSpeaking } from "@/lib/voice/session";
 import type { EarsKind, MouthKind, VoicePublicStatus } from "@/lib/voice/types";
 
@@ -75,12 +75,14 @@ async function fetchVoiceStatus(): Promise<VoicePublicStatus> {
   };
 }
 
-export function useVoice(onSpeakingChange: (active: boolean) => void): {
+export function useVoice(onSpeakingChange: (active: boolean) => void, spokenReplies = true): {
   listening: boolean;
   line: string;
   mouth: MouthKind | "unknown";
   ears: EarsKind | "unknown";
   notice: string | null;
+  dismissNotice: () => void;
+  micPermission: PermissionState | "unavailable";
   speak: (text: string, hooks?: { onStart?: () => void }) => Promise<{ played: boolean; blocked: boolean }>;
   pressMic: (onText: (text: string, isFinal: boolean) => void) => void;
   stop: () => void;
@@ -99,10 +101,37 @@ export function useVoice(onSpeakingChange: (active: boolean) => void): {
   });
   const [ready, setReady] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  const [micPermission, setMicPermission] = useState<PermissionState | "unavailable">("prompt");
 
   useEffect(() => {
     onSpeakingChangeRef.current = onSpeakingChange;
   }, [onSpeakingChange]);
+
+  useEffect(() => {
+    let cancelled = false;
+    let permission: PermissionStatus | null = null;
+    const update = () => {
+      if (cancelled || !permission) return;
+      setMicPermission(permission.state);
+      if (permission.state === "granted") setNotice((current) => current === MIC_BLOCKED_NOTICE ? null : current);
+    };
+    if (navigator.permissions?.query) {
+      void navigator.permissions.query({ name: "microphone" as PermissionName }).then((status) => {
+        if (cancelled) return;
+        permission = status;
+        update();
+        permission.addEventListener("change", update);
+      }).catch(() => { if (!cancelled) setMicPermission("unavailable"); });
+    }
+    return () => { cancelled = true; permission?.removeEventListener("change", update); };
+  }, []);
+
+  useEffect(() => {
+    if (spokenReplies) return;
+    stopSpeaking();
+    levelRef.current = 0;
+    onSpeakingChangeRef.current(false);
+  }, [spokenReplies]);
 
   useEffect(() => {
     let cancelled = false;
@@ -160,11 +189,21 @@ export function useVoice(onSpeakingChange: (active: boolean) => void): {
           return;
         }
         meterStop.current = stopMeter;
+        setMicPermission("granted");
+        setNotice((current) => current === MIC_BLOCKED_NOTICE ? null : current);
       })
-      .catch(() => {
-        // Speech recognition can still hear him. The shell stays quiet if the meter cannot open.
+      .catch((error: unknown) => {
+        if (meterGen.current !== generation) return;
+        if (error instanceof DOMException && (error.name === "NotAllowedError" || error.name === "SecurityError")) {
+          setMicPermission("denied");
+          setNotice(MIC_BLOCKED_NOTICE);
+          listenStop.current?.();
+          listenStop.current = null;
+          setListening(false);
+          disarmMeter();
+        }
       });
-  }, []);
+  }, [disarmMeter]);
 
   const stop = useCallback(() => {
     listenStop.current?.();
@@ -176,7 +215,7 @@ export function useVoice(onSpeakingChange: (active: boolean) => void): {
   }, [disarmMeter]);
 
   const speak = useCallback(async (text: string, hooks?: { onStart?: () => void }): Promise<{ played: boolean; blocked: boolean }> => {
-    setNotice(null);
+    if (!spokenReplies) return { played: false, blocked: false };
     levelRef.current = 0;
     try {
       const result = await speakAloud(text, {
@@ -214,7 +253,7 @@ export function useVoice(onSpeakingChange: (active: boolean) => void): {
       onSpeakingChangeRef.current(false);
       return { played: false, blocked: false };
     }
-  }, []);
+  }, [spokenReplies]);
 
   const toggleListen = useCallback((onText: (text: string, isFinal: boolean) => void) => {
     if (listenStop.current) {
@@ -229,6 +268,7 @@ export function useVoice(onSpeakingChange: (active: boolean) => void): {
       onTranscript: onText,
       onError: (message) => {
         if (message) setNotice(message);
+        if (message === MIC_BLOCKED_NOTICE) setMicPermission("denied");
       },
       onEnd: () => {
         listenStop.current = null;
@@ -251,13 +291,17 @@ export function useVoice(onSpeakingChange: (active: boolean) => void): {
 
   const pressMic = useCallback(
     (onText: (text: string, isFinal: boolean) => void) => {
+      if (micPermission === "denied") {
+        setNotice(MIC_BLOCKED_NOTICE);
+        return;
+      }
       if (!browserEarsSupported()) {
         setNotice(EARS_UNAVAILABLE);
         return;
       }
       toggleListen(onText);
     },
-    [toggleListen],
+    [toggleListen, micPermission],
   );
 
   return {
@@ -266,6 +310,8 @@ export function useVoice(onSpeakingChange: (active: boolean) => void): {
     mouth: ready ? snapshot.mouth : "unknown",
     ears: ready ? snapshot.ears : "unknown",
     notice,
+    dismissNotice: () => setNotice(null),
+    micPermission,
     speak,
     pressMic,
     stop,

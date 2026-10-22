@@ -176,49 +176,10 @@ export function NoteGraph({
     };
   }, []);
 
-  if (failed) {
-    return (
-      <div className="graph-stage graph-stage-empty">
-        <p className="graph-stats">0 notes · 0 connections</p>
-        <p className="status-note">The note graph could not be loaded. No notes were invented.</p>
-      </div>
-    );
-  }
-
-  if (!payload) {
-    return (
-      <div className="graph-stage graph-stage-empty">
-        <div className="graph-loader" role="status">
-          <span />
-          <p>Reading notes</p>
-        </div>
-      </div>
-    );
-  }
-
-  switch (payload.status) {
-    case "not-wired":
-    case "missing":
-    case "empty":
-      return <GraphEmpty payload={payload} />;
-    case "ready":
-      return <GraphReady payload={payload} cue={cue} suspendEscape={suspendEscape} graphOpen={graphOpen} onHome={onHome} railCollapsed={railCollapsed} onToggleRail={onToggleRail} />;
-    default: {
-      const neverStatus: never = payload.status;
-      return neverStatus;
-    }
-  }
-}
-
-function GraphEmpty({ payload }: { payload: NoteGraphPayload }) {
-  return (
-    <div className="graph-stage graph-stage-empty">
-      <p className="graph-stats">
-        {payload.noteCount} notes · {payload.connectionCount} connections
-      </p>
-      <p className="status-note">{payload.detail || EMPTY.detail}</p>
-    </div>
-  );
+  const loadNotice = failed
+    ? "The note graph could not be loaded. Try reloading."
+    : !payload ? "Reading notes…" : payload.status === "ready" ? "" : payload.detail;
+  return <GraphReady payload={payload ?? EMPTY} loadNotice={loadNotice} cue={cue} suspendEscape={suspendEscape} graphOpen={graphOpen} onHome={onHome} railCollapsed={railCollapsed} onToggleRail={onToggleRail} />;
 }
 
 function matchHub(nodes: GraphNode[], wanted: string): GraphNode | undefined {
@@ -233,6 +194,7 @@ function matchHub(nodes: GraphNode[], wanted: string): GraphNode | undefined {
 
 function GraphReady({
   payload,
+  loadNotice,
   cue,
   suspendEscape,
   graphOpen,
@@ -241,6 +203,7 @@ function GraphReady({
   onToggleRail,
 }: {
   payload: NoteGraphPayload;
+  loadNotice: string;
   cue: GraphCue | null;
   suspendEscape: boolean;
   graphOpen: boolean;
@@ -273,7 +236,7 @@ function GraphReady({
   const [readerId, setReaderId] = useState<string | null>(null);
   const [filterId, setFilterId] = useState<string | null>(null);
 
-  if (cue && cue.token !== seenCue) {
+  if (payload.status === "ready" && cue && cue.token !== seenCue) {
     setSeenCue(cue.token);
     if (cue.fit || cue.clear) {
       setQuery("");
@@ -592,6 +555,7 @@ function GraphReady({
             onChange={(event) => onSearch(event.target.value)}
           />
         </label>
+        {loadNotice ? <p className="face-hint" role="status">{loadNotice}</p> : null}
         <p className="face-hint">{graphOpen ? "Click to inspect. Shift-click to trace a path." : "Choose a hub to inspect its notes."}</p>
         <div className="face-block">
           <div className="face-block-head">
@@ -735,10 +699,10 @@ function GraphReady({
       ) : (
         <aside className="graph-inspector is-side glass inspector-empty" aria-label="Inspector">
           <p className="face-block-label">Inspector</p>
-          <p className="face-hint">Choose a hub or search your notes.</p>
+          <p className="face-hint">{loadNotice || "Choose a hub or search your notes."}</p>
         </aside>
       )}
-      {graphOpen ? <div className="graph-canvas">
+      {graphOpen && payload.status === "ready" ? <div className="graph-canvas">
         <ForceScene
           nodes={payload.nodes}
           edges={payload.edges}

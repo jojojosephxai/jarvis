@@ -864,8 +864,7 @@
 }
 
 .face-chat,
-.face-work,
-.face-settings {
+.face-work {
   position: absolute;
   z-index: 7;
 }
@@ -1074,20 +1073,6 @@
   border-top: 1px solid rgba(73, 212, 255, 0.35);
 }
 
-.face-settings {
-  bottom: 92px;
-  left: 50%;
-  width: 220px;
-  padding: 10px 12px;
-  transform: translateX(-50%);
-}
-
-.face-settings p {
-  margin: 0;
-  font-size: 12px;
-  letter-spacing: 0.04em;
-}
-
 .wake-hint {
   letter-spacing: 0.08em;
   text-transform: lowercase;
@@ -1212,3 +1197,54 @@
 .face-task { top: 48px; right: var(--center-right); width: 200px; }
 
 .graph-inspector.inspector-empty::after { content: none; }
+
+.mic-notice {
+  position: fixed;
+  z-index: 20;
+  left: calc((100% + var(--center-left) - var(--center-right)) / 2);
+  bottom: 16px;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  width: min(560px, calc(100vw - var(--center-left) - var(--center-right)));
+  padding: 6px 10px;
+  transform: translateX(-50%);
+  pointer-events: auto;
+  font: 12px/1.35 var(--font-jetbrains), ui-monospace, monospace;
+}
+.mic-notice p {
+  min-width: 0;
+  margin: 0;
+  color: rgba(73, 212, 255, .8);
+  font: inherit;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.mic-notice button,
+.face-settings button {
+  flex: none;
+  border: 0;
+  padding: 0 2px;
+  background: transparent;
+  color: #49d4ff;
+  font: inherit;
+  cursor: pointer;
+}
+.settings-control { position: relative; }
+.face-settings {
+  position: absolute;
+  z-index: 21;
+  right: 0;
+  bottom: calc(100% + 10px);
+  width: 280px;
+  max-height: calc(100vh - 80px);
+  overflow-y: auto;
+  padding: 12px;
+  background-color: rgba(5, 14, 28, .97);
+  color: #49d4ff;
+  font: 12px/1.5 var(--font-jetbrains), ui-monospace, monospace;
+}
+.face-settings .face-check { margin-top: 12px; }
+.face-settings .mic-permission { margin: 12px 0 0; color: #6fa9bf; }
+.tool-btn[aria-disabled="true"] { opacity: .4; cursor: default; }
+.face[data-timing="false"] .chat-timing { display: none; }

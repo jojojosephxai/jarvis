@@ -17,9 +17,8 @@ import {
   type HandPlan,
   type Receipt,
 } from "@/lib/types";
-import type { MouthKind } from "@/lib/voice/types";
 import { decideFaceMode } from "@/lib/view-intent";
-import { butlerSpeech } from "@/lib/voice/policy";
+import { butlerSpeech, MIC_BLOCKED_NOTICE } from "@/lib/voice/policy";
 import { createSentenceQueue } from "@/lib/voice/sentence-queue";
 import { stripReplyTiming } from "@/lib/reply-text";
 
@@ -134,32 +133,17 @@ function inTimeOrder(items: LogItem[]): LogItem[] {
     .map((row) => row.item);
 }
 
-function voiceName(mouth: MouthKind | "unknown"): string {
-  switch (mouth) {
-    case "grok":
-      return "Altair";
-    case "azure":
-      return "British";
-    case "browser":
-      return "This computer";
-    case "unknown":
-      return "Checking";
-    case "not-live":
-      return "Not live";
-    default: {
-      const neverMouth: never = mouth;
-      return neverMouth;
-    }
-  }
-}
-
 export function Face() {
   const [graphOpen, setGraphOpen] = useState(false);
   const [railCollapsed, setRailCollapsed] = useState(false);
   const replySpeaking = useRef(false);
   const [items, setItems] = useState<LogItem[]>([]);
   const [draft, setDraft] = useState("");
-  const [toolNote, setToolNote] = useState("");
+  const [spokenReplies, setSpokenReplies] = useState(true);
+  const [showTiming, setShowTiming] = useState(true);
+  const [micDismissed, setMicDismissed] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const settingsRef = useRef<HTMLDivElement>(null);
   const [askFocus, setAskFocus] = useState(false);
   const [speaking, setSpeaking] = useState(false);
   const [ackOn, setAckOn] = useState(false);
@@ -186,10 +170,10 @@ export function Face() {
   const userSpoke = useRef(false);
   const speakingRef = useRef(false);
   const voice = useVoice((active) => {
-    if (!active && replySpeaking.current) return;
+    if (!active && replySpeaking.current && spokenReplies) return;
     speakingRef.current = active;
     setSpeaking(active);
-  });
+  }, spokenReplies);
   const speakRef = useRef(voice.speak);
   speakRef.current = voice.speak;
   const liveOrb = resolveOrbMode({
@@ -230,7 +214,12 @@ export function Face() {
     const face = params.get("face");
     const hub = params.get("hub");
     const timer = window.setTimeout(() => {
-      try { setRailCollapsed(localStorage.getItem("jarvis-rail-collapsed") === "true"); } catch {}
+      try {
+        setRailCollapsed(localStorage.getItem("jarvis-rail-collapsed") === "true");
+        setSpokenReplies(localStorage.getItem("jarvis-spoken-replies") !== "false");
+        setShowTiming(localStorage.getItem("jarvis-show-timing") !== "false");
+        setMicDismissed(localStorage.getItem("jarvis-mic-blocked-dismissed") === "true");
+      } catch {}
       if (face === "listening" || face === "speaking" || face === "working") {
         if (face === "working") previewStarted.current = performance.now();
         if (face === "speaking") setLiveLine("It is evening on the Eastern clock.");
@@ -296,6 +285,27 @@ export function Face() {
   useEffect(() => {
     chatRef.current?.scrollTo({ top: chatRef.current.scrollHeight });
   }, [items, tab]);
+
+  useEffect(() => {
+    if (!settingsOpen) return;
+    settingsRef.current?.querySelector<HTMLInputElement>("input")?.focus();
+    const onPointer = (event: PointerEvent) => {
+      if (event.target instanceof Node && !settingsRef.current?.contains(event.target)) setSettingsOpen(false);
+    };
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      event.stopPropagation();
+      setSettingsOpen(false);
+      settingsRef.current?.querySelector<HTMLButtonElement>(".tool-btn")?.focus();
+    };
+    window.addEventListener("pointerdown", onPointer);
+    window.addEventListener("keydown", onKey, true);
+    return () => {
+      window.removeEventListener("pointerdown", onPointer);
+      window.removeEventListener("keydown", onKey, true);
+    };
+  }, [settingsOpen]);
 
   useEffect(() => {
     if (!working) return;
@@ -668,19 +678,14 @@ export function Face() {
     }
   }
 
-  function showCalendar() {
-    setToolNote("Calendar isn't connected");
-  }
-
-  const micHint = voice.notice && /microphone/i.test(voice.notice) ? voice.notice : "";
+  const micHint = voice.notice && /microphone|mic\b/i.test(voice.notice) ? voice.notice : "";
+  const blockedHint = micHint === MIC_BLOCKED_NOTICE;
+  const showMicNotice = Boolean(micHint) && !(blockedHint && (micDismissed || voice.micPermission === "granted"));
   const speechLine = orb === "listening" ? draft : orb === "speaking" ? liveLine : "";
   if (speechLine && speechLine !== captionHold) setCaptionHold(speechLine);
-  const waitingHand = items.find(
-    (item) => item.kind === "hand" && !item.cancelled && item.plan?.state === "waiting" && item.plan.gate === "confirm",
-  );
 
   return (
-    <div className="face" data-intro={intro} data-mode={orb} data-view={graphOpen ? "graph" : "home"} data-rail-collapsed={railCollapsed}>
+    <div className="face" data-intro={intro} data-mode={orb} data-view={graphOpen ? "graph" : "home"} data-rail-collapsed={railCollapsed} data-timing={showTiming}>
       {intro === "in" ? (
         <div className="face-loader" role="status">
           <span />
@@ -722,7 +727,18 @@ export function Face() {
       <div className="face-dock face-chrome">
           <div className="face-bottom">
             {wake ? <p className="wake-hint">click to wake Jarvis</p> : null}
-            {micHint && !speechLine ? <p className="face-caption">{micHint}</p> : null}
+            {showMicNotice ? (
+              <div className="mic-notice glass" role="status">
+                <p>{micHint}</p>
+                <button type="button" aria-label="Dismiss microphone notice" onClick={() => {
+                  voice.dismissNotice();
+                  if (blockedHint) {
+                    setMicDismissed(true);
+                    try { localStorage.setItem("jarvis-mic-blocked-dismissed", "true"); } catch {}
+                  }
+                }}>×</button>
+              </div>
+            ) : null}
             <form
               className="face-ask glass"
               data-region="ask"
@@ -776,27 +792,21 @@ export function Face() {
             <div className="tool-row" role="group" aria-label="Tools">
               <ToolButton
                 label="Hands"
-                onClick={() => {
-                  if (waitingHand) {
-                    setTab("tasks");
-                    return;
-                  }
-                  inputRef.current?.focus();
-                }}
+                onClick={() => setTab("tasks")}
               >
                 <HandIcon />
               </ToolButton>
-              <ToolButton label="Calendar isn't connected" onClick={showCalendar}>
+              <ToolButton label="Calendar — not connected yet" disabled>
                 <CalendarIcon />
               </ToolButton>
               <ToolButton label="School" onClick={() => pushCue({ focusHub: "School" })}>
                 <SchoolIcon />
               </ToolButton>
-              <ToolButton label="Vault" onClick={() => pushCue({ fit: true })}>
+              <ToolButton label="Vault" onClick={() => { pushCue({ fit: true }); setGraphOpen(true); }}>
                 <VaultIcon />
               </ToolButton>
               <ToolButton
-                label={`Voice · ${voiceName(voice.mouth)}`}
+                label={voice.listening ? "Stop microphone" : "Microphone"}
                 on={voice.listening}
                 onClick={() => {
                   voice.pressMic((text, isFinal) => {
@@ -810,11 +820,35 @@ export function Face() {
               >
                 <MicIcon />
               </ToolButton>
-              <ToolButton label="Settings" onClick={() => undefined}>
-                <GearIcon />
-              </ToolButton>
+              <div className="settings-control" ref={settingsRef}>
+                <ToolButton label="Settings" expanded={settingsOpen} onClick={() => setSettingsOpen((open) => !open)}>
+                  <GearIcon />
+                </ToolButton>
+                {settingsOpen ? (
+                  <section id="face-settings" className="face-settings glass" role="dialog" aria-label="Settings">
+                    <div className="face-block-head">
+                      <p>Settings</p>
+                      <button type="button" aria-label="Close settings" onClick={() => setSettingsOpen(false)}>×</button>
+                    </div>
+                    <label className="face-check">
+                      <input type="checkbox" checked={spokenReplies} onChange={(event) => {
+                        setSpokenReplies(event.target.checked);
+                        try { localStorage.setItem("jarvis-spoken-replies", String(event.target.checked)); } catch {}
+                      }} />
+                      Spoken replies (Altair)
+                    </label>
+                    <label className="face-check">
+                      <input type="checkbox" checked={showTiming} onChange={(event) => {
+                        setShowTiming(event.target.checked);
+                        try { localStorage.setItem("jarvis-show-timing", String(event.target.checked)); } catch {}
+                      }} />
+                      Show timing meta
+                    </label>
+                    <p className="mic-permission">Microphone: {voice.micPermission === "granted" ? "allowed" : voice.micPermission === "denied" ? "blocked" : voice.micPermission === "prompt" ? "not requested" : "status unavailable"}</p>
+                  </section>
+                ) : null}
+              </div>
             </div>
-            {toolNote ? <p className="tool-note">{toolNote}</p> : null}
           </div>
       </div>
       <ChatCard
@@ -873,7 +907,7 @@ function ChatCard({
     <section className="face-chat glass face-chrome" aria-label="Chat" data-region="chat">
       <div className="chat-tabs" role="tablist">
         {(["chat", "tasks", "log"] as const).map((name) => (
-          <button key={name} type="button" role="tab" data-active={tab === name ? "true" : "false"} onClick={() => onTab(name)}>
+          <button key={name} type="button" role="tab" aria-selected={tab === name} data-active={tab === name ? "true" : "false"} onClick={() => onTab(name)}>
             {name}
           </button>
         ))}
@@ -1051,15 +1085,19 @@ function ToolButton({
   label,
   on,
   onClick,
+  disabled = false,
+  expanded,
   children,
 }: {
   label: string;
   on?: boolean;
-  onClick: () => void;
+  onClick?: () => void;
+  disabled?: boolean;
+  expanded?: boolean;
   children: ReactNode;
 }) {
   return (
-    <button type="button" className="tool-btn" aria-label={label} data-on={on ? "true" : "false"} onClick={onClick}>
+    <button type="button" className="tool-btn" aria-label={label} aria-disabled={disabled} aria-expanded={expanded} aria-controls={expanded !== undefined ? "face-settings" : undefined} data-on={on ? "true" : "false"} onClick={disabled ? undefined : onClick}>
       {children}
       <span className="tool-tip" role="tooltip">
         {label}

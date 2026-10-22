@@ -3,6 +3,8 @@ import { mkdir, rm, stat, writeFile } from "node:fs/promises";
 
 const sizes = [
   { width: 1024, height: 576 },
+  { width: 1280, height: 650 },
+  { width: 1366, height: 620 },
   { width: 1280, height: 800 },
   { width: 1366, height: 768 },
   { width: 1440, height: 900 },
@@ -59,6 +61,7 @@ function homeGeometry() {
   if (askStyle.fontFamily !== getComputedStyle(document.querySelector(".face")).fontFamily || askStyle.fontSize !== "13px" || placeholder.color !== "rgb(73, 212, 255)" || Number(placeholder.opacity) >= 1) hits.push("Ask placeholder does not match HUD");
   for (const selector of [".face-column", ".graph-inspector", ".face-chat"]) {
     const r = box(selector);
+    if (r.width <= 0 || r.height <= 0) hits.push(`${selector} vanished`);
     if (r.left < 16 || r.right > innerWidth - 16 || r.bottom > innerHeight - 16) hits.push(`${selector} misses 16px window margin`);
   }
   return hits;
@@ -127,6 +130,7 @@ async function graphGeometry(focusId = null) {
     const el = document.querySelector(selector);
     if (!el) continue;
     const r = el.getBoundingClientRect();
+    if (r.width <= 0 || r.height <= 0) hits.push(`${selector} vanished`);
     if (r.left < 16 || r.right > innerWidth - 16 || r.bottom > innerHeight - 16) hits.push(`${selector} misses 16px window margin`);
   }
   return hits.slice(0, 10);
@@ -357,3 +361,163 @@ for (const failSecond of [false, true]) {
 });
 
 }
+const blockedNotice = "Microphone blocked. Click the lock icon in the address bar, set Microphone to Allow, then reload.";
+
+test("blocked microphone notice wraps quietly, does not move the layout, and stays dismissed", async ({ page, context }) => {
+  await page.setViewportSize({ width: 1024, height: 576 });
+  await context.grantPermissions([]);
+  await prepare(page);
+  await openFace(page);
+  expect(await page.evaluate(async () => (await navigator.permissions.query({ name: "microphone" })).state)).toBe("denied");
+  const positions = () => page.locator(".orb-dial-ring, .orb-status, .face-ask").evaluateAll((elements) => elements.map((el) => {
+    const r = el.getBoundingClientRect(); return [r.x, r.y, r.width, r.height];
+  }));
+  const before = await positions();
+  await page.getByRole("button", { name: "Microphone", exact: true }).click();
+  const notice = page.locator(".mic-notice");
+  await expect(notice).toBeVisible();
+  await expect(notice.locator("p")).toHaveText(blockedNotice);
+  expect(await notice.evaluate((el) => {
+    const text = el.querySelector("p"), style = getComputedStyle(text);
+    const r = el.getBoundingClientRect(), status = document.querySelector(".orb-status").getBoundingClientRect();
+    const ask = document.querySelector(".face-ask").getBoundingClientRect();
+    return parseFloat(getComputedStyle(el).fontSize) < 14 && parseFloat(style.fontSize) < 14 && text.scrollWidth <= text.clientWidth && text.scrollHeight <= text.clientHeight &&
+      r.width <= ask.width + 1 && r.left >= ask.left - 1 && r.right <= ask.right + 1 &&
+      !(r.left < status.right && r.right > status.left && r.top < status.bottom && r.bottom > status.top);
+  })).toBe(true);
+  await page.waitForTimeout(750);
+  expect(await positions()).toEqual(before);
+  await page.mouse.move(500, 35);
+  await screenshot(page, "1024x576-mic-notice");
+  await page.getByRole("button", { name: "Dismiss microphone notice" }).click();
+  await expect(notice).toHaveCount(0);
+  await page.reload();
+  await expect(page.locator(".face")).toHaveAttribute("data-intro", "out");
+  await page.getByRole("button", { name: "Microphone", exact: true }).click();
+  await expect(notice).toHaveCount(0);
+  expect(await page.evaluate(() => localStorage.getItem("jarvis-mic-blocked-dismissed"))).toBe("true");
+});
+
+test("granting microphone permission clears the blocked notice and updates Settings", async ({ page, context }) => {
+  await page.setViewportSize({ width: 1024, height: 576 });
+  await context.grantPermissions([]);
+  await prepare(page);
+  await openFace(page);
+  await page.getByRole("button", { name: "Microphone", exact: true }).click();
+  await expect(page.locator(".mic-notice")).toBeVisible();
+  await context.grantPermissions(["microphone"]);
+  await expect(page.locator(".mic-notice")).toHaveCount(0);
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await expect(page.locator(".mic-permission")).toHaveText("Microphone: allowed");
+});
+
+test("all tool icons have real actions or a clear disabled state; Settings persist and work", async ({ page, context }) => {
+  await page.setViewportSize({ width: 1024, height: 576 });
+  await context.grantPermissions([]);
+  await prepare(page);
+  await openFace(page);
+  await page.getByRole("button", { name: "Hands", exact: true }).click();
+  await expect(page.getByRole("tab", { name: "tasks", exact: true })).toHaveAttribute("aria-selected", "true");
+  await expect(page.locator(".face-chat")).toContainText("No task is waiting.");
+  const calendar = page.getByRole("button", { name: "Calendar — not connected yet", exact: true });
+  await expect(calendar).toBeDisabled();
+  expect(Number(await calendar.evaluate((el) => getComputedStyle(el).opacity))).toBeLessThan(.6);
+  await calendar.hover();
+  await expect(calendar.getByRole("tooltip")).toHaveCSS("opacity", "1");
+  await expect(calendar.getByRole("tooltip")).toHaveText("Calendar — not connected yet");
+  await page.getByRole("button", { name: "School", exact: true }).click();
+  await expect(page.locator(".inspector-title")).toHaveText("School");
+  await expect(page.locator(".graph-canvas")).toHaveCount(0);
+  await page.getByRole("button", { name: "Vault", exact: true }).click();
+  await graphReady(page);
+  await noZoomBar(page);
+  await page.getByRole("button", { name: "Home", exact: true }).click();
+  await page.getByRole("button", { name: "Microphone", exact: true }).click();
+  await expect(page.locator(".mic-notice")).toBeVisible();
+  await page.getByRole("button", { name: "Dismiss microphone notice" }).click();
+  const gear = page.getByRole("button", { name: "Settings", exact: true });
+  const settings = page.getByRole("dialog", { name: "Settings", exact: true });
+  await gear.click();
+  await expect(settings).toBeVisible();
+  await expect(gear).toHaveAttribute("aria-expanded", "true");
+  await expect(page.locator(".mic-permission")).toHaveText("Microphone: blocked");
+  const spoken = settings.getByRole("checkbox", { name: "Spoken replies (Altair)" });
+  const timing = settings.getByRole("checkbox", { name: "Show timing meta" });
+  await expect(spoken).toBeChecked();
+  await expect(timing).toBeChecked();
+  await page.mouse.move(500, 35);
+  await screenshot(page, "1024x576-settings");
+  await spoken.uncheck();
+  await timing.uncheck();
+  await page.keyboard.press("Escape");
+  await expect(settings).toHaveCount(0);
+  await expect(gear).toBeFocused();
+  await gear.click();
+  await page.getByLabel("Search notes", { exact: true }).click();
+  await expect(settings).toHaveCount(0);
+  await page.reload();
+  await expect(page.locator(".face")).toHaveAttribute("data-intro", "out");
+  await gear.click();
+  await expect(spoken).not.toBeChecked();
+  await expect(timing).not.toBeChecked();
+  await page.keyboard.press("Escape");
+  const requests = [];
+  page.on("request", (request) => { if (request.url().endsWith("/api/voice/speak")) requests.push(request.postDataJSON().text); });
+  await page.route("**/api/chat", (route) => route.fulfill({ json: { reply: "The real answer. Brain 1871 ms to first token", mode: "grok", receipts: [] } }));
+  await page.getByLabel("Ask Jarvis", { exact: true }).fill("Tell me an answer?");
+  await page.getByRole("button", { name: "Send", exact: true }).click();
+  await expect(page.getByLabel("Ask Jarvis", { exact: true })).toBeEnabled();
+  await expect(page.locator(".chat-reply")).toHaveText("The real answer.");
+  await expect(page.locator(".chat-timing")).toHaveCount(1);
+  await expect(page.locator(".chat-timing")).toBeHidden();
+  expect(requests).toEqual([]);
+  await gear.click();
+  await spoken.check();
+  await timing.check();
+  await page.keyboard.press("Escape");
+  await expect(page.locator(".chat-timing")).toBeVisible();
+  await page.getByLabel("Ask Jarvis", { exact: true }).fill("Tell me another answer?");
+  await page.getByRole("button", { name: "Send", exact: true }).click();
+  await expect(page.locator(".chat-reply")).toHaveCount(2);
+  await expect(page.getByLabel("Ask Jarvis", { exact: true })).toBeEnabled();
+  expect(requests).toEqual(["The real answer."]);
+  await expect(page.locator(".chat-log")).not.toContainText("ms to first");
+});
+
+test("rail, Inspector and Chat stay mounted while graph data loads or fails", async ({ page }) => {
+  await page.setViewportSize({ width: 1366, height: 620 });
+  await prepare(page);
+  let graphRequest;
+  await page.route("**/api/graph", (route) => { graphRequest = route; });
+  await page.goto("/");
+  await expect(page.locator(".face")).toHaveAttribute("data-intro", "out");
+  for (const selector of [".face-column", ".graph-inspector", ".face-chat"]) await expect(page.locator(selector)).toBeVisible();
+  await expect(page.locator(".graph-inspector")).toContainText("Reading notes…");
+  await expect(page.locator(".graph-canvas, .force-scene")).toHaveCount(0);
+  await graphRequest.fulfill({ status: 503, json: { error: "Unavailable" } });
+  await expect(page.locator(".graph-inspector")).toContainText("The note graph could not be loaded. Try reloading.");
+  for (const selector of [".face-column", ".graph-inspector", ".face-chat"]) await expect(page.locator(selector)).toBeVisible();
+  await noZoomBar(page);
+  await page.getByRole("button", { name: "Collapse hubs", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Expand hubs", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Graph", exact: true }).click();
+  await expect(page.locator(".face-filter")).toBeVisible();
+  await expect(page.locator(".force-scene")).toHaveCount(0);
+  await noZoomBar(page);
+  await page.getByRole("button", { name: "Home", exact: true }).click();
+  await expect(page.locator(".graph-canvas")).toHaveCount(0);
+});
+
+test("a School tool click while notes load still opens its Inspector when ready", async ({ page }) => {
+  await prepare(page);
+  const payload = await (await page.request.get("/api/graph")).json();
+  let graphRequest;
+  await page.route("**/api/graph", (route) => { graphRequest = route; });
+  await page.goto("/");
+  await expect(page.locator(".face")).toHaveAttribute("data-intro", "out");
+  await page.getByRole("button", { name: "School", exact: true }).click();
+  await expect(page.locator(".graph-inspector")).toContainText("Reading notes…");
+  await graphRequest.fulfill({ json: payload });
+  await expect(page.locator(".inspector-title")).toHaveText("School");
+  await expect(page.locator(".graph-canvas")).toHaveCount(0);
+});
