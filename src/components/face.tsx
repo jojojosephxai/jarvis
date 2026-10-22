@@ -14,12 +14,13 @@ import {
   isMorningBrief,
   isReceipt,
   type ChatResponse,
+  type ChatMessageInput,
   type HandPlan,
   type Receipt,
 } from "@/lib/types";
 import { decideFaceMode } from "@/lib/view-intent";
 import { butlerSpeech, MIC_BLOCKED_NOTICE } from "@/lib/voice/policy";
-import { createSentenceQueue } from "@/lib/voice/sentence-queue";
+import { createSentenceQueue, unspokenTail } from "@/lib/voice/sentence-queue";
 import { stripReplyTiming } from "@/lib/reply-text";
 
 const BOOT_KEY = "jarvis-boot";
@@ -498,7 +499,6 @@ export function Face() {
     const skillName = graphAsk ? "graph" : mentionsCalendar(trimmed) ? "calendar" : "brain";
     const { abort, id } = beginWork(trimmed, graphAsk ? "Graph" : "Thinking", skillName);
     let spoken = "";
-    let heard = 0;
     const askedAt = performance.now();
     let tokenAt = 0;
     let timed = false;
@@ -573,7 +573,6 @@ export function Face() {
     const pushSentence = (text: string) => {
       const clean = dropUnaskedCalendar(stripReplyTiming(text).trim(), askedCalendar);
       if (!clean) return;
-      heard += 1;
       if (!tokenAt) tokenAt = performance.now();
       streamed = streamed ? `${streamed} ${clean}` : clean;
       upsertJarvis(streamed);
@@ -583,7 +582,10 @@ export function Face() {
       const response = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: [{ role: "user", content: trimmed }], stream: true }),
+        body: JSON.stringify({ messages: [
+          ...items.map((item): ChatMessageInput => ({ role: item.kind === "you" ? "user" : "assistant", content: item.kind === "hand" ? item.reply : item.text })),
+          { role: "user", content: trimmed },
+        ].slice(-8), stream: true }),
         signal: abort.signal,
       });
       const contentType = response.headers.get("content-type") ?? "";
@@ -630,18 +632,18 @@ export function Face() {
           setItems((current) => [...current.filter((item) => item.id !== answerId), hand].slice(-40));
         }
         if (payload.plan?.state === "waiting" && payload.plan.tool && !STUB_TASKS.has(payload.plan.tool)) setTab("tasks");
-        if (heard === 0 && reply) spoken = butlerSpeech(reply);
+        if (reply) spoken = unspokenTail(reply, streamed);
         return;
       }
       const brief = payload.brief;
       if (brief && isMorningBrief(brief)) {
         upsertJarvis(brief.reply, brief.sources);
-        if (heard === 0) spoken = butlerSpeech(brief.reply);
+        spoken = unspokenTail(brief.reply, streamed);
         return;
       }
       const reply = dropUnaskedCalendar(stripReplyTiming(payload.reply), askedCalendar);
       if (reply) upsertJarvis(reply, payload.sources);
-      if (heard === 0 && reply) spoken = butlerSpeech(reply);
+      if (reply) spoken = unspokenTail(reply, streamed);
     } catch (error) {
       if (abort.signal.aborted || (error instanceof DOMException && error.name === "AbortError")) {
         upsertJarvis("Stopped. I do not know if that finished.");
@@ -649,7 +651,7 @@ export function Face() {
       }
       upsertJarvis("I couldn't reach Jarvis. Try again.", undefined, true);
     } finally {
-      if (heard === 0 && spoken) queue.enqueue(spoken);
+      if (spoken) queue.enqueue(spoken);
       try { await queue.drain(); }
       finally {
         if (id === jobGen.current) {

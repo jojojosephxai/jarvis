@@ -27,3 +27,17 @@ export function createSentenceQueue(play: (text: string) => Promise<unknown>, si
     drain: () => tail,
   };
 }
+
+/** Reconcile the final answer by ordered words, including an unfinished streamed prefix. */
+export function unspokenTail(finalReply: string, streamed: string): string {
+  const final = butlerSpeech(finalReply);
+  const heard = butlerSpeech(streamed).trim();
+  if (!heard) return final;
+  if (final.startsWith(heard)) return final.slice(heard.length).trim();
+  const remaining = [...readySentences(`${final} `).ready];
+  for (const sentence of readySentences(`${heard} `).ready) {
+    const index = remaining.findIndex((part) => part === sentence);
+    if (index >= 0) remaining.splice(index, 1);
+  }
+  return remaining.join(" ");
+}

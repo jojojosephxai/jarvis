@@ -4,6 +4,7 @@ import type { BrainMode, ChatMessageInput } from "./types";
 /** Butler prompt. Vault notes are context, not a reason to skip the model. */
 export const BUTLER_PROMPT = `You are Jarvis, a calm butler speaking in a quiet room.
 Use short, clear sentences. No emoji. No bullet lists unless the user asks for a list.
+Spoken replies run 2–5 short sentences by default; go longer only when Joseph asks or for a plan.
 
 Vault notes may be included with the question. They are context when they are relevant, not a gate.
 When a note helps, use it and cite the note title in parentheses, like (School).
@@ -67,12 +68,12 @@ export function pickGrokModel(question: string): string {
 let grokWarmed = false;
 
 /** Open the Brain connection once when the page loads, before the first question. */
-export function warmGrokConnection(): void {
+export function warmGrokConnection(fetchImpl: typeof fetch = fetch): void {
   if (grokWarmed) return;
   grokWarmed = true;
   const key = process.env.XAI_API_KEY?.trim();
   if (!key) return;
-  void fetch("https://api.x.ai/v1/models", {
+  void fetchImpl("https://api.x.ai/v1/models", {
     headers: { Authorization: `Bearer ${key}` },
     cache: "no-store",
     signal: AbortSignal.timeout(8000),
@@ -110,12 +111,12 @@ function messageText(content: unknown): string {
     .trim();
 }
 
-async function postChat(body: Record<string, unknown>, timeoutMs = 20_000): Promise<GrokResult> {
+async function postChat(body: Record<string, unknown>, timeoutMs = 20_000, fetchImpl: typeof fetch = fetch): Promise<GrokResult> {
   const key = process.env.XAI_API_KEY?.trim();
   if (!key) return { ok: false, reason: "no key is set" };
 
   try {
-    const response = await fetch("https://api.x.ai/v1/chat/completions", {
+    const response = await fetchImpl("https://api.x.ai/v1/chat/completions", {
       method: "POST",
       headers: {
         Authorization: `Bearer ${key}`,
@@ -161,7 +162,7 @@ function clocked(prompt: string): string {
   return `${prompt}\n\nCurrent time: ${clockStamp()} (America/New_York). Use this for the date and the time. Do not say you have no clock.`;
 }
 
-export async function grokChat(messages: ChatMessageInput[]): Promise<GrokResult> {
+export async function grokChat(messages: ChatMessageInput[], fetchImpl: typeof fetch = fetch): Promise<GrokResult> {
   const model = grokModel();
   return postChat(
     chatBody(model, 0.4, 400, [
@@ -171,22 +172,28 @@ export async function grokChat(messages: ChatMessageInput[]): Promise<GrokResult
         content: message.content.slice(0, 1500),
       })),
     ]),
+    20_000, fetchImpl,
   );
 }
 
-export async function grokPhraseNotes(question: string, packet: string): Promise<GrokResult> {
+export function boundedHistory(history: ChatMessageInput[] = []): ChatMessageInput[] {
+  return history.slice(-8).map(({ role, content }) => ({ role, content: content.slice(0, 600) }));
+}
+
+export async function grokPhraseNotes(question: string, packet: string, history: ChatMessageInput[] = [], fetchImpl: typeof fetch = fetch): Promise<GrokResult> {
   const model = pickGrokModel(question);
   const user = (packet.startsWith("Question:") ? packet : `Question:\n${question}\n\n${packet}`).slice(0, 12000);
   return postChat(
     chatBody(model, 0.4, 400, [
       { role: "system", content: clocked(BUTLER_PROMPT) },
+      ...boundedHistory(history),
       { role: "user", content: user },
     ]),
-    45_000,
+    45_000, fetchImpl,
   );
 }
 
-export async function* grokStreamSentences(question: string, packet: string): AsyncGenerator<string> {
+export async function* grokStreamSentences(question: string, packet: string, history: ChatMessageInput[] = [], fetchImpl: typeof fetch = fetch): AsyncGenerator<string> {
   const key = process.env.XAI_API_KEY?.trim();
   if (!key) return;
   const model = pickGrokModel(question);
@@ -196,13 +203,14 @@ export async function* grokStreamSentences(question: string, packet: string): As
   ).slice(0, 12000);
   const body = chatBody(model, 0.4, 400, [
     { role: "system", content: clocked(BUTLER_PROMPT) },
+    ...boundedHistory(history),
     { role: "user", content: user },
   ]);
   body.stream = true;
 
   let response: Response;
   try {
-    response = await fetch("https://api.x.ai/v1/chat/completions", {
+    response = await fetchImpl("https://api.x.ai/v1/chat/completions", {
       method: "POST",
       headers: {
         Authorization: `Bearer ${key}`,
@@ -221,28 +229,10 @@ export async function* grokStreamSentences(question: string, packet: string): As
   const decoder = new TextDecoder();
   let pending = "";
   let text = "";
-  let primed = false;
   const pull = (): string[] => {
     const split = readySentences(text);
     text = split.rest;
-    const ready = split.ready.slice();
-    if (ready.length > 0) primed = true;
-    if (!primed) {
-      const lead = text.trimStart();
-      let cut = -1;
-      const pause = lead.search(/[,;]\s/);
-      if (pause >= 12) cut = pause + 1;
-      else if (lead.length >= 32) {
-        const space = lead.lastIndexOf(" ", 32);
-        if (space >= 12) cut = space;
-      }
-      if (cut >= 12) {
-        primed = true;
-        ready.push(lead.slice(0, cut).trim());
-        text = lead.slice(cut).trimStart();
-      }
-    }
-    return ready.filter((sentence) => sentence.length > 0);
+    return split.ready.filter(Boolean);
   };
   while (true) {
     const { done, value } = await reader.read();

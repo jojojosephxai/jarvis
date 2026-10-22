@@ -1,7 +1,4 @@
 import { readMessages, streamTurn, think } from "@/lib/brain";
-import { warmGrokConnection } from "@/lib/grok";
-
-warmGrokConnection();
 
 export async function POST(request: Request) {
   let body: unknown;

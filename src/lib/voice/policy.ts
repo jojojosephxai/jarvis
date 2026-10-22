@@ -39,7 +39,7 @@ const HARNESS_SENTENCE =
 
 /** Speak the whole answer, excluding source and harness footers. */
 export function butlerSpeech(text: string): string {
-  const clean = stripReplyTiming(text).replace(/(?:^|\n)\s*Notes used:[\s\S]*$/i, "").replace(/\s+/g, " ").trim();
+  const clean = stripReplyTiming(text).replace(/(?:^|\n)\s*Notes used:[\s\S]*$/i, "").replace(/\s*\([A-Z][^()\n]{0,100}\)/g, "").replace(/\[\[([^\]]+)\]\]/g, "").replace(/\s+/g, " ").trim();
   if (!clean) return "";
   const split = readySentences(`${clean} `);
   const sentences = [...split.ready, split.rest];

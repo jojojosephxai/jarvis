@@ -2,7 +2,7 @@ import { assertNever } from "./assert";
 import { clockStamp, isClockQuestion, isQuickAsk, isSmallTalk, localClockReply, readySentences } from "./clock";
 import { CALL_REFUSAL } from "./demo-brain";
 import { answerFromVault, streamAnswerFromVault, type AnswerOptions, type GroundedAnswer } from "./grounded-answer";
-import { brainMode, grokConfigured, grokPhraseNotes, grokStreamSentences, warmGrokConnection } from "./grok";
+import { brainMode, grokConfigured, grokPhraseNotes, grokStreamSentences } from "./grok";
 import { resolveHand } from "./hands";
 import { describeGraphCommand } from "./graph-command";
 import { parseIntent } from "./intent";
@@ -47,6 +47,7 @@ export async function think(
     return { reply: "Say that once more?", mode: brainMode(), receipts: [] };
   }
 
+  options = { ...options, history: messages.slice(0, -1) };
   const root = options.root ?? process.cwd();
   const vaultDir = resolveVaultPath(root, options.vaultPath);
   const clockOnly = isClockQuestion(latest.content) !== null;
@@ -138,7 +139,7 @@ async function talkSmall(latest: string, options: AnswerOptions): Promise<ChatRe
     return { reply: "Hello. I am here.", mode: "demo", receipts: [] };
   }
   const complete = options.complete ?? grokPhraseNotes;
-  const result = await complete(latest, packet);
+  const result = await complete(latest, packet, options.history);
   if (result.ok && result.text.trim()) {
     return { reply: result.text.trim(), mode: "grok", receipts: [] };
   }
@@ -153,7 +154,7 @@ export async function* streamTurn(
   messages: ChatMessageInput[],
   options: AnswerOptions = {},
 ): AsyncGenerator<SpeakEvent> {
-  warmGrokConnection();
+  options = { ...options, history: messages.slice(0, -1) };
   const started = Date.now();
   let logged = false;
   const logFirst = () => {
@@ -189,7 +190,7 @@ export async function* streamTurn(
     }
     const packet = `Current time: ${clockStamp(options.now ?? new Date())} (America/New_York).\n\nQuestion:\n${latest.content}\n\nNotes:\nNo vault search. Answer in one or two short sentences.`;
     let answerText = "";
-    for await (const sentence of grokStreamSentences(latest.content, packet)) {
+    for await (const sentence of (options.stream ?? grokStreamSentences)(latest.content, packet, options.history)) {
       const clean = sentence.trim();
       if (!clean) continue;
       logFirst();

@@ -1,8 +1,8 @@
 import path from "node:path";
 
 import { clockStamp } from "./clock";
-import { grokConfigured, grokPhraseNotes, grokStreamSentences, warmGrokConnection, type GrokResult } from "./grok";
-import type { BrainMode } from "./types";
+import { grokConfigured, grokPhraseNotes, grokStreamSentences, type GrokResult } from "./grok";
+import type { BrainMode, ChatMessageInput } from "./types";
 import { loadVaultNotes, resolveVaultPath, type VaultNote } from "./vault-read";
 
 /**
@@ -188,7 +188,9 @@ export type AnswerOptions = {
   vaultPath?: string | null;
   useModel?: boolean;
   now?: Date;
-  complete?: (question: string, packet: string) => Promise<GrokResult>;
+  history?: ChatMessageInput[];
+  complete?: (question: string, packet: string, history?: ChatMessageInput[]) => Promise<GrokResult>;
+  stream?: (question: string, packet: string, history?: ChatMessageInput[]) => AsyncIterable<string>;
 };
 
 type ScoredNote = {
@@ -409,7 +411,7 @@ export async function answerFromVault(question: string, options: AnswerOptions =
   }
 
   const complete = options.complete ?? grokPhraseNotes;
-  const result = await complete(question, gathered.packet);
+  const result = await complete(question, gathered.packet, options.history);
   if (result.ok && result.text.trim()) {
     return {
       reply: withSourcesFooter(result.text, gathered.sources),
@@ -440,7 +442,6 @@ export async function* streamAnswerFromVault(
   question: string,
   options: AnswerOptions = {},
 ): AsyncGenerator<StreamedAnswer> {
-  warmGrokConnection();
   const gathered = await gatherAnswer(question, options);
   if (gathered.blocked) {
     yield { type: "done", answer: gathered.blocked };
@@ -460,7 +461,7 @@ export async function* streamAnswerFromVault(
 
   let full = "";
   try {
-    for await (const sentence of grokStreamSentences(question, gathered.packet)) {
+    for await (const sentence of (options.stream ?? grokStreamSentences)(question, gathered.packet, options.history)) {
       const clean = sentence.trim();
       if (!clean) continue;
       full = full ? `${full} ${clean}` : clean;
