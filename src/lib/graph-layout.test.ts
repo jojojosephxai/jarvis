@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { edgePieces, frameScreenNodes, rectIntersectsCircle, rectsIntersect } from "./graph-screen-layout";
+import { edgePieces, rectIntersectsCircle, rectsIntersect } from "./graph-screen-layout";
 
 import {
   easeFrame,
@@ -20,53 +20,24 @@ import {
 const CANVAS = { width: 2400, height: 1600 };
 
 describe("desktop graph projection", () => {
-  it("fills the selected neighborhood, retains context and bounds hub edges", () => {
-    const free = { left: 16, top: 16, right: 600, bottom: 450 };
-    const nodes = [
-      { id: "school", x: 510, y: 280, r: 18, priority: 100 },
-      { id: "left", x: 0, y: 0, r: 6, priority: 0 },
-      { id: "right", x: 2000, y: 800, r: 6, priority: 0 },
-      { id: "outsider", x: -2000, y: -800, r: 9, priority: 0 },
-    ];
-    const edges = [{ from: "school", to: "left" }, { from: "school", to: "right" }, { from: "left", to: "right" }];
-    const near = new Set(["school", "left", "right"]);
-    const placed = frameScreenNodes(nodes, free, "school", near, edges);
-    assert.equal(placed.some((node) => node.id === "outsider"), true);
-    for (const node of placed) {
-      assert.ok(node.x - node.r >= free.left && node.x + node.r <= free.right, node.id);
-      assert.ok(node.y - node.r >= free.top && node.y + node.r <= free.bottom, node.id);
+  it("retains depth through orbit, centers hubs and loosens Jarvis", () => {
+    const nodes = ["area:jarvis", "area:school"].flatMap(id => [
+      { id, kind: "folder" as const },
+      ...Array.from({ length: 40 }, (_, i) => ({ id: `${id}/${i}`, kind: "note" as const, hubId: id })),
+    ]);
+    const points = layoutGalaxy(nodes, [], { width: 1000, height: 640, repel: 180, link: 160 });
+    assert.ok(Math.max(...points.map(p => p.z)) - Math.min(...points.map(p => p.z)) > 100);
+    const radii = [];
+    for (const id of ["area:jarvis", "area:school"]) {
+      const hub = points.find(p => p.id === id)!;
+      const members = points.filter(p => p.id.startsWith(`${id}/`));
+      for (const axis of ["x", "y", "z"] as const) assert.ok(Math.abs(members.reduce((n, p) => n + p[axis], 0) / members.length - hub[axis]) < 1);
+      radii.push(members.reduce((n, p) => n + Math.hypot(p.x - hub.x, p.y - hub.y, p.z - hub.z), 0) / members.length);
     }
-    for (const edge of edges.filter((edge) => edge.from === "school" || edge.to === "school")) {
-      const a = placed.find((node) => node.id === edge.from)!, b = placed.find((node) => node.id === edge.to)!;
-      assert.ok(Math.hypot(a.x - b.x, a.y - b.y) < Math.min(free.right - free.left, free.bottom - free.top) * .35);
-    }
-    assert.deepEqual(placed, frameScreenNodes(nodes, free, "school", near, edges));
-  });
-
-  it("sizes cluster cells by population and staggers hub positions", () => {
-    const free = { left: 16, top: 16, right: 1000, bottom: 700 };
-    const nodes = [49, 5, 16, 8, 32, 4, 15, 16].flatMap((count, h) => {
-      const id = `hub-${h}`;
-      return [{ id, x: h * 100, y: 0, r: 12, hubId: id, priority: 100 }, ...Array.from({ length: count }, (_, n) => ({ id: `${id}-${n}`, x: h * 100 + Math.cos(n) * 100, y: Math.sin(n) * 100, r: 5, hubId: id, priority: 0 }))];
-    });
-    const placed = frameScreenNodes(nodes, free, null, new Set());
-    const radius = (id: string) => {
-      const members = placed.filter((node) => node.hubId === id && node.id !== id);
-      return Math.max(...members.map((node) => node.x)) - Math.min(...members.map((node) => node.x));
-    };
-    assert.ok(radius("hub-0") > radius("hub-1") * 1.5);
-    assert.equal(new Set(placed.filter((node) => node.id === node.hubId).map((node) => Math.round(node.y))).size, 8);
-    for (const node of placed) assert.ok(node.x - node.r >= free.left && node.x + node.r <= free.right && node.y - node.r >= free.top && node.y + node.r <= free.bottom);
-  });
-
-  it("spreads a dense Jarvis cluster even when its 3D projection collapses", () => {
-    const hub = {id:"area:jarvis",hubId:"area:jarvis",x:0,y:0,r:12,priority:500};
-    const nodes = [hub, ...Array.from({length:60}, (_,i)=>({id:`note-${i}`,hubId:hub.id,x:0,y:0,r:5,priority:0}))];
-    const free = {left:16,top:16,right:600,bottom:450};
-    const placed = frameScreenNodes(nodes, free, null, new Set());
-    assert.equal(new Set(placed.map(n=>`${n.x}:${n.y}`)).size, nodes.length);
-    assert.ok(Math.max(...placed.map(n=>n.x)) - Math.min(...placed.map(n=>n.x)) > 450);
-    assert.ok(Math.max(...placed.map(n=>n.y)) - Math.min(...placed.map(n=>n.y)) > 330);
+    assert.ok(radii[0] > radii[1] * 1.1);
+    const first = projectSpace(points[1], { yaw: 0, pitch: .3 }, { x: 500, y: 320, z: 0 }, 320);
+    const turned = projectSpace(points[1], { yaw: .7, pitch: .3 }, { x: 500, y: 320, z: 0 }, 320);
+    assert.notEqual(first.x, turned.x);
   });
 
   it("clips edges around label boxes, including vertical and parallel segments", () => {
@@ -75,11 +46,6 @@ describe("desktop graph projection", () => {
     assert.deepEqual(edgePieces({x: 50, y: 0}, {x: 50, y: 100}, [box]), [[0, .37], [.63, 1]]);
     assert.deepEqual(edgePieces({x: 0, y: 0}, {x: 100, y: 0}, [box]), [[0, 1]]);
     assert.deepEqual(edgePieces({x: 45, y: 45}, {x: 55, y: 55}, [box]), []);
-  });
-
-  it("scales up a small projection instead of leaving unused space", () => {
-    const placed = frameScreenNodes([{ id: "a", x: 0, y: 0, r: 5, priority: 0 }, { id: "b", x: 1, y: 1, r: 5, priority: 0 }], { left: 16, top: 16, right: 544, bottom: 468 }, null, new Set());
-    assert.ok(placed[1].y - placed[0].y > 452 * .8);
   });
 
   it("detects a label over a neighboring sphere even when their labels are apart", () => {

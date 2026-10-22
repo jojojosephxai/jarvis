@@ -110,7 +110,7 @@ export function layoutForce(nodes: LayoutNode[], edges: LayoutEdge[], options: G
     const home = bodies.get(homeId);
     if (!home) continue;
     const sorted = [...members].sort((a, b) => a.id.localeCompare(b.id));
-    const radius = clusterRadius(sorted.length, repel);
+    const radius = clusterRadius(sorted.length, repel) * (/jarvis/i.test(homeId) ? 1.15 : 1);
     sorted.forEach((node, index) => {
       const point = blob(node.id, index, sorted.length);
       bodies.set(node.id, {
@@ -288,7 +288,7 @@ export function layoutForce(nodes: LayoutNode[], edges: LayoutEdge[], options: G
     const home = bodies.get(homeId);
     if (!home) continue;
     const sorted = [...members].sort((a, b) => a.id.localeCompare(b.id));
-    const radius = clusterRadius(sorted.length, repel);
+    const radius = clusterRadius(sorted.length, repel) * (/jarvis/i.test(homeId) ? 1.15 : 1);
     sorted.forEach((body, index) => {
       const point = blob(body.id, index, sorted.length);
       const lift = sorted.length <= 1 ? 0 : (index / (sorted.length - 1) - 0.5) * Math.max(28, radius * 0.85);
@@ -296,6 +296,15 @@ export function layoutForce(nodes: LayoutNode[], edges: LayoutEdge[], options: G
       body.y = home.y + point.y * radius;
       body.z = home.z + point.z * radius + lift;
     });
+  }
+
+  // Center each cloud on its hub without moving the cluster's place in the galaxy.
+  for (const [homeId, members] of membersByHome) {
+    const home = bodies.get(homeId)!;
+    const dx = members.reduce((sum, body) => sum + body.x - home.x, 0) / members.length;
+    const dy = members.reduce((sum, body) => sum + body.y - home.y, 0) / members.length;
+    const dz = members.reduce((sum, body) => sum + body.z - home.z, 0) / members.length;
+    for (const body of members) { body.x -= dx; body.y -= dy; body.z -= dz; }
   }
 
   const points: LayoutPoint[] = nodes.map((node) => {

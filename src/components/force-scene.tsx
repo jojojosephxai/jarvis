@@ -4,7 +4,7 @@ import { useEffect, useRef } from "react";
 import type * as THREE_NS from "three";
 
 import { labelRank, smallLabelFade, type LayoutPoint } from "@/lib/graph-layout";
-import { edgePieces, frameScreenNodes, labelSpots, rectIntersectsCircle, rectsIntersect, type ScreenRect, type ScreenNode } from "@/lib/graph-screen-layout";
+import { edgePieces, labelSpots, rectIntersectsCircle, rectsIntersect, type ScreenRect, type ScreenNode } from "@/lib/graph-screen-layout";
 import { nodeColor, nodeDiameterPx, type GraphEdge, type GraphNode } from "@/lib/note-graph";
 
 type ZoomKind = "fit" | "in" | "out";
@@ -146,6 +146,7 @@ export function ForceScene({
           target.z + Math.cos(yaw) * Math.cos(pitch) * dist,
         );
         camera.lookAt(target);
+        host.dataset.camera = JSON.stringify({ yaw, pitch, distance: dist });
       };
 
       const scratch = new THREE.Vector3();
@@ -196,38 +197,32 @@ export function ForceScene({
         yaw = 0.62;
         pitch = 0.38;
         parkView();
-        const safeCx = (safe.left + safe.right) / 2;
-        const safeCy = (safe.top + safe.bottom) / 2;
-        const fov = (camera.fov * Math.PI) / 180;
-        const vTan = Math.tan(fov / 2);
-        const hTan = vTan * camera.aspect;
-        const roomX = Math.max(48, Math.min(safeCx - safe.left, safe.right - safeCx) - 18);
-        const roomY = Math.max(48, Math.min(safeCy - safe.top, safe.bottom - safeCy) - 18);
-        const fitX = (radius * (width / 2)) / (roomX * hTan);
-        const fitY = (radius * (height / 2)) / (roomY * vTan);
-        dist = Math.max(Math.max(fitX, fitY) * 0.9, 80);
-        if (!rememberOverview) {
-          const framedIds = new Set(list.map((point) => point.id));
-          const dirX = Math.sin(yaw) * Math.cos(pitch);
-          const dirY = Math.sin(pitch);
-          const dirZ = Math.cos(yaw) * Math.cos(pitch);
-          const limit = dist * 1.12;
-          for (let pass = 0; pass < 8; pass += 1) {
-            const camX = midX + dirX * dist;
-            const camY = midY + dirY * dist;
-            const camZ = midZ + dirZ * dist;
-            let push = 0;
-            for (const point of stateRef.current.points) {
-              if (!stateRef.current.visibleIds.has(point.id) || framedIds.has(point.id)) continue;
-              const visual = (meshes.find((entry) => entry.id === point.id)?.baseScale ?? 5) * 1.45;
-              const gap = Math.max(radius * 0.85, visual * 5, 42);
-              const gapDist = Math.hypot(point.x - camX, point.y - camY, point.z - camZ);
-              if (gapDist < gap) push = Math.max(push, gap - gapDist + 6);
-            }
-            if (push < 1 || dist >= limit) break;
-            dist = Math.min(limit, dist + push);
-          }
-        }
+        // Fit the actual perspective projection rather than a bounding sphere.
+        const framed = new Set(list.map(point => point.id));
+        const fits = (distance: number) => {
+          dist = distance;
+          placeCamera();
+          camera.updateMatrixWorld();
+          camera.clearViewOffset();
+          const bounds = list.map(point => new THREE.Vector3(point.x, point.y, point.z).project(camera));
+          const centerX = (Math.min(...bounds.map(p => p.x)) + Math.max(...bounds.map(p => p.x))) * width / 4;
+          const centerY = -(Math.min(...bounds.map(p => p.y)) + Math.max(...bounds.map(p => p.y))) * height / 4;
+          camera.setViewOffset(width, height, centerX, centerY, width, height);
+          const projected = new Map(list.map(point => {
+            const p = new THREE.Vector3(point.x, point.y, point.z).project(camera);
+            return [point.id, { x: (p.x + 1) * width / 2, y: (1 - p.y) * height / 2, z: p.z }];
+          }));
+          if ([...projected.values()].some(p => p.z < -1 || p.z > 1 || p.x < safe.left + 18 || p.x > safe.right - 18 || p.y < safe.top + 18 || p.y > safe.bottom - 18)) return false;
+          const focus = stateRef.current.clusterId ?? stateRef.current.selectedId;
+          return rememberOverview || !focus || stateRef.current.edges.every(edge => {
+            if ((edge.from !== focus && edge.to !== focus) || !framed.has(edge.from) || !framed.has(edge.to)) return true;
+            const a = projected.get(edge.from)!, b = projected.get(edge.to)!;
+            return Math.hypot(a.x - b.x, a.y - b.y) <= Math.min(safe.right - safe.left, safe.bottom - safe.top) * .335;
+          });
+        };
+        let lo = 80, hi = Math.max(radius * 5, 900);
+        for (let i = 0; i < 24; i++) { const mid = (lo + hi) / 2; if (fits(mid)) hi = mid; else lo = mid; }
+        fits(hi);
         if (rememberOverview) overviewDist = dist;
         publishDist();
         placeCamera();
@@ -358,7 +353,6 @@ export function ForceScene({
             const projectionCamera = camera;
             scratch.set(point.x, point.y, point.z);
             const depth = scratch.clone().applyMatrix4(projectionCamera.matrixWorldInverse);
-            depth.z = Math.min(depth.z, -dist * 0.35);
             const worldPerPx = 2 * halfTan * -depth.z / viewH;
             scratch.copy(depth).applyMatrix4(projectionCamera.matrixWorld).project(projectionCamera);
             const cap = focused ? (active ? (hub ? (node.id === focusId ? 18 : 10) : 7) : (hub ? 7 : 3.5)) : (hub ? 12 : 5);
@@ -369,16 +363,8 @@ export function ForceScene({
               z: scratch.z,
             };
           });
-          const source = new Map(projected.map((node) => [node.id, node]));
-          screenNodes = frameScreenNodes(projected, safe, focusId, near, framing.edges);
-          const entryOf = new Map(meshes.map((entry) => [entry.id, entry]));
-          for (const node of screenNodes) {
-            const entry = entryOf.get(node.id)!;
-            const z = source.get(node.id)!.z;
-            entry.mesh.position.set(node.x / viewW * 2 - 1, 1 - node.y / viewH * 2, z).unproject(camera);
-            entry.glow?.position.copy(entry.mesh.position);
-            entry.hit?.position.copy(entry.mesh.position);
-          }
+          // Keep the settled 3D positions; screen-space repacking erases orbit and perspective.
+          screenNodes = projected;
 
         }
         const byId = new Map(screenNodes.map((node) => [node.id, node]));
@@ -390,12 +376,14 @@ export function ForceScene({
           const pulse = !reduced && entry.id === framing.selectedId ? 1 + Math.sin(now / 1000 * 2.2) * 0.055 : 1;
           const radius = node.r / 1.06 * pulse;
           entry.mesh.scale.setScalar(radius * worldPerPx);
-          entry.mesh.visible = true;
-          if (entry.glow) { entry.glow.scale.setScalar(radius * worldPerPx * 1.4); entry.glow.visible = true; }
+          const visible = node.x - radius >= safe.left && node.x + radius <= safe.right && node.y - radius >= safe.top && node.y + radius <= safe.bottom;
+          entry.mesh.visible = visible;
+          if (entry.glow) { entry.glow.scale.setScalar(radius * worldPerPx * 1.4); entry.glow.visible = visible; }
           if (entry.hit) { entry.hit.scale.setScalar(radius * worldPerPx * 1.4); entry.hit.visible = false; }
-          boxes.push({ id: entry.id, x: hostBox.left + node.x - radius, y: hostBox.top + node.y - radius, w: radius * 2, h: radius * 2, r: radius, opacity: (entry.mesh.material as THREE_NS.ShaderMaterial).uniforms.uDim.value as number });
+          if (visible) boxes.push({ id: entry.id, x: hostBox.left + node.x - radius, y: hostBox.top + node.y - radius, w: radius * 2, h: radius * 2, r: radius, opacity: (entry.mesh.material as THREE_NS.ShaderMaterial).uniforms.uDim.value as number });
         }
         host.dataset.nodes = JSON.stringify(boxes);
+        host.dataset.zSpread = String(Math.max(...framing.points.map(p => p.z)) - Math.min(...framing.points.map(p => p.z)));
         host.dataset.area = JSON.stringify({ left: hostBox.left + safe.left, top: hostBox.top + safe.top, right: hostBox.left + safe.right, bottom: hostBox.top + safe.bottom });
         const drawnEdges: { from: string; to: string; length: number; opacity: number }[] = [];
         group?.traverse((object) => {
@@ -442,7 +430,7 @@ export function ForceScene({
       const tick = (now: number) => {
         if (dead) return;
         frame = requestAnimationFrame(tick);
-        const allowSpin = stateRef.current.autoRotate && !hoverId && !drag && !stateRef.current.selectedId;
+        const allowSpin = stateRef.current.autoRotate && !hoverId && !drag;
         if (!allowSpin) spinning = false;
         else if (!spinning && now > idleUntil) spinning = true;
         if (spinning && allowSpin) yaw += 0.0016;
@@ -618,7 +606,8 @@ export function ForceScene({
             const a = pointOf.get(edge.from);
             const b = pointOf.get(edge.to);
             if (!from || !to || !a || !b) continue;
-            const onFocus = focusId && (edge.from === focusId || edge.to === focusId);
+            const onFocus = focusId && (edge.from === focusId || edge.to === focusId) &&
+              (!current.clusterId || (from.id === focusId ? to.hubs.includes(focusId) : from.hubs.includes(focusId)));
             const onRoute =
               routeSet &&
               routeSet.has(edge.from) &&
@@ -690,7 +679,7 @@ export function ForceScene({
         }
         const candidates = screenNodes.flatMap((point) => {
           const node = byId.get(point.id)!;
-          if (focus && !near.has(node.id)) return [];
+          if (!meshes.find(entry => entry.id === node.id)?.mesh.visible || (focus && !near.has(node.id))) return [];
           const hub = node.kind === "folder" || node.nodeType === "hub" || node.root;
           const selected = node.id === current.selectedId;
           const hover = node.id === hoverId;
@@ -723,10 +712,13 @@ export function ForceScene({
           el.textContent = source.title.replace(/\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi, "").trim() || "Untitled note";
           el.dataset.hub = source.hub ? "1" : "0";
           // Measure real glyph bounds; estimates and later nudging can hit a neighboring sphere.
-          const w = el.offsetWidth;
-          const h = el.offsetHeight;
+          const { width: w, height: h } = el.getBoundingClientRect();
           const { x, y, r } = source;
-          const spots = labelSpots(x, y, r, w, h);
+          const spots = labelSpots(x, y, r, w, h).map(spot => {
+            const left = Math.max(safe.left, Math.min(safe.right - w, spot.left));
+            const top = Math.max(safe.top, Math.min(safe.bottom - h, spot.top));
+            return { left, top, right: left + w, bottom: top + h };
+          });
           const spot = spots.find((spot) => {
             const rect = spot;
             return rect.left >= safe.left && rect.right <= safe.right && rect.top >= safe.top && rect.bottom <= safe.bottom &&

@@ -81,7 +81,9 @@ async function graphGeometry(focusId = null) {
   if (focusId) for (const edge of visibleEdges) if (edge.length > limit) hits.push(`long edge ${edge.length} > ${limit}`);
   if (!focusId && nodes.length) {
     const height = Math.max(...nodes.map((n) => n.y + n.h)) - Math.min(...nodes.map((n) => n.y));
-    if (height < (area.height - 32) * .8) hits.push("idle graph does not fill the height");
+    const width = Math.max(...nodes.map((n) => n.x + n.w)) - Math.min(...nodes.map((n) => n.x));
+    // A perspective galaxy fits one axis; forcing both axes repacks it into a flat grid.
+    if (Math.max(height / (area.height - 32), width / (area.width - 32)) < .8) hits.push("idle graph does not fit the viewport");
   }
   const payload = await (await fetch("/api/graph")).json();
   let neighbors = null;
