@@ -5,7 +5,7 @@ import { useEffect, useRef, useState, type ReactNode, type RefObject } from "rea
 import { NoteGraph, type GraphCue } from "@/components/note-graph";
 import { parseGraphCommand } from "@/lib/graph-command";
 import { mentionsCalendar } from "@/lib/intent";
-import { OrbStage, type OrbPlace } from "@/components/orb-stage";
+import { OrbStage } from "@/components/orb-stage";
 import { useVoice } from "@/components/use-voice";
 import { makeId } from "@/lib/ids";
 import { resolveOrbMode, type OrbMode } from "@/lib/orb-mode";
@@ -20,6 +20,8 @@ import {
 import type { MouthKind } from "@/lib/voice/types";
 import { decideFaceMode } from "@/lib/view-intent";
 import { butlerSpeech } from "@/lib/voice/policy";
+import { createSentenceQueue } from "@/lib/voice/sentence-queue";
+import { stripReplyTiming } from "@/lib/reply-text";
 
 const BOOT_KEY = "jarvis-boot";
 const EXAMPLES = ["remind me…", "good morning", "show swim times"] as const;
@@ -105,6 +107,7 @@ function formatStamp(iso: string): string {
 }
 
 function replyForChat(text: string, sources: string[] | undefined): { body: string; chips: string[] } {
+  text = stripReplyTiming(text);
   const footer = text.match(/(?:^|\n)\s*Notes used:\s*([\s\S]+?)\s*$/i);
   const bodyWithoutFooter = text.replace(/(?:^|\n)\s*Notes used:\s*[\s\S]+$/i, "").trim();
   const parsed = footer
@@ -150,12 +153,10 @@ function voiceName(mouth: MouthKind | "unknown"): string {
   }
 }
 
-function orbPlace(mode: OrbMode): OrbPlace {
-  if (mode === "working") return "corner";
-  return "center";
-}
-
 export function Face() {
+  const [graphOpen, setGraphOpen] = useState(false);
+  const [railCollapsed, setRailCollapsed] = useState(false);
+  const replySpeaking = useRef(false);
   const [items, setItems] = useState<LogItem[]>([]);
   const [draft, setDraft] = useState("");
   const [toolNote, setToolNote] = useState("");
@@ -185,6 +186,7 @@ export function Face() {
   const userSpoke = useRef(false);
   const speakingRef = useRef(false);
   const voice = useVoice((active) => {
+    if (!active && replySpeaking.current) return;
     speakingRef.current = active;
     setSpeaking(active);
   });
@@ -205,7 +207,6 @@ export function Face() {
       : preview === "speaking" || preview === "listening"
         ? skill ?? "brain"
         : skill;
-  const place = orbPlace(orb);
   const jobRef = useRef<Job | null>(null);
   jobRef.current = job;
   const previewAbort = useRef(new AbortController());
@@ -229,6 +230,7 @@ export function Face() {
     const face = params.get("face");
     const hub = params.get("hub");
     const timer = window.setTimeout(() => {
+      try { setRailCollapsed(localStorage.getItem("jarvis-rail-collapsed") === "true"); } catch {}
       if (face === "listening" || face === "speaking" || face === "working") {
         if (face === "working") previewStarted.current = performance.now();
         if (face === "speaking") setLiveLine("It is evening on the Eastern clock.");
@@ -246,7 +248,7 @@ export function Face() {
     const started = performance.now();
     let frame = 0;
     const tick = () => {
-      const ready = document.querySelector("[data-scene='ready']");
+      const ready = document.querySelector(".face-column");
       const failed = document.querySelector(".graph-stage-empty");
       if (ready || failed || performance.now() - started > 2500) {
         setIntro("out");
@@ -296,11 +298,21 @@ export function Face() {
   }, [items, tab]);
 
   useEffect(() => {
+    if (!graphOpen) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setGraphOpen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [graphOpen]);
+
+  useEffect(() => {
     if (!working) return;
     const onKey = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
       event.preventDefault();
       event.stopPropagation();
+      setGraphOpen(false);
       stopWork();
     };
     window.addEventListener("keydown", onKey, true);
@@ -385,14 +397,23 @@ export function Face() {
   function stopWork() {
     jobGen.current += 1;
     job?.abort.abort();
+    replySpeaking.current = false;
     voice.stop();
     finishJob();
   }
 
   async function speakThenFinish(id: number, abort: AbortController, line: string) {
     if (line.trim() && id === jobGen.current && !abort.signal.aborted) {
-      setLiveLine(line);
-      await voice.speak(line);
+      replySpeaking.current = true;
+      const queue = createSentenceQueue(async (chunk) => {
+        setLiveLine(chunk);
+        await speakRef.current(chunk);
+      }, abort.signal);
+      queue.enqueue(line);
+      await queue.drain();
+      if (id !== jobGen.current) return;
+      replySpeaking.current = false;
+      setSpeaking(false);
     }
     finishJob(id);
   }
@@ -406,6 +427,7 @@ export function Face() {
     const trimmed = text.trim();
     if (!trimmed || pendingRef.current) return;
     userSpoke.current = true;
+    replySpeaking.current = false;
     voice.stop();
     const decision = decideFaceMode(trimmed);
     const at = new Date().toISOString();
@@ -462,6 +484,7 @@ export function Face() {
       );
     };
     const upsertJarvis = (text: string, sources?: string[], failed?: boolean) => {
+      text = stripReplyTiming(text);
       const at = new Date().toISOString();
       setItems((current) => {
         const index = current.findIndex((item) => item.id === answerId && item.kind === "jarvis");
@@ -495,53 +518,31 @@ export function Face() {
       });
     };
     let loggedWord = false;
-    const queue: string[] = [];
-    let streamDone = false;
-    const gate: { wake: (() => void) | null } = { wake: null };
-    const speaker = (async () => {
-      let count = 0;
-      while (count < 2) {
-        if (queue.length === 0) {
-          if (streamDone) return;
-          await new Promise<void>((resolve) => {
-            gate.wake = resolve;
-          });
-          continue;
-        }
-        const sentence = queue.shift();
-        if (!sentence || id !== jobGen.current || abort.signal.aborted) return;
-        setLiveLine(sentence);
-        count += 1;
-        const first = count === 1;
-        await speakRef.current(
-          sentence,
-          first
-            ? {
-                onStart: () => {
-                  if (!tokenAt) tokenAt = performance.now();
-                  stampTiming(performance.now());
-                  if (loggedWord) return;
-                  loggedWord = true;
-                  console.info(`time-to-first-word ${Math.round(performance.now() - askedAt)}`);
-                },
-              }
-            : undefined,
-        );
-      }
-    })();
+    replySpeaking.current = true;
+    let count = 0;
+    const queue = createSentenceQueue(async (sentence) => {
+      setLiveLine(sentence);
+      const first = count++ === 0;
+      await speakRef.current(sentence, first ? {
+        onStart: () => {
+          if (!tokenAt) tokenAt = performance.now();
+          stampTiming(performance.now());
+          if (loggedWord) return;
+          loggedWord = true;
+          console.info(`time-to-first-word ${Math.round(performance.now() - askedAt)}`);
+        },
+      } : undefined);
+    }, abort.signal);
     const askedCalendar = mentionsCalendar(trimmed);
     let streamed = "";
     const pushSentence = (text: string) => {
-      const clean = dropUnaskedCalendar(text.trim(), askedCalendar);
-      if (!clean || heard >= 2) return;
+      const clean = dropUnaskedCalendar(stripReplyTiming(text).trim(), askedCalendar);
+      if (!clean) return;
       heard += 1;
       if (!tokenAt) tokenAt = performance.now();
       streamed = streamed ? `${streamed} ${clean}` : clean;
       upsertJarvis(streamed);
-      queue.push(clean);
-      const resume = gate.wake;
-      gate.wake = null;
-      resume?.();
+      queue.enqueue(clean);
     };
     try {
       const response = await fetch("/api/chat", {
@@ -577,7 +578,7 @@ export function Face() {
         } else pushCue({ focusQuery: graph.value });
       }
       if (isHandsTurn(payload)) {
-        const reply = dropUnaskedCalendar(payload.reply, askedCalendar);
+        const reply = dropUnaskedCalendar(stripReplyTiming(payload.reply), askedCalendar);
         if (reply || payload.plan) {
           const handId = makeId("hand");
           liveId = handId;
@@ -585,7 +586,7 @@ export function Face() {
             kind: "hand",
             id: handId,
             at: new Date().toISOString(),
-            reply: reply || payload.reply,
+            reply: reply || stripReplyTiming(payload.reply),
             plan: payload.plan,
             receipts: payload.receipts,
             tokenMs: pendingTiming.tokenMs,
@@ -600,10 +601,10 @@ export function Face() {
       const brief = payload.brief;
       if (brief && isMorningBrief(brief)) {
         upsertJarvis(brief.reply, brief.sources);
-        if (heard === 0) spoken = brief.spoken;
+        if (heard === 0) spoken = butlerSpeech(brief.reply);
         return;
       }
-      const reply = dropUnaskedCalendar(payload.reply, askedCalendar);
+      const reply = dropUnaskedCalendar(stripReplyTiming(payload.reply), askedCalendar);
       if (reply) upsertJarvis(reply, payload.sources);
       if (heard === 0 && reply) spoken = butlerSpeech(reply);
     } catch (error) {
@@ -613,13 +614,15 @@ export function Face() {
       }
       upsertJarvis("I couldn't reach Jarvis. Try again.", undefined, true);
     } finally {
-      streamDone = true;
-      const resume = gate.wake;
-      gate.wake = null;
-      resume?.();
-      await speaker;
-      stampTiming(null);
-      await speakThenFinish(id, abort, spoken);
+      if (heard === 0 && spoken) queue.enqueue(spoken);
+      await queue.drain();
+      if (id === jobGen.current) {
+        replySpeaking.current = false;
+        speakingRef.current = false;
+        setSpeaking(false);
+        stampTiming(null);
+        finishJob(id);
+      }
     }
   }
 
@@ -642,7 +645,7 @@ export function Face() {
       setItems((current) =>
         current.map((item) =>
           item.kind === "hand" && item.id === itemId
-            ? { ...item, reply: payload.reply, plan: payload.plan, receipts: payload.receipts }
+            ? { ...item, reply: stripReplyTiming(payload.reply), plan: payload.plan, receipts: payload.receipts }
             : item,
         ),
       );
@@ -680,27 +683,34 @@ export function Face() {
   );
 
   return (
-    <div className="face" data-intro={intro} data-mode={orb}>
+    <div className="face" data-intro={intro} data-mode={orb} data-view={graphOpen ? "graph" : "home"} data-rail-collapsed={railCollapsed}>
       {intro === "in" ? (
         <div className="face-loader" role="status">
           <span />
           <p>Reading notes</p>
         </div>
       ) : null}
-      <div className="face-stage" data-orb={place} data-mode={orb}>
-        <NoteGraph cue={cue} suspendEscape={working} voiceLive={orb === "listening" || orb === "speaking"} />
+      <div className="face-stage" data-orb="center" data-mode={orb}>
+        <NoteGraph cue={cue} suspendEscape={working} graphOpen={graphOpen} railCollapsed={railCollapsed} onToggleRail={() => {
+          const next = !railCollapsed;
+          setRailCollapsed(next);
+          try { localStorage.setItem("jarvis-rail-collapsed", String(next)); } catch {}
+        }} />
         <OrbStage
           mode={orb}
           levelRef={voice.levelRef}
           skill={shownSkill}
-          place={place}
+          place="center"
           caption={captionHold}
           captionOn={Boolean(speechLine)}
           onCornerClick={stopWork}
         />
       </div>
       <header className="face-header face-chrome" data-region="header">
-        <p className="face-brand">JARVIS</p>
+        <div className="face-header-start">
+          <p className="face-brand">JARVIS</p>
+          <button type="button" className="view-toggle" onClick={() => setGraphOpen((open) => !open)}>{graphOpen ? "Home" : "Graph"}</button>
+        </div>
         <p className="face-product">NEURAL OPERATING SYSTEM · v1</p>
         <p className="face-meta">
           Brain grok-4.7
@@ -711,7 +721,7 @@ export function Face() {
           Online
         </p>
       </header>
-      {shownTask ? <WorkingPanel job={shownTask} leaving={job === null && preview !== "working"} onStop={stopWork} /> : null}
+      {shownTask && shownTask.steps[0]?.label !== "Thinking" ? <WorkingPanel job={shownTask} leaving={job === null && preview !== "working"} onStop={stopWork} /> : null}
       <div className="face-dock face-chrome">
           <div className="face-bottom">
             {wake ? <p className="wake-hint">click to wake Jarvis</p> : null}
@@ -884,7 +894,7 @@ function TimingLine({ tokenMs, voiceMs }: { tokenMs?: number; voiceMs?: number }
   if (tokenMs === undefined) return null;
   return (
     <p className="chat-timing">
-      Brain {tokenMs} ms to first token · {voiceMs ?? 0} ms to voice
+      {((tokenMs + (voiceMs ?? 0)) / 1000).toFixed(1)}s to first word
     </p>
   );
 }
@@ -921,7 +931,7 @@ function ChatLines({ items }: { items: LogItem[] }) {
           return (
             <article key={item.id} className="chat-line">
               <p className="chat-meta">Jarvis · {formatStamp(item.at)}</p>
-              <p>{shown.body}</p>
+              <p className="chat-reply">{shown.body}</p>
               <SourceChips chips={shown.chips} />
               <TimingLine tokenMs={item.tokenMs} voiceMs={item.voiceMs} />
             </article>
@@ -932,7 +942,7 @@ function ChatLines({ items }: { items: LogItem[] }) {
           return (
             <article key={item.id} className="chat-line">
               <p className="chat-meta">Jarvis · {formatStamp(item.at)}</p>
-              <p>{shown.body}</p>
+              <p className="chat-reply">{shown.body}</p>
               <SourceChips chips={shown.chips} />
               <TimingLine tokenMs={item.tokenMs} voiceMs={item.voiceMs} />
             </article>
@@ -1014,7 +1024,7 @@ function LogLines({ items }: { items: LogItem[] }) {
               <p className="chat-meta">
                 {formatStamp(item.at)} · Jarvis
               </p>
-              <p>{shown.body}</p>
+              <p className="chat-reply">{shown.body}</p>
               <SourceChips chips={shown.chips} />
               <TimingLine tokenMs={item.tokenMs} voiceMs={item.voiceMs} />
             </article>
@@ -1027,7 +1037,7 @@ function LogLines({ items }: { items: LogItem[] }) {
               <p className="chat-meta">
                 {formatStamp(item.at)} · Jarvis
               </p>
-              <p>{shown.body}</p>
+              <p className="chat-reply">{shown.body}</p>
               <SourceChips chips={shown.chips} />
               <TimingLine tokenMs={item.tokenMs} voiceMs={item.voiceMs} />
             </article>

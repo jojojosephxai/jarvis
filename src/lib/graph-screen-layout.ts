@@ -1,8 +1,6 @@
 export type ScreenRect = { left: number; top: number; right: number; bottom: number };
 export type ScreenNode = {
   id: string; x: number; y: number; r: number; hubId?: string; priority: number;
-  label?: { w: number; h: number };
-  labelRect?: ScreenRect;
 };
 
 export function labelSpots(x: number, y: number, r: number, w: number, h: number): ScreenRect[] {
@@ -26,61 +24,31 @@ export function rectIntersectsCircle(rect: ScreenRect, node: Pick<ScreenNode, "x
   return Math.hypot(node.x - x, node.y - y) < node.r + gap;
 }
 
-/** Resolve projected forces against the actual desktop HUD before rendering. Hubs move first;
- * their members follow that displacement, preserving clusters around the central keep-out. */
-export function fitScreenNodes(nodes: ScreenNode[], free: ScreenRect, blocks: ScreenRect[]): ScreenNode[] {
-  const placed: ScreenNode[] = [];
-  const shifts = new Map<string, { x: number; y: number }>();
-  const ordered = [...nodes].sort((a, b) => b.priority - a.priority || a.id.localeCompare(b.id));
-  for (const node of ordered) {
-    const shift = node.hubId ? shifts.get(node.hubId) : undefined;
-    const desiredX = node.x + (shift?.x ?? 0);
-    const desiredY = node.y + (shift?.y ?? 0);
-    // Reserve room for the glow and selected ring as well as the sphere itself.
-    const reach = node.r * 1.6;
-    const clampX = (x: number) => Math.max(free.left + reach, Math.min(free.right - reach, x));
-    const clampY = (y: number) => Math.max(free.top + reach, Math.min(free.bottom - reach, y));
-    const clear = (x: number, y: number) => {
-      const box = { left: x - reach, top: y - reach, right: x + reach, bottom: y + reach };
-      return !blocks.some((block) => rectsIntersect(box, block, 16)) &&
-        !placed.some((other) => Math.hypot(x - other.x, y - other.y) < node.r + other.r + 8 ||
-          (other.labelRect && rectIntersectsCircle(other.labelRect, { x, y, r: node.r }, 4)));
-    };
-    const labelAt = (x: number, y: number) => node.label && labelSpots(x, y, node.r, node.label.w, node.label.h).find((rect) =>
-      rect.left >= free.left && rect.right <= free.right && rect.top >= free.top && rect.bottom <= free.bottom &&
-      !blocks.some((block) => rectsIntersect(rect, block, 8)) &&
-      !placed.some((other) => rectIntersectsCircle(rect, other, 4) || (other.labelRect && rectsIntersect(rect, other.labelRect, 6))));
-    const candidate = (x: number, y: number) => {
-      if (!clear(x, y)) return null;
-      const labelRect = labelAt(x, y);
-      return !node.label || labelRect ? { x, y, labelRect } : null;
-    };
-    const x = clampX(desiredX);
-    const y = clampY(desiredY);
-    let spot: { x: number; y: number; labelRect?: ScreenRect } | null = candidate(x, y);
-    // Nearest legal point wins. Search in screen pixels so margin does not depend on zoom/depth.
-    for (let radius = 8; !spot && radius <= Math.hypot(free.right - free.left, free.bottom - free.top); radius += 8) {
-      const count = Math.max(12, Math.ceil(Math.PI * 2 * radius / 12));
-      for (let index = 0; index < count; index += 1) {
-        const angle = index / count * Math.PI * 2;
-        const px = clampX(x + Math.cos(angle) * radius);
-        const py = clampY(y + Math.sin(angle) * radius);
-        spot = candidate(px, py);
-        if (spot) break;
-      }
+/** Fit the projection as a whole; focus scales neighbors toward their hub without HUD obstacles. */
+export function frameScreenNodes(nodes: ScreenNode[], free: ScreenRect, focusId: string | null, near: Set<string>): ScreenNode[] {
+  if (!nodes.length) return [];
+  const cx = (free.left + free.right) / 2;
+  const cy = (free.top + free.bottom) / 2;
+  const reach = Math.max(...nodes.map((node) => node.r * 1.6)) + 2;
+  const minX = Math.min(...nodes.map((node) => node.x));
+  const maxX = Math.max(...nodes.map((node) => node.x));
+  const minY = Math.min(...nodes.map((node) => node.y));
+  const maxY = Math.max(...nodes.map((node) => node.y));
+  const scale = Math.min(1, (free.right - free.left - reach * 2) / Math.max(1, maxX - minX), (free.bottom - free.top - reach * 2) / Math.max(1, maxY - minY));
+  const focus = nodes.find((node) => node.id === focusId);
+  const members = focus ? nodes.filter((node) => near.has(node.id) && node.id !== focus.id) : [];
+  const local = members.filter((node) => node.hubId === focusId);
+  const distances = (local.length ? local : members).map((node) => Math.hypot(node.x - focus!.x, node.y - focus!.y));
+  const radius = Math.min(free.right - free.left, free.bottom - free.top) * 0.32 - reach;
+  const focusScale = radius / Math.max(1, ...distances);
+  return nodes.map((node) => {
+    if (focus && near.has(node.id)) {
+      const dx = (node.x - focus.x) * focusScale;
+      const dy = (node.y - focus.y) * focusScale;
+      const distance = Math.hypot(dx, dy);
+      const pull = Math.min(1, radius / Math.max(1, distance));
+      return { ...node, x: cx + dx * pull, y: cy + dy * pull };
     }
-    // Dense vaults may exhaust node spacing; HUD and viewport constraints still take precedence.
-    if (!spot) {
-      for (let py = free.top + reach; py <= free.bottom - reach && !spot; py += 4) {
-        for (let px = free.left + reach; px <= free.right - reach; px += 4) {
-          const box = { left: px - reach, top: py - reach, right: px + reach, bottom: py + reach };
-          if (!blocks.some((block) => rectsIntersect(box, block, 16))) { spot = { x: px, y: py }; break; }
-        }
-      }
-    }
-    const result = { ...node, ...(spot ?? { x, y }) };
-    placed.push(result);
-    if (!node.hubId) shifts.set(node.id, { x: result.x - node.x, y: result.y - node.y });
-  }
-  return placed;
+    return { ...node, x: cx + (node.x - (minX + maxX) / 2) * scale, y: cy + (node.y - (minY + maxY) / 2) * scale };
+  });
 }

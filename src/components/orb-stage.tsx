@@ -95,7 +95,7 @@ export function OrbStage({
           )}
           <OrbMark mode={mode} />
         </div>
-        <p className="orb-status" key={word}>
+        <p className="orb-status">
           <span className="orb-status-dot" />
           {word}
         </p>

@@ -459,16 +459,12 @@ export async function* streamAnswerFromVault(
   }
 
   let full = "";
-  let count = 0;
   try {
     for await (const sentence of grokStreamSentences(question, gathered.packet)) {
       const clean = sentence.trim();
       if (!clean) continue;
       full = full ? `${full} ${clean}` : clean;
-      if (count < 2) {
-        count += 1;
-        yield { type: "sentence", text: clean };
-      }
+      yield { type: "sentence", text: clean };
     }
   } catch {
     full = "";

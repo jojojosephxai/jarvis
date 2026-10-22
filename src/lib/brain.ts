@@ -259,7 +259,7 @@ function spokenParts(text: string): string[] {
   if (!spoken) return [];
   const split = readySentences(`${spoken} `);
   const parts = split.ready.map((sentence) => sentence.trim()).filter((sentence) => sentence.length > 0);
-  return parts.length > 0 ? parts : [spoken];
+  return [...parts, split.rest.trim()].filter(Boolean);
 }
 
 function fromGrounded(answer: GroundedAnswer): ChatResponse {

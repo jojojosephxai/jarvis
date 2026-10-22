@@ -17,11 +17,11 @@ import {
 } from "./policy";
 
 describe("butlerSpeech", () => {
-  it("keeps two short sentences and drops harness lines", () => {
+  it("keeps every sentence and drops harness lines", () => {
     const spoken = butlerSpeech(
-      "Saved the library return for Friday. No calendar is connected. Notes checked: Goals. This brief did not call Grok.",
+      "Saved the library return for Friday. No calendar is connected. The reminder is ready. Notes checked: Goals. This brief did not call Grok.",
     );
-    assert.equal(spoken, "Saved the library return for Friday. No calendar is connected.");
+    assert.equal(spoken, "Saved the library return for Friday. No calendar is connected. The reminder is ready.");
   });
 });
 

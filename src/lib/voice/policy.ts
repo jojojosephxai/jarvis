@@ -1,3 +1,5 @@
+import { readySentences } from "../clock";
+import { stripReplyTiming } from "../reply-text";
 import {
   DEFAULT_AZURE_VOICE,
   SPEAK_LIMIT,
@@ -35,15 +37,16 @@ const REGION_NAME = /^[a-z0-9]+$/i;
 const HARNESS_SENTENCE =
   /notes checked|not written down|demo calendar|did not call grok|grok was not called|this brief did not/i;
 
-/** One or two spoken sentences. The chat can keep the longer reply. */
+/** Speak the whole answer, excluding source and harness footers. */
 export function butlerSpeech(text: string): string {
-  const clean = text.replace(/\s+/g, " ").trim();
+  const clean = stripReplyTiming(text).replace(/(?:^|\n)\s*Notes used:[\s\S]*$/i, "").replace(/\s+/g, " ").trim();
   if (!clean) return "";
-  const sentences = clean.match(/[^.!?]+[.!?]+|[^.!?]+$/g) ?? [];
+  const split = readySentences(`${clean} `);
+  const sentences = [...split.ready, split.rest];
   const kept = sentences
     .map((sentence) => sentence.trim())
     .filter((sentence) => sentence.length > 0 && !HARNESS_SENTENCE.test(sentence));
-  return kept.slice(0, 2).join(" ");
+  return kept.join(" ");
 }
 
 export function clipSpeechText(text: string): { text: string; clipped: boolean } {

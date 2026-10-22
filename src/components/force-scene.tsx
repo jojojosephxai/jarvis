@@ -4,7 +4,7 @@ import { useEffect, useRef } from "react";
 import type * as THREE_NS from "three";
 
 import { labelRank, smallLabelFade, type LayoutPoint } from "@/lib/graph-layout";
-import { fitScreenNodes, labelSpots, rectIntersectsCircle, rectsIntersect, type ScreenRect, type ScreenNode } from "@/lib/graph-screen-layout";
+import { frameScreenNodes, labelSpots, rectIntersectsCircle, rectsIntersect, type ScreenRect, type ScreenNode } from "@/lib/graph-screen-layout";
 import { nodeColor, nodeDiameterPx, type GraphEdge, type GraphNode } from "@/lib/note-graph";
 
 type ZoomKind = "fit" | "in" | "out";
@@ -110,7 +110,6 @@ export function ForceScene({
       const target = new THREE.Vector3();
       const overviewTarget = new THREE.Vector3();
       const overviewCamera = camera.clone();
-      const measure = document.createElement("canvas").getContext("2d")!;
       const sphere = new THREE.SphereGeometry(1, 14, 12);
       let group: THREE_NS.Group | null = null;
       const meshes: {
@@ -156,72 +155,10 @@ export function ForceScene({
         host.dataset.dist = String(Math.round(dist));
       };
 
-      const relBox = (selector: string) => {
-        const node = document.querySelector(selector);
-        if (!node) return null;
-        const rect = node.getBoundingClientRect();
-        if (rect.width < 2 || rect.height < 2) return null;
-        const hostBox = host.getBoundingClientRect();
-        return {
-          left: rect.left - hostBox.left,
-          top: rect.top - hostBox.top,
-          right: rect.right - hostBox.left,
-          bottom: rect.bottom - hostBox.top,
-        };
-      };
-
-      // The outer free area keeps a fixed screen-space margin from every desktop panel.
-      const safeRect = () => {
-        const width = Math.max(host.clientWidth, 1);
-        const height = Math.max(host.clientHeight, 1);
-        const margin = 16;
-        let left = margin;
-        let top = 40;
-        let right = width - margin;
-        const bottom = height - margin;
-        const leftPanel = relBox("[data-region='left']");
-        if (leftPanel) left = Math.max(left, leftPanel.right + margin);
-        const header = relBox("[data-region='header']");
-        if (header) top = Math.max(top, header.bottom + margin);
-        const tools = relBox(".graph-tools");
-        if (tools) top = Math.max(top, tools.bottom + 6);
-        const crumb = relBox(".graph-crumb");
-        if (crumb) top = Math.max(top, crumb.bottom + 6);
-        const filter = relBox("[data-region='filter']");
-        if (filter) right = Math.min(right, filter.left - margin);
-        const inspector = relBox(".graph-inspector");
-        if (inspector) right = Math.min(right, inspector.left - margin);
-        const chat = relBox("[data-region='chat']");
-        if (chat) right = Math.min(right, chat.left - margin);
-        if (right - left < 80 || bottom - top < 80) {
-          return {
-            left: width * 0.08,
-            top: height * 0.08,
-            right: width * 0.72,
-            bottom: height * 0.92,
-            width,
-            height,
-          };
-        }
-        return { left, top, right, bottom, width, height };
-      };
-
-      // One bounding rectangle includes the gaps between the orb, status, Ask and tool row.
-      // Use it for projected forces, label placement, and the transparent WebGL cutout.
-      const blockRects = (): ScreenRect[] => {
-        const center = [".orb-dial", ".orb-status", "[data-region='ask']", ".tool-row"]
-          .map(relBox).filter((rect): rect is ScreenRect => rect !== null);
-        const rects: ScreenRect[] = [];
-        if (center.length) rects.push({
-          left: Math.min(...center.map((rect) => rect.left)),
-          top: Math.min(...center.map((rect) => rect.top)),
-          right: Math.max(...center.map((rect) => rect.right)),
-          bottom: Math.max(...center.map((rect) => rect.bottom)),
-        });
-        const task = relBox(".face-task");
-        if (task) rects.push(task);
-        return rects;
-      };
+      const safeRect = () => ({
+        left: 16, top: 16, right: host.clientWidth - 16, bottom: host.clientHeight - 16,
+        width: host.clientWidth, height: host.clientHeight,
+      });
 
       const parkView = () => {
         const { width, height } = size();
@@ -326,7 +263,7 @@ export function ForceScene({
         pickables.length = 0;
       };
 
-      const sharedLine = new THREE.LineBasicMaterial({ color: LINK, transparent: true, opacity: 0.28 });
+      const sharedLine = new THREE.LineBasicMaterial({ color: LINK, transparent: true, opacity: 0.85 });
       const crossLine = new THREE.LineBasicMaterial({ color: LINK, transparent: true, opacity: 0.08 });
       const spineLine = new THREE.LineBasicMaterial({ color: LINK, transparent: true, opacity: 0.62 });
       const hotLine = new THREE.LineBasicMaterial({ color: LINK, transparent: true, opacity: 0.92 });
@@ -388,27 +325,9 @@ export function ForceScene({
       };
 
       const draw = (now: number) => {
-        const flow = group?.children.find((child) => child.userData.flow);
-        if (flow instanceof THREE.Points) {
-          const raw = flow.userData.flow as number[];
-          const attr = flow.geometry.getAttribute("position");
-          const phase = (now / 1000) % 1;
-          for (let index = 0; index < attr.count; index += 1) {
-            const base = (index % Math.floor(raw.length / 6)) * 6;
-            const t = (phase + index / attr.count) % 1;
-            attr.setXYZ(
-              index,
-              (raw[base] ?? 0) + ((raw[base + 3] ?? 0) - (raw[base] ?? 0)) * t,
-              (raw[base + 1] ?? 0) + ((raw[base + 4] ?? 0) - (raw[base + 1] ?? 0)) * t,
-              (raw[base + 2] ?? 0) + ((raw[base + 5] ?? 0) - (raw[base + 2] ?? 0)) * t,
-            );
-          }
-          attr.needsUpdate = true;
-        }
         applyHover();
         placeCamera();
         const safe = safeRect();
-        const blocks = blockRects();
         const viewW = host.clientWidth || 1;
         const viewH = host.clientHeight || 1;
         const hostBox = host.getBoundingClientRect();
@@ -416,7 +335,7 @@ export function ForceScene({
         const halfTan = Math.tan(fov / 2);
         const framing = stateRef.current;
         const focused = Boolean(framing.clusterId || framing.selectedId);
-        const stamp = JSON.stringify([safe, blocks, dist, yaw, pitch, target.toArray(), framing.selectedId, framing.clusterId, meshes.length]);
+        const stamp = JSON.stringify([safe, dist, yaw, pitch, target.toArray(), framing.selectedId, framing.clusterId, meshes.length]);
         if (stamp !== placementStamp) {
           placementStamp = stamp;
           camera.updateMatrixWorld();
@@ -428,33 +347,37 @@ export function ForceScene({
           );
           overviewCamera.lookAt(overviewTarget);
           overviewCamera.updateMatrixWorld();
-          const font = getComputedStyle(host);
-          measure.font = `13px ${font.fontFamily}`;
+          const near = new Set<string>();
+          const focusId = framing.clusterId ?? framing.selectedId;
+          if (focusId) {
+            near.add(focusId);
+            for (const edge of framing.edges) {
+              if (edge.from === focusId) near.add(edge.to);
+              if (edge.to === focusId) near.add(edge.from);
+            }
+            for (const node of framing.nodes) if (node.hubs.includes(focusId)) near.add(node.id);
+          }
           const projected = meshes.map((entry) => {
             const point = framing.points.find((point) => point.id === entry.id)!;
             const node = framing.nodes.find((node) => node.id === entry.id)!;
             const hub = node.kind === "folder" || node.nodeType === "hub";
-            const active = node.id === framing.selectedId || node.id === framing.clusterId ||
-              (framing.clusterId !== null && node.hubs.includes(framing.clusterId));
+            const active = near.has(node.id);
             const projectionCamera = focused && !active ? overviewCamera : camera;
             scratch.set(point.x, point.y, point.z);
             const depth = scratch.clone().applyMatrix4(projectionCamera.matrixWorldInverse);
             depth.z = Math.min(depth.z, -dist * 0.35);
             const worldPerPx = 2 * halfTan * -depth.z / viewH;
             scratch.copy(depth).applyMatrix4(projectionCamera.matrixWorld).project(projectionCamera);
-            const cap = focused ? (active ? (hub ? 18 : 7) : (hub ? 7 : 3.5)) : (hub ? 12 : 5);
+            const cap = focused ? (active ? (hub ? (node.id === focusId ? 18 : 10) : 7) : (hub ? 7 : 3.5)) : (hub ? 12 : 5);
             const radius = Math.max(hub ? 6 : 3, Math.min(cap, entry.baseScale / worldPerPx));
-            const label = framing.showLabels && (hub || active || node.ssot) ? {
-              w: Math.ceil(measure.measureText(node.title).width + node.title.length * 0.52 + 10), h: 18,
-            } : undefined;
             return {
               id: entry.id, x: (scratch.x * 0.5 + 0.5) * viewW, y: (-scratch.y * 0.5 + 0.5) * viewH,
-              r: radius * 1.06, hubId: hub ? undefined : node.hubs[0], priority: node.id === framing.selectedId ? 1000 : hub ? 500 : active ? 100 : 0, label,
+              r: radius * 1.06, hubId: node.hubs[0], priority: node.id === framing.selectedId ? 1000 : hub ? 500 : active ? 100 : 0,
               z: scratch.z,
             };
           });
           const source = new Map(projected.map((node) => [node.id, node]));
-          screenNodes = fitScreenNodes(projected, safe, blocks);
+          screenNodes = frameScreenNodes(projected, safe, focusId, near);
           const entryOf = new Map(meshes.map((entry) => [entry.id, entry]));
           for (const node of screenNodes) {
             const entry = entryOf.get(node.id)!;
@@ -463,7 +386,7 @@ export function ForceScene({
             entry.glow?.position.copy(entry.mesh.position);
             entry.hit?.position.copy(entry.mesh.position);
           }
-          // Edges retain the real endpoints after projected forces move a node around the HUD.
+          // Keep edges attached to the final projected node positions.
           group?.traverse((object) => {
             const ids = object.userData.nodeIds as string[] | undefined;
             if (!ids || !(object instanceof THREE.LineSegments)) return;
@@ -475,11 +398,6 @@ export function ForceScene({
             attr.needsUpdate = true;
             object.geometry.computeBoundingSphere();
           });
-          const flow = group?.children.find((child) => child.userData.flow);
-          if (flow) {
-            const ids = flow.userData.nodeIds as string[];
-            flow.userData.flow = ids.flatMap((id) => entryOf.get(id)?.mesh.position.toArray() ?? [0, 0, 0]);
-          }
         }
         const byId = new Map(screenNodes.map((node) => [node.id, node]));
         const boxes = [];
@@ -496,7 +414,18 @@ export function ForceScene({
           boxes.push({ id: entry.id, x: hostBox.left + node.x - radius, y: hostBox.top + node.y - radius, w: radius * 2, h: radius * 2, r: radius });
         }
         host.dataset.nodes = JSON.stringify(boxes);
-        host.dataset.keepOut = JSON.stringify(blocks[0] ?? null);
+        host.dataset.area = JSON.stringify({ left: hostBox.left + safe.left, top: hostBox.top + safe.top, right: hostBox.left + safe.right, bottom: hostBox.top + safe.bottom });
+        const drawnEdges: { from: string; to: string; length: number }[] = [];
+        group?.traverse((object) => {
+          if (!(object instanceof THREE.LineSegments)) return;
+          const ids = object.userData.nodeIds as string[] | undefined;
+          if (!ids) return;
+          for (let i = 0; i < ids.length; i += 2) {
+            const a = byId.get(ids[i]); const b = byId.get(ids[i + 1]);
+            if (a && b) drawnEdges.push({ from: a.id, to: b.id, length: Math.hypot(a.x - b.x, a.y - b.y) });
+          }
+        });
+        host.dataset.edges = JSON.stringify(drawnEdges);
         const ring = group?.children.find((child) => child.userData.kind === "select-ring");
         const selectedMesh = meshes.find((entry) => entry.id === stateRef.current.selectedId);
         if (ring instanceof THREE.Mesh && selectedMesh) {
@@ -518,11 +447,6 @@ export function ForceScene({
         renderer.setScissorTest(true);
         renderer.setScissor(safe.left, viewH - safe.bottom, safe.right - safe.left, safe.bottom - safe.top);
         renderer.render(scene, camera);
-        // Clear to alpha, including links and their flow particles, through the complete HUD zone.
-        for (const rect of blocks) {
-          renderer.setScissor(rect.left - 8, viewH - rect.bottom - 8, rect.right - rect.left + 16, rect.bottom - rect.top + 16);
-          renderer.clear();
-        }
         renderer.setScissorTest(false);
         paintLabels();
       };
@@ -584,6 +508,10 @@ export function ForceScene({
           hot.add(current.clusterId);
           for (const node of current.nodes) {
             if (node.hubs.includes(current.clusterId)) hot.add(node.id);
+          }
+          for (const edge of current.edges) {
+            if (edge.from === current.clusterId) hot.add(edge.to);
+            if (edge.to === current.clusterId) hot.add(edge.from);
           }
         } else if (current.selectedId) {
           for (const id of neighborhood(current.selectedId, current.hopDepth)) hot.add(id);
@@ -676,58 +604,6 @@ export function ForceScene({
             group.add(ring);
           }
         }
-        if (current.points.length > 0) {
-          let minX = Infinity;
-          let minY = Infinity;
-          let minZ = Infinity;
-          let maxX = -Infinity;
-          let maxY = -Infinity;
-          let maxZ = -Infinity;
-          for (const point of current.points) {
-            minX = Math.min(minX, point.x);
-            minY = Math.min(minY, point.y);
-            minZ = Math.min(minZ, point.z);
-            maxX = Math.max(maxX, point.x);
-            maxY = Math.max(maxY, point.y);
-            maxZ = Math.max(maxZ, point.z);
-          }
-          const span = Math.max(maxX - minX, maxZ - minZ, 220);
-          const floor = new THREE.GridHelper(span * 1.2, 18, 0x143848, 0x0c2834);
-          const floorMaterial = floor.material;
-          const fade = (item: THREE_NS.Material) => {
-            item.transparent = true;
-            item.opacity = 0.05;
-          };
-          if (Array.isArray(floorMaterial)) floorMaterial.forEach(fade);
-          else fade(floorMaterial);
-          floor.position.set((minX + maxX) / 2, minY - 70, (minZ + maxZ) / 2);
-          group.add(floor);
-          const dustCount = 140;
-          const dust = new Float32Array(dustCount * 3);
-          for (let index = 0; index < dustCount; index += 1) {
-            const nx = ((index * 97) % 1000) / 1000;
-            const ny = ((index * 193) % 1000) / 1000;
-            const nz = ((index * 389) % 1000) / 1000;
-            dust[index * 3] = minX - 80 + nx * (maxX - minX + 160);
-            dust[index * 3 + 1] = minY - 40 + ny * (maxY - minY + 120);
-            dust[index * 3 + 2] = minZ - 80 + nz * (maxZ - minZ + 160);
-          }
-          const dustGeo = new THREE.BufferGeometry();
-          dustGeo.setAttribute("position", new THREE.BufferAttribute(dust, 3));
-          group.add(
-            new THREE.Points(
-              dustGeo,
-              new THREE.PointsMaterial({
-                color: 0x9fdfff,
-                size: 1.15,
-                transparent: true,
-                opacity: 0.32,
-                depthWrite: false,
-              }),
-            ),
-          );
-        }
-
         if (current.showEdges) {
           const focusId = current.selectedId;
           const routeSet = current.route ? new Set(current.route) : null;
@@ -800,24 +676,6 @@ export function ForceScene({
           if (crossPositions.length > 0) {
             addLines(crossPositions, crossLine);
           }
-          if (hotPositions.length >= 6) {
-            const count = Math.min(18, Math.floor(hotPositions.length / 6));
-            const flowGeo = new THREE.BufferGeometry();
-            flowGeo.setAttribute("position", new THREE.BufferAttribute(new Float32Array(count * 3), 3));
-            const flow = new THREE.Points(
-              flowGeo,
-              new THREE.PointsMaterial({
-                color: 0xb7f3ff,
-                size: 2.2,
-                transparent: true,
-                opacity: 0.75,
-                depthWrite: false,
-              }),
-            );
-            flow.userData.flow = hotPositions;
-            flow.userData.nodeIds = endpointIds.get(hotPositions);
-            group.add(flow);
-          }
           if (hotPositions.length > 0) {
             addLines(hotPositions, hotLine);
           }
@@ -830,7 +688,6 @@ export function ForceScene({
       const paintLabels = () => {
         const current = stateRef.current;
         const safe = safeRect();
-        const blocks = blockRects();
         const fade = smallLabelFade(dist, overviewDist);
         const stamp = `${placementStamp}|${hoverId}|${current.showLabels}|${fade}`;
         if (stamp === labelStamp) return;
@@ -868,20 +725,18 @@ export function ForceScene({
             labelHost.appendChild(el);
             labelEls.set(source.id, el);
           }
-          el.textContent = source.title;
+          el.textContent = source.title.replace(/\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi, "").trim() || "Untitled note";
           el.dataset.hub = source.hub ? "1" : "0";
           // Measure real glyph bounds; estimates and later nudging can hit a neighboring sphere.
           const w = el.offsetWidth;
           const h = el.offsetHeight;
           const { x, y, r } = source;
           const spots = labelSpots(x, y, r, w, h);
-          if (source.labelRect) spots.unshift({ ...source.labelRect, right: source.labelRect.left + w, bottom: source.labelRect.top + h });
           const spot = spots.find((spot) => {
             const rect = spot;
             return rect.left >= safe.left && rect.right <= safe.right && rect.top >= safe.top && rect.bottom <= safe.bottom &&
-              !blocks.some((block) => rectsIntersect(rect, block, 8)) &&
               !placed.some((other) => rectsIntersect(rect, other, 6)) &&
-              !screenNodes.some((node) => node.id !== source.id && rectIntersectsCircle(rect, node, 3));
+              !screenNodes.some((node) => node.id !== source.id && !source.hub && rectIntersectsCircle(rect, node, 3));
           });
           if (!spot) continue;
           keep.add(source.id);

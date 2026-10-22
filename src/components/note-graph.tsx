@@ -141,11 +141,15 @@ function isPayload(value: unknown): value is NoteGraphPayload {
 export function NoteGraph({
   cue = null,
   suspendEscape = false,
-  voiceLive = false,
+  graphOpen,
+  railCollapsed,
+  onToggleRail,
 }: {
   cue?: GraphCue | null;
   suspendEscape?: boolean;
-  voiceLive?: boolean;
+  graphOpen: boolean;
+  railCollapsed: boolean;
+  onToggleRail: () => void;
 }) {
   const [payload, setPayload] = useState<NoteGraphPayload | null>(null);
   const [failed, setFailed] = useState(false);
@@ -196,7 +200,7 @@ export function NoteGraph({
     case "empty":
       return <GraphEmpty payload={payload} />;
     case "ready":
-      return <GraphReady payload={payload} cue={cue} suspendEscape={suspendEscape} voiceLive={voiceLive} />;
+      return <GraphReady payload={payload} cue={cue} suspendEscape={suspendEscape} graphOpen={graphOpen} railCollapsed={railCollapsed} onToggleRail={onToggleRail} />;
     default: {
       const neverStatus: never = payload.status;
       return neverStatus;
@@ -229,12 +233,16 @@ function GraphReady({
   payload,
   cue,
   suspendEscape,
-  voiceLive,
+  graphOpen,
+  railCollapsed,
+  onToggleRail,
 }: {
   payload: NoteGraphPayload;
   cue: GraphCue | null;
   suspendEscape: boolean;
-  voiceLive: boolean;
+  graphOpen: boolean;
+  railCollapsed: boolean;
+  onToggleRail: () => void;
 }) {
   const [query, setQuery] = useState("");
   const [pathFromId, setPathFromId] = useState("");
@@ -254,11 +262,10 @@ function GraphReady({
   const [repelDraft, setRepelDraft] = useState(180);
   const [linkDraft, setLinkDraft] = useState(160);
   const [localOn, setLocalOn] = useState(false);
-  const [autoRotate, setAutoRotate] = useState(true);
+  const [autoRotate, setAutoRotate] = useState(false);
   const [hopDepth, setHopDepth] = useState(1);
   const [showOrphans, setShowOrphans] = useState(true);
-  const [narrow, setNarrow] = useState(false);
-  const [railOpen, setRailOpen] = useState(false);
+  const [filterCollapsed, setFilterCollapsed] = useState(false);
   const [readerId, setReaderId] = useState<string | null>(null);
   const [filterId, setFilterId] = useState<string | null>(null);
 
@@ -359,8 +366,6 @@ function GraphReady({
     if (suspendEscape) return;
     function onKey(event: KeyboardEvent) {
       if (event.key !== "Escape") return;
-      const target = event.target;
-      if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) return;
       setSelectedId(null);
       setReaderId(null);
       setClusterId(null);
@@ -494,18 +499,13 @@ function GraphReady({
       setReaderId(id);
       return;
     }
-    setReaderId(null);
+    setReaderId(id);
     setClusterId(null);
     setPathFromId("");
     setPathToId("");
     setSelectedId(id);
     setFrameMode("node");
     setHomeToken((token) => token + 1);
-  }
-
-  function commandZoom(kind: ZoomKind) {
-    if (kind === "fit") clearFocus();
-    setZoomCommand((current) => ({ token: current.token + 1, kind }));
   }
 
   function onSearch(value: string) {
@@ -532,11 +532,10 @@ function GraphReady({
   }
 
   useEffect(() => {
-    const media = window.matchMedia("(max-width: 1179px)");
-    const onChange = () => setNarrow(media.matches);
-    onChange();
-    media.addEventListener("change", onChange);
-    return () => media.removeEventListener("change", onChange);
+    const timer = window.setTimeout(() => {
+      try { setFilterCollapsed(localStorage.getItem("jarvis-filter-collapsed") === "true"); } catch {}
+    }, 0);
+    return () => window.clearTimeout(timer);
   }, []);
 
   useEffect(() => {
@@ -561,16 +560,16 @@ function GraphReady({
   }, []);
 
   return (
-    <div className={selected ? "graph-stage has-note" : "graph-stage"} data-voice={voiceLive ? "live" : "idle"}>
-      <aside className={narrow && !railOpen ? "face-column glass is-rail" : "face-column glass"} aria-label="Graph" data-region="left">
+    <div className={selected ? "graph-stage has-note" : "graph-stage"} data-filter-collapsed={filterCollapsed}>
+      <aside className={railCollapsed ? "face-column glass is-rail" : "face-column glass"} aria-label="Hubs and display" data-region="left">
         <button
           type="button"
           className="rail-toggle"
-          aria-expanded={narrow && !railOpen ? "false" : "true"}
-          aria-label={narrow && !railOpen ? "Open hubs" : "Collapse hubs"}
-          onClick={() => setRailOpen((open) => !open)}
+          aria-expanded={!railCollapsed}
+          aria-label={railCollapsed ? "Expand hubs" : "Collapse hubs"}
+          onClick={onToggleRail}
         >
-          {narrow && !railOpen ? "Hubs" : "Hide"}
+          {railCollapsed ? "›" : "‹ Collapse"}
         </button>
         <label className="face-search" htmlFor="graph-search">
           <span className="sr-only">Search notes</span>
@@ -578,11 +577,11 @@ function GraphReady({
             id="graph-search"
             value={query}
             autoComplete="off"
-            placeholder="Search notes, people, links"
+            placeholder="Search notes…"
             onChange={(event) => onSearch(event.target.value)}
           />
         </label>
-        <p className="face-hint">Click a node to focus it. Shift-click a second node to trace the path.</p>
+        <p className="face-hint">{graphOpen ? "Click to inspect. Shift-click to trace a path." : "Choose a hub to inspect its notes."}</p>
         <div className="face-block">
           <div className="face-block-head">
             <p>Top Hubs</p>
@@ -688,18 +687,7 @@ function GraphReady({
           <p className="face-hint">{matches.length === 0 ? "No matches." : `${matches.length} match${matches.length === 1 ? "" : "es"}`}</p>
         ) : null}
       </aside>
-      <div className="graph-tools" role="group" aria-label="Zoom">
-        <button type="button" onClick={() => commandZoom("fit")}>
-          FIT
-        </button>
-        <button type="button" onClick={() => commandZoom("in")} aria-label="Zoom in">
-          +
-        </button>
-        <button type="button" onClick={() => commandZoom("out")} aria-label="Zoom out">
-          −
-        </button>
-      </div>
-      {clusterId ? (
+      {graphOpen && clusterId ? (
         <button type="button" className="graph-crumb" onClick={clearFocus}>
           GRAPH / {clusterName.toUpperCase()}
         </button>
@@ -719,16 +707,27 @@ function GraphReady({
           onBack={clearFocus}
           onOpen={(id) => openNote(id)}
         />
-      ) : (
+      ) : graphOpen ? (
         <FilterLegend
+          collapsed={filterCollapsed}
+          onCollapse={() => {
+            const next = !filterCollapsed;
+            setFilterCollapsed(next);
+            try { localStorage.setItem("jarvis-filter-collapsed", String(next)); } catch {}
+          }}
           legend={payload.legend}
           hiddenTypes={hiddenTypes}
           onToggle={(type) =>
             setHiddenTypes((current) => (current.includes(type) ? current.filter((item) => item !== type) : [...current, type]))
           }
         />
+      ) : (
+        <aside className="graph-inspector is-side glass inspector-empty" aria-label="Inspector">
+          <p className="face-block-label">Inspector</p>
+          <p className="face-hint">Choose a hub or search your notes.</p>
+        </aside>
       )}
-      <div className="graph-canvas">
+      {graphOpen ? <div className="graph-canvas">
         <ForceScene
           nodes={payload.nodes}
           edges={payload.edges}
@@ -741,32 +740,37 @@ function GraphReady({
           showEdges={showEdges}
           hopDepth={hopDepth}
           autoRotate={autoRotate}
-          padRight={selected ? 360 : 260}
+          padRight={filterCollapsed ? 48 : 260}
           focusKey={focusKey}
           zoomToken={zoomCommand.token}
           zoomKind={zoomCommand.kind}
           onSelect={openNote}
           onClear={clearFocus}
         />
-      </div>
+      </div> : null}
     </div>
   );
 }
 
 function FilterLegend({
+  collapsed,
+  onCollapse,
   legend,
   hiddenTypes,
   onToggle,
 }: {
+  collapsed: boolean;
+  onCollapse: () => void;
   legend: GraphLegendEntry[];
   hiddenTypes: GraphNodeType[];
   onToggle: (type: GraphNodeType) => void;
 }) {
   const total = legend.reduce((sum, entry) => sum + entry.count, 0);
   return (
-    <aside className="face-filter glass" aria-label="Filter" data-region="filter">
-      <div className="face-block-head">
-        <p>Filter</p>
+    <aside className={collapsed ? "face-filter glass is-collapsed" : "face-filter glass"} aria-label="Filter" data-region="filter">
+      <button type="button" className="filter-toggle" aria-label={collapsed ? "Expand filter" : "Collapse filter"} aria-expanded={!collapsed} onClick={onCollapse}>{collapsed ? "‹" : "Filter ›"}</button>
+      {!collapsed ? <><div className="face-block-head">
+        <p>Types</p>
         <p>{total}</p>
       </div>
       <ul className="filter-list">
@@ -782,7 +786,7 @@ function FilterLegend({
             </li>
           );
         })}
-      </ul>
+      </ul></> : null}
     </aside>
   );
 }
