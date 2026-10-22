@@ -1,3 +1,4 @@
+import { capture } from "./capture.mjs";
 import { expect, test } from "@playwright/test";
 
 const sizes = [[1024,576],[1280,650],[1280,800],[1366,620],[1366,768],[1440,900],[1920,1080]];
@@ -15,6 +16,19 @@ function geometry() {
   if (!graph) {
     const orb=rect('.orb-dial-ring'), status=rect('.orb-status'), ask=rect('.face-ask'), tools=rect('.tool-row');
     if(status.top<orb.bottom-1 || ask.top<status.bottom+4 || tools.top<ask.bottom+4) hits.push('center controls intersect');
+  }
+  if (graph) {
+    const scene=document.querySelector('.force-scene');
+    const area=scene.getBoundingClientRect();
+    const nodes=JSON.parse(scene.dataset.nodes||'[]');
+    if (!nodes.length) hits.push('graph not drawn');
+    const labels=[...document.querySelectorAll('.graph-float-label')].map(el=>el.getBoundingClientRect());
+    for (let i=0;i<labels.length;i++) {
+      const r=labels[i];
+      if(r.left<area.left+15 || r.right>area.right-15 || r.top<area.top+15 || r.bottom>area.bottom-15) hits.push('graph label clipped');
+      for (const o of labels.slice(i+1)) if(r.left<o.right && r.right>o.left && r.top<o.bottom && r.bottom>o.top) hits.push('graph labels overlap');
+    }
+    for(const n of nodes) if(n.x<area.left+15 || n.y<area.top+15 || n.x+n.w>area.right-15 || n.y+n.h>area.bottom-15) hits.push('graph node clipped');
   }
   if (side.top!==48 || side.bottom>innerHeight-16 || side.right>innerWidth-16) hits.push('sidebar outside window');
   return hits;
@@ -40,9 +54,17 @@ for (const [width,height] of sizes) {
           await expect.poll(async()=>Math.round((await page.locator('.face-sidebar').boundingBox()).width)).toBe(mode==='maximum'?width/2:mode==='default'?340:300);
         }
         await expect.poll(()=>page.evaluate(geometry)).toEqual([]);
+        if ([1024,1440].includes(width) && mode!=='minimum') {
+          await page.waitForTimeout(650);
+          await capture(page,'artifacts/face/overnight',`${width}x${height}-${mode}-${railCollapsed?'rail-collapsed':'rail-expanded'}-home`);
+        }
         await page.getByRole('button',{name:'Graph',exact:true}).click();
         await expect(page.locator('.force-scene')).toHaveAttribute('data-scene','ready');
         await expect.poll(()=>page.evaluate(geometry)).toEqual([]);
+        if ([1024,1440].includes(width) && mode!=='minimum') {
+          await page.waitForTimeout(650);
+          await capture(page,'artifacts/face/overnight',`${width}x${height}-${mode}-${railCollapsed?'rail-collapsed':'rail-expanded'}-graph`);
+        }
         await page.getByRole('button',{name:'Home',exact:true}).click();
         if(mode==='collapsed') await page.getByRole('button',{name:'Open sidebar',exact:true}).click();
       }
@@ -71,13 +93,15 @@ for (const [width,height] of sizes) {
   });
 }
 
-test('pointer drag clamps width at minimum and half the window', async ({page})=>{
+test('pointer drag keeps the center clear and clamps width at minimum and half the window', async ({page})=>{
+  await page.setViewportSize({width:1024,height:576});
   await page.addInitScript(()=>{sessionStorage.setItem('jarvis-boot','1');localStorage.setItem('jarvis-spoken-replies','false');});
   await page.goto('/');
+  await expect(page.locator('.hub-list button').first()).toBeVisible();
   const grip=page.getByRole('separator',{name:'Resize sidebar'});
   await expect(grip).toBeVisible();
-  let r=await grip.boundingBox();await page.mouse.move(r.x+r.width/2,r.y+100);await page.mouse.down();await page.mouse.move(20,r.y+100);await page.mouse.up();
-  await expect.poll(async()=>Math.round((await page.locator('.face-sidebar').boundingBox()).width)).toBe(720);
-  r=await grip.boundingBox();await page.mouse.move(r.x+r.width/2,r.y+100);await page.mouse.down();await page.mouse.move(1435,r.y+100);await page.mouse.up();
+  let r=await grip.boundingBox();await page.mouse.move(r.x+r.width/2,r.y+100);await page.mouse.down();await page.mouse.move(20,r.y+100);await expect.poll(()=>page.evaluate(geometry)).toEqual([]);await page.mouse.up();
+  await expect.poll(async()=>Math.round((await page.locator('.face-sidebar').boundingBox()).width)).toBe(512);
+  r=await grip.boundingBox();await page.mouse.move(r.x+r.width/2,r.y+100);await page.mouse.down();await page.mouse.move(1019,r.y+100);await page.mouse.up();
   await expect.poll(async()=>Math.round((await page.locator('.face-sidebar').boundingBox()).width)).toBe(300);
 });

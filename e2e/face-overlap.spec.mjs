@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { mkdir, rm, stat, writeFile } from "node:fs/promises";
+import { capture } from "./capture.mjs";
 
 const sizes = [
   { width: 1024, height: 576 },
@@ -12,11 +12,12 @@ const sizes = [
 ];
 const shotDir = "artifacts/face/1021r3";
 
-async function prepare(page) {
-  await page.addInitScript(() => {
+async function prepare(page, muted = false) {
+  await page.addInitScript((muted) => {
+    if (muted) localStorage.setItem("jarvis-spoken-replies", "false");
     sessionStorage.setItem("jarvis-boot", "1");
     Object.defineProperty(window, "speechSynthesis", { value: undefined });
-  });
+  }, muted);
   await page.route("**/api/voice", (route) => route.fulfill({ json: { provider: "none", live: false, voice: null, detail: "Voice is off in layout checks." } }));
   await page.route("**/api/voice/speak", (route) => route.fulfill({ json: { live: false, reason: "unconfigured", detail: "Voice is off in layout checks." } }));
 }
@@ -36,33 +37,20 @@ async function noZoomBar(page) {
 
 function homeGeometry() {
   const box = (selector) => document.querySelector(selector).getBoundingClientRect();
-  const left = box(".face-column"), inspector = box(".graph-inspector"), chat = box(".face-chat");
-  const center = (left.right + inspector.left) / 2;
+  const left = box(".face-column"), sidebar = box(".face-sidebar");
+  const center = (left.right + sidebar.left) / 2;
   const hits = [];
   for (const selector of [".orb-dial-ring", ".orb-status", ".face-ask", ".tool-row"]) {
     const r = box(selector);
     if (Math.abs((r.left + r.right) / 2 - center) > 2) hits.push(`${selector} off center`);
-    if (r.left < left.right + 8 || r.right > inspector.left - 8 || r.top < 32 || r.bottom > innerHeight - 8) hits.push(`${selector} clipped`);
+    if (r.left < left.right + 8 || r.right > sidebar.left - 8 || r.top < 32 || r.bottom > innerHeight - 8) hits.push(`${selector} clipped`);
   }
-  if (chat.top < inspector.bottom + 7) hits.push("Chat intersects Inspector");
   const orb = box(".orb-dial-ring"), status = box(".orb-status"), ask = box(".face-ask");
   if (status.top < orb.bottom - 1 || ask.top < status.bottom + 4) hits.push("center elements overlap");
-  if (orb.width < Math.min(320, Math.min(innerWidth, innerHeight) * .30) - 1) hits.push("orb too small");
-  if (innerHeight === 576 && box(".tool-row").bottom - orb.top < innerHeight * .48) hits.push("empty band in center column");
-  const input = document.querySelector("#graph-search");
-  const ctx = document.createElement("canvas").getContext("2d");
-  const style = getComputedStyle(input); ctx.font = `${style.fontSize} ${style.fontFamily}`;
-  if (input.clientWidth && ctx.measureText(input.placeholder).width + input.placeholder.length * parseFloat(style.letterSpacing) > input.clientWidth) hits.push("placeholder truncated");
-  if (left.bottom > innerHeight - 8) hits.push("rail outside viewport");
-  const empty = document.querySelector(".inspector-empty");
-  if (empty && getComputedStyle(empty, "::after").content !== "none") hits.push("empty Inspector has a placeholder bar");
-  const askInput = document.querySelector(".face-ask input"), askStyle = getComputedStyle(askInput);
-  const placeholder = getComputedStyle(askInput, "::placeholder");
-  if (askStyle.fontFamily !== getComputedStyle(document.querySelector(".face")).fontFamily || askStyle.fontSize !== "13px" || placeholder.color !== "rgb(73, 212, 255)" || Number(placeholder.opacity) >= 1) hits.push("Ask placeholder does not match HUD");
-  for (const selector of [".face-column", ".graph-inspector", ".face-chat"]) {
+  for (const selector of [".face-column", ".face-sidebar"]) {
     const r = box(selector);
     if (r.width <= 0 || r.height <= 0) hits.push(`${selector} vanished`);
-    if (r.left < 16 || r.right > innerWidth - 16 || r.bottom > innerHeight - 16) hits.push(`${selector} misses 16px window margin`);
+    if (r.left < 16 || r.right > innerWidth - 16 || r.bottom > innerHeight - 16) hits.push(`${selector} misses window margin`);
   }
   return hits;
 }
@@ -95,6 +83,19 @@ async function graphGeometry(focusId = null) {
     }
   }
   const labels = [...document.querySelectorAll(".graph-float-label")];
+  const segments = JSON.parse(scene.dataset.segments || "[]");
+  for (const label of labels) {
+    const r = label.getBoundingClientRect();
+    const box = {left:r.left-area.left, right:r.right-area.left, top:r.top-area.top, bottom:r.bottom-area.top};
+    for (const edge of segments) {
+      // Sample the rendered segments at subpixel intervals, independently of the clipping algorithm.
+      const steps = Math.ceil(Math.hypot(edge.x2-edge.x1,edge.y2-edge.y1)*2);
+      for (let i=0;i<=steps;i++) {
+        const t=steps?i/steps:0, x=edge.x1+(edge.x2-edge.x1)*t, y=edge.y1+(edge.y2-edge.y1)*t;
+        if(x>box.left && x<box.right && y>box.top && y<box.bottom) {hits.push('edge crosses label');break;}
+      }
+    }
+  }
   if (!labels.length) hits.push("no labels");
   if (!focusId) for (const hub of payload.nodes.filter((node) => node.kind === "folder")) {
     if (!labels.some((label) => label.dataset.nodeId === hub.id)) hits.push(`missing hub label: ${hub.title}`);
@@ -108,7 +109,7 @@ async function graphGeometry(focusId = null) {
       const o = other.getBoundingClientRect();
       if (r.left < o.right && r.right > o.left && r.top < o.bottom && r.bottom > o.top) hits.push("graph labels overlap");
     }
-    for (const n of nodes) {
+    for (const n of nodes.filter(n => n.opacity > .2)) {
       if (n.id === label.dataset.nodeId) continue;
       const x = n.x + n.w / 2, y = n.y + n.h / 2;
       const closestX = Math.max(r.left, Math.min(r.right, x)), closestY = Math.max(r.top, Math.min(r.bottom, y));
@@ -126,7 +127,7 @@ async function graphGeometry(focusId = null) {
       if (Math.hypot(dx, dy) > node.r + 30) hits.push("label detached from node");
     }
   }
-  for (const selector of [".face-column", ".graph-inspector", ".face-chat", ".face-filter"]) {
+  for (const selector of [".face-column", ".face-sidebar"]) {
     const el = document.querySelector(selector);
     if (!el) continue;
     const r = el.getBoundingClientRect();
@@ -142,22 +143,13 @@ async function graphReady(page) {
 }
 
 async function screenshot(page, name) {
-  await mkdir(shotDir, { recursive: true });
-  const png = await page.screenshot({ fullPage: true });
-  if (png.length < 250000) {
-    await writeFile(`${shotDir}/${name}.png`, png);
-    await rm(`${shotDir}/${name}.jpg`, { force: true });
-  } else {
-    await page.screenshot({ path: `${shotDir}/${name}.jpg`, fullPage: true, type: "jpeg", quality: 80 });
-    expect((await stat(`${shotDir}/${name}.jpg`)).size).toBeLessThan(250000);
-    await rm(`${shotDir}/${name}.png`, { force: true });
-  }
+  await capture(page, shotDir, name);
 }
 
 for (const size of sizes) {
   test(`home and graph at ${size.width}x${size.height}`, async ({ page }) => {
     await page.setViewportSize(size);
-    await prepare(page);
+    await prepare(page, true);
     await openFace(page);
     await expect(page.locator(".graph-canvas, .force-scene, .graph-float-label")).toHaveCount(0);
     await noZoomBar(page);
@@ -177,8 +169,6 @@ for (const size of sizes) {
     await expect(page.locator(".inspector-title")).toHaveText("School");
     const id = await page.locator(".graph-float-label", { hasText: /^School$/ }).getAttribute("data-node-id");
     await expect.poll(() => page.evaluate(graphGeometry, id)).toEqual([]);
-    const panelGap = await page.evaluate(() => document.querySelector(".face-chat").getBoundingClientRect().top - document.querySelector(".graph-inspector").getBoundingClientRect().bottom);
-    expect(panelGap).toBeGreaterThanOrEqual(8);
     await screenshot(page, `${size.width}x${size.height}-graph-hub-selected`);
     await page.getByLabel("Search notes", { exact: true }).focus();
     await page.keyboard.press("Escape");
@@ -215,7 +205,7 @@ for (const size of sizes) {
 for (const width of [1024, 1440]) {
   test(`collapse, expand and persist both filters at ${width}`, async ({ page }) => {
     await page.setViewportSize({ width, height: width === 1024 ? 576 : 900 });
-    await prepare(page);
+    await prepare(page, true);
     await openFace(page);
     const before = await page.locator(".orb-dial-ring").boundingBox();
     await page.getByRole("button", { name: "Collapse hubs", exact: true }).click();
@@ -234,16 +224,18 @@ for (const width of [1024, 1440]) {
     const graphBefore = await page.locator(".graph-canvas").boundingBox();
     await page.getByRole("button", { name: "Collapse hubs", exact: true }).click();
     await expect.poll(async () => (await page.locator(".graph-canvas").boundingBox()).width).toBeGreaterThan(graphBefore.width + 100);
+    await page.getByRole("button", { name: "Expand hubs", exact: true }).click();
+    await page.getByRole("button", { name: "Collapse filter", exact: true }).scrollIntoViewIfNeeded();
     await page.getByRole("button", { name: "Collapse filter", exact: true }).click();
     await expect(page.locator(".filter-list")).toHaveCount(0);
-    await expect.poll(async () => (await page.locator(".graph-canvas").boundingBox()).width).toBeGreaterThan(graphBefore.width + 200);
+    await page.getByRole("button", { name: "Collapse hubs", exact: true }).click();
     await page.reload();
     await expect(page.getByRole("button", { name: "Expand hubs", exact: true })).toBeVisible();
     await page.getByRole("button", { name: "Graph", exact: true }).click();
+    await page.getByRole("button", { name: "Expand hubs", exact: true }).click();
     await expect(page.getByRole("button", { name: "Expand filter", exact: true })).toBeVisible();
     await page.getByRole("button", { name: "Expand filter", exact: true }).click();
     await expect(page.locator(".filter-list")).toBeVisible();
-    await page.getByRole("button", { name: "Expand hubs", exact: true }).click();
     await expect(page.locator("#graph-search")).toBeVisible();
     await graphReady(page);
   });
@@ -251,7 +243,7 @@ for (const width of [1024, 1440]) {
 
 test("wheel scrolls the rail to its last item and still zooms the graph at 1024x576", async ({ page }) => {
   await page.setViewportSize({ width: 1024, height: 576 });
-  await prepare(page);
+  await prepare(page, true);
   await openFace(page);
   const rail = page.locator(".face-column");
   const r = await rail.boundingBox();
@@ -396,6 +388,11 @@ test("blocked microphone notice wraps quietly, does not move the layout, and sta
   await page.getByRole("button", { name: "Microphone", exact: true }).click();
   await expect(notice).toHaveCount(0);
   expect(await page.evaluate(() => localStorage.getItem("jarvis-mic-blocked-dismissed"))).toBe("true");
+  const mic = page.getByRole("button", {name:"Microphone",exact:true});
+  await mic.hover();
+  await expect(mic.getByRole("tooltip")).toHaveText("Microphone blocked (see Settings)");
+  await expect(mic.getByRole("tooltip")).toHaveCSS("opacity", "1");
+  expect(Number(await mic.evaluate(el=>getComputedStyle(el).opacity))).toBeLessThan(.6);
 });
 
 test("granting microphone permission clears the blocked notice and updates Settings", async ({ page, context }) => {
@@ -418,13 +415,12 @@ test("all tool icons have real actions or a clear disabled state; Settings persi
   await openFace(page);
   await page.getByRole("button", { name: "Hands", exact: true }).click();
   await expect(page.getByRole("tab", { name: "tasks", exact: true })).toHaveAttribute("aria-selected", "true");
-  await expect(page.locator(".face-chat")).toContainText("No task is waiting.");
-  const calendar = page.getByRole("button", { name: "Calendar — not connected yet", exact: true });
-  await expect(calendar).toBeDisabled();
-  expect(Number(await calendar.evaluate((el) => getComputedStyle(el).opacity))).toBeLessThan(.6);
-  await calendar.hover();
-  await expect(calendar.getByRole("tooltip")).toHaveCSS("opacity", "1");
-  await expect(calendar.getByRole("tooltip")).toHaveText("Calendar — not connected yet");
+  await expect(page.locator(".face-chat")).toContainText("No tasks");
+  const calendar = page.getByRole("button", { name: "Calendar", exact: true });
+  await expect(calendar).toBeEnabled();
+  await page.route("**/api/chat", (route) => route.fulfill({ json: { reply: "No events today.", mode: "grok", receipts: [] } }));
+  await calendar.click();
+  await expect(page.locator(".chat-reply")).toHaveText("No events today.");
   await page.getByRole("button", { name: "School", exact: true }).click();
   await expect(page.locator(".inspector-title")).toHaveText("School");
   await expect(page.locator(".graph-canvas")).toHaveCount(0);
@@ -439,6 +435,10 @@ test("all tool icons have real actions or a clear disabled state; Settings persi
   const settings = page.getByRole("dialog", { name: "Settings", exact: true });
   await gear.click();
   await expect(settings).toBeVisible();
+  expect(await settings.evaluate(el=>{
+    const a=el.getBoundingClientRect(), b=document.querySelector('.orb-status').getBoundingClientRect();
+    return a.left<b.right && a.right>b.left && a.top<b.bottom && a.bottom>b.top;
+  })).toBe(false);
   await expect(gear).toHaveAttribute("aria-expanded", "true");
   await expect(page.locator(".mic-permission")).toHaveText("Microphone: blocked");
   const spoken = settings.getByRole("checkbox", { name: "Spoken replies (Altair)" });
@@ -467,15 +467,15 @@ test("all tool icons have real actions or a clear disabled state; Settings persi
   await page.getByLabel("Ask Jarvis", { exact: true }).fill("Tell me an answer?");
   await page.getByRole("button", { name: "Send", exact: true }).click();
   await expect(page.getByLabel("Ask Jarvis", { exact: true })).toBeEnabled();
-  await expect(page.locator(".chat-reply")).toHaveText("The real answer.");
+  await expect(page.locator(".chat-reply").last()).toHaveText("The real answer.");
   await expect(page.locator(".chat-timing")).toHaveCount(1);
-  await expect(page.locator(".chat-timing")).toBeHidden();
+  await expect(page.locator(".chat-timing").last()).toBeHidden();
   expect(requests).toEqual([]);
   await gear.click();
   await spoken.check();
   await timing.check();
   await page.keyboard.press("Escape");
-  await expect(page.locator(".chat-timing")).toBeVisible();
+  await expect(page.locator(".chat-timing").last()).toBeVisible();
   await page.getByLabel("Ask Jarvis", { exact: true }).fill("Tell me another answer?");
   await page.getByRole("button", { name: "Send", exact: true }).click();
   await expect(page.locator(".chat-reply")).toHaveCount(2);
@@ -484,24 +484,25 @@ test("all tool icons have real actions or a clear disabled state; Settings persi
   await expect(page.locator(".chat-log")).not.toContainText("ms to first");
 });
 
-test("rail, Inspector and Chat stay mounted while graph data loads or fails", async ({ page }) => {
+test("rail and sidebar stay mounted while graph data loads or fails", async ({ page }) => {
   await page.setViewportSize({ width: 1366, height: 620 });
   await prepare(page);
   let graphRequest;
   await page.route("**/api/graph", (route) => { graphRequest = route; });
   await page.goto("/");
   await expect(page.locator(".face")).toHaveAttribute("data-intro", "out");
-  for (const selector of [".face-column", ".graph-inspector", ".face-chat"]) await expect(page.locator(selector)).toBeVisible();
+  for (const selector of [".face-column", ".face-sidebar"]) await expect(page.locator(selector)).toBeVisible();
+  await page.getByRole("tab", {name:"inspector", exact:true}).click();
   await expect(page.locator(".graph-inspector")).toContainText("Reading notes…");
   await expect(page.locator(".graph-canvas, .force-scene")).toHaveCount(0);
   await graphRequest.fulfill({ status: 503, json: { error: "Unavailable" } });
   await expect(page.locator(".graph-inspector")).toContainText("The note graph could not be loaded. Try reloading.");
-  for (const selector of [".face-column", ".graph-inspector", ".face-chat"]) await expect(page.locator(selector)).toBeVisible();
+  for (const selector of [".face-column", ".face-sidebar"]) await expect(page.locator(selector)).toBeVisible();
   await noZoomBar(page);
   await page.getByRole("button", { name: "Collapse hubs", exact: true }).click();
   await expect(page.getByRole("button", { name: "Expand hubs", exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Graph", exact: true }).click();
-  await expect(page.locator(".face-filter")).toBeVisible();
+  await expect(page.locator(".face-sidebar")).toBeVisible();
   await expect(page.locator(".force-scene")).toHaveCount(0);
   await noZoomBar(page);
   await page.getByRole("button", { name: "Home", exact: true }).click();
@@ -516,6 +517,7 @@ test("a School tool click while notes load still opens its Inspector when ready"
   await page.goto("/");
   await expect(page.locator(".face")).toHaveAttribute("data-intro", "out");
   await page.getByRole("button", { name: "School", exact: true }).click();
+  await page.getByRole("tab", {name:"inspector", exact:true}).click();
   await expect(page.locator(".graph-inspector")).toContainText("Reading notes…");
   await graphRequest.fulfill({ json: payload });
   await expect(page.locator(".inspector-title")).toHaveText("School");

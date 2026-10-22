@@ -127,6 +127,12 @@ export function useVoice(onSpeakingChange: (active: boolean) => void, spokenRepl
   }, []);
 
   useEffect(() => {
+    if (!notice || notice === MIC_BLOCKED_NOTICE) return;
+    const timer = window.setTimeout(() => setNotice(null), 6000);
+    return () => window.clearTimeout(timer);
+  }, [notice]);
+
+  useEffect(() => {
     if (spokenReplies) return;
     stopSpeaking();
     levelRef.current = 0;
@@ -265,7 +271,10 @@ export function useVoice(onSpeakingChange: (active: boolean) => void, spokenRepl
     }
 
     const started = startBrowserListen({
-      onTranscript: onText,
+      onTranscript: (text, isFinal) => {
+        setNotice(null);
+        onText(text, isFinal);
+      },
       onError: (message) => {
         if (message) setNotice(message);
         if (message === MIC_BLOCKED_NOTICE) setMicPermission("denied");

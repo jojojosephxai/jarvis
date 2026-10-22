@@ -22,7 +22,7 @@ const ForceScene = dynamic(() => import("@/components/force-scene").then((mod) =
 
 const EMPTY: NoteGraphPayload = {
   status: "not-wired",
-  detail: "",
+  detail: "No notes available. Connect a vault or add notes to begin.",
   nodes: [],
   edges: [],
   noteCount: 0,
@@ -183,7 +183,7 @@ export function NoteGraph({
 
   const loadNotice = failed
     ? "The note graph could not be loaded. Try reloading."
-    : !payload ? "Reading notes…" : payload.status === "ready" ? "" : payload.detail;
+    : !payload ? "Reading notes…" : payload.status === "ready" ? "" : payload.detail || EMPTY.detail;
   return <GraphReady payload={payload ?? EMPTY} loadNotice={loadNotice} cue={cue} suspendEscape={suspendEscape} graphOpen={graphOpen} onHome={onHome} railCollapsed={railCollapsed} onToggleRail={onToggleRail} inspectorHost={inspectorHost} onInspect={onInspect} />;
 }
 
@@ -718,6 +718,7 @@ function GraphReady({
         <aside className="graph-inspector is-docked inspector-empty" aria-label="Inspector">
           <p className="face-block-label">No node selected</p>
           <p className="face-hint">{loadNotice || "Choose a hub or click a node to explore its notes and connections."}</p>
+          {payload.nodes.length === 0 ? <p className="face-hint">0 notes · 0 connections</p> : null}
         </aside>
       ), inspectorHost) : null}
       {graphOpen && payload.status === "ready" ? <div className="graph-canvas">

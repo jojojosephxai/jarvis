@@ -26,54 +26,88 @@ export function rectIntersectsCircle(rect: ScreenRect, node: Pick<ScreenNode, "x
   return Math.hypot(node.x - x, node.y - y) < node.r + gap;
 }
 
-/** Pack overview clusters into separate cells, then fit one coordinate system to the viewport. */
+/** Keep screen-space clusters proportional to their populations, with a stable organic stagger. */
 export function frameScreenNodes(nodes: ScreenNode[], free: ScreenRect, focusId: string | null, near: Set<string>, edges: { from: string; to: string }[] = []): ScreenNode[] {
   if (!nodes.length) return [];
-  let placed = focusId ? nodes.filter((node) => near.has(node.id)) : nodes;
-  if (!placed.length) return [];
-  const width = free.right - free.left;
-  const height = free.bottom - free.top;
-  const focus = placed.find((node) => node.id === focusId);
-  if (focus) {
-    const members = placed.filter((node) => node !== focus).sort((a, b) => b.priority - a.priority || a.id.localeCompare(b.id));
+  const width = free.right - free.left, height = free.bottom - free.top;
+  if (focusId && near.has(focusId)) {
+    const overview = frameScreenNodes(nodes, free, null, new Set());
+    const members = nodes.filter((node) => near.has(node.id) && node.id !== focusId).sort((a, b) => b.priority - a.priority || a.id.localeCompare(b.id));
+    const focus = nodes.find((node) => node.id === focusId)!;
     const golden = Math.PI * (3 - Math.sqrt(5));
-    placed = [{ ...focus, x: 0, y: -1.4 }, ...members.map((node, index) => {
-      const radius = Math.sqrt((index + 3) / (members.length + 2));
-      return { ...node, x: Math.cos(index * golden) * radius, y: Math.sin(index * golden) * radius };
+    const active = [{ ...focus, x: 0, y: 0 }, ...members.map((node, index) => {
+      const radius = Math.sqrt(.35 + .65 * (index + 1) / Math.max(1, members.length));
+      const angle = .55 + (index * golden) % (Math.PI * 2 - 1.1);
+      return { ...node, x: Math.cos(angle) * radius, y: Math.sin(angle) * radius };
     })];
+    const byId = new Map(active.map((node) => [node.id, node]));
+    const longest = Math.max(1, ...edges.filter((edge) => edge.from === focusId || edge.to === focusId).map((edge) => {
+      const a = byId.get(edge.from), b = byId.get(edge.to);
+      return a && b ? Math.hypot(a.x - b.x, a.y - b.y) : 0;
+    }));
+    const scale = Math.max(1, Math.min(width, height) * .335 - 4) / longest;
+    for (const node of active) byId.set(node.id, { ...node, x: (free.left + free.right) / 2 + node.x * scale, y: (free.top + free.bottom) / 2 + node.y * scale });
+    return overview.map((node) => byId.get(node.id) ?? node);
   }
-  const hubs = focusId ? [] : nodes.filter((node) => node.hubId === node.id).sort((a, b) => a.id.localeCompare(b.id));
+  let placed = nodes;
+  const hubs = nodes.filter((node) => node.hubId === node.id).sort((a, b) => a.id.localeCompare(b.id));
   if (hubs.length) {
-    const columns = Math.max(1, Math.round(Math.sqrt(hubs.length * width / height)));
-    const rows = Math.ceil(hubs.length / columns);
-    const cellW = width / columns, cellH = height / rows;
     const groups = new Map(hubs.map((hub) => [hub.id, [] as ScreenNode[]]));
     for (const node of nodes) {
       const home = groups.has(node.hubId ?? "") ? node.hubId! : [...hubs].sort((a, b) => Math.hypot(a.x - node.x, a.y - node.y) - Math.hypot(b.x - node.x, b.y - node.y))[0].id;
       groups.get(home)!.push(node);
     }
+    const cells = new Map<string, ScreenRect>();
+    const split = (items: ScreenNode[], rect: ScreenRect) => {
+      if (items.length === 1) { cells.set(items[0].id, rect); return; }
+      const weight = (hub: ScreenNode) => groups.get(hub.id)!.length + 8;
+      const total = items.reduce((sum, hub) => sum + weight(hub), 0);
+      let count = 1, first = weight(items[0]);
+      while (count < items.length - 1 && first + weight(items[count]) / 2 < total / 2) first += weight(items[count++]);
+      if (rect.right - rect.left > rect.bottom - rect.top) {
+        const x = rect.left + (rect.right - rect.left) * first / total;
+        split(items.slice(0, count), { ...rect, right: x });
+        split(items.slice(count), { ...rect, left: x });
+      } else {
+        const y = rect.top + (rect.bottom - rect.top) * first / total;
+        split(items.slice(0, count), { ...rect, bottom: y });
+        split(items.slice(count), { ...rect, top: y });
+      }
+    };
+    split(hubs, free);
     placed = hubs.flatMap((hub, index) => {
-      const members = groups.get(hub.id)!;
-      const reach = Math.max(...members.map((node) => node.r * 1.6));
-      const radius = Math.min(cellW, cellH) * .32 - reach;
+      const members = groups.get(hub.id)!, cell = cells.get(hub.id)!;
+      const cellW = cell.right - cell.left, cellH = cell.bottom - cell.top;
+      const radius = Math.max(6, Math.min(cellW, cellH) * .34 - hub.r);
       const scale = radius / Math.max(1, ...members.map((node) => Math.hypot(node.x - hub.x, node.y - hub.y)));
-      const x = free.left + (index % columns + .5) * cellW;
-      const y = free.top + (Math.floor(index / columns) + .5) * cellH;
-      // Put the hub above its members so its title has clear space beside the node.
-      return members.map((node) => ({ ...node, hubId: hub.id, x: x + (node.x - hub.x) * scale, y: node.id === hub.id ? y - radius - hub.r * 2 : y + (node.y - hub.y) * scale }));
+      const x = (cell.left + cell.right) / 2 + Math.sin(index * 2.4) * cellW * .05;
+      const y = (cell.top + cell.bottom) / 2 + Math.cos(index * 1.7) * cellH * .05;
+      return members.map((node) => ({ ...node, hubId: hub.id, x: x + (node.x - hub.x) * scale, y: node.id === hub.id ? y - radius - hub.r : y + (node.y - hub.y) * scale }));
     });
   }
-  const reach = Math.max(...placed.map((node) => node.r * 1.6)) + 20;
+  const reach = Math.max(...placed.map((node) => node.r * 1.6)) + 12;
   const minX = Math.min(...placed.map((node) => node.x)), maxX = Math.max(...placed.map((node) => node.x));
   const minY = Math.min(...placed.map((node) => node.y)), maxY = Math.max(...placed.map((node) => node.y));
-  let scale = Math.min((width - reach * 2) / Math.max(1, maxX - minX), (height - reach * 2) / Math.max(1, maxY - minY));
-  if (focusId) {
-    const byId = new Map(placed.map((node) => [node.id, node]));
-    const longest = Math.max(1, ...edges.map((edge) => {
-      const a = byId.get(edge.from), b = byId.get(edge.to);
-      return a && b ? Math.hypot(a.x - b.x, a.y - b.y) : 0;
-    }));
-    scale = Math.min(scale, Math.min(width, height) * .34 / longest);
-  }
+  const scale = Math.min((width - reach * 2) / Math.max(1, maxX - minX), (height - reach * 2) / Math.max(1, maxY - minY));
   return placed.map((node) => ({ ...node, x: (free.left + free.right) / 2 + (node.x - (minX + maxX) / 2) * scale, y: (free.top + free.bottom) / 2 + (node.y - (minY + maxY) / 2) * scale }));
+}
+
+/** Clip a screen-space edge around label boxes, preserving its visible connection on either side. */
+export function edgePieces(a: { x: number; y: number }, b: { x: number; y: number }, boxes: ScreenRect[]): [number, number][] {
+  let pieces: [number, number][] = [[0, 1]];
+  for (const box of boxes) {
+    let start = 0, end = 1;
+    for (const [origin, delta, min, max] of [[a.x, b.x - a.x, box.left - 3, box.right + 3], [a.y, b.y - a.y, box.top - 3, box.bottom + 3]]) {
+      if (Math.abs(delta) < 1e-8) { if (origin < min || origin > max) end = -1; }
+      else {
+        const t1 = (min - origin) / delta, t2 = (max - origin) / delta;
+        start = Math.max(start, Math.min(t1, t2)); end = Math.min(end, Math.max(t1, t2));
+      }
+    }
+    if (start >= end) continue;
+    pieces = pieces.flatMap(([lo, hi]) => end <= lo || start >= hi ? [[lo, hi] as [number, number]] : [
+      ...(start > lo ? [[lo, start] as [number, number]] : []), ...(end < hi ? [[end, hi] as [number, number]] : []),
+    ]);
+  }
+  return pieces;
 }

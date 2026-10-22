@@ -155,6 +155,7 @@ export function Face() {
   const [tab, setTab] = useState<LogTab>("chat");
   const [sidebarWidth, setSidebarWidth] = useState(340);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [windowWidth, setWindowWidth] = useState(1024);
   const [inspectorHost, setInspectorHost] = useState<HTMLDivElement | null>(null);
   const [resizing, setResizing] = useState(false);
   const showTab = useCallback((next: LogTab) => {
@@ -168,6 +169,12 @@ export function Face() {
     setSidebarWidth(next);
     try { localStorage.setItem("jarvis-sidebar-width", String(next)); } catch {}
   }
+  useEffect(() => {
+    const updateWidth = () => setWindowWidth(window.innerWidth);
+    updateWidth();
+    window.addEventListener("resize", updateWidth);
+    return () => window.removeEventListener("resize", updateWidth);
+  }, []);
   function toggleSidebar() {
     const next = !sidebarCollapsed;
     setSidebarCollapsed(next);
@@ -701,7 +708,7 @@ export function Face() {
     }
   }
 
-  const micHint = voice.notice && /microphone|mic\b/i.test(voice.notice) ? voice.notice : "";
+  const micHint = voice.notice ?? "";
   const blockedHint = micHint === MIC_BLOCKED_NOTICE;
   const showMicNotice = Boolean(micHint) && !(blockedHint && (micDismissed || voice.micPermission === "granted"));
   const speechLine = orb === "listening" ? draft : orb === "speaking" ? liveLine : "";
@@ -709,12 +716,10 @@ export function Face() {
 
   return (
     <div className="face" style={{ "--side": `min(50vw, ${sidebarWidth}px)` } as CSSProperties} data-sidebar-collapsed={sidebarCollapsed} data-resizing={resizing} data-intro={intro} data-mode={orb} data-view={graphOpen ? "graph" : "home"} data-rail-collapsed={railCollapsed} data-timing={showTiming}>
-      {intro === "in" ? (
-        <div className="face-loader" role="status">
+      <div className="face-loader" role="status" aria-hidden={intro === "out"}>
           <span />
           <p>Reading notes</p>
-        </div>
-      ) : null}
+      </div>
       <div className="face-stage" data-orb="center" data-mode={orb}>
         <NoteGraph inspectorHost={inspectorHost} onInspect={inspect} cue={cue} suspendEscape={working} graphOpen={graphOpen} onHome={() => setGraphOpen(false)} railCollapsed={railCollapsed} onToggleRail={() => {
           const next = !railCollapsed;
@@ -819,7 +824,7 @@ export function Face() {
               >
                 <HandIcon />
               </ToolButton>
-              <ToolButton label="Calendar — not connected yet" disabled>
+              <ToolButton label="Calendar" disabled={pending} onClick={() => void send("What is on my calendar today?")}>
                 <CalendarIcon />
               </ToolButton>
               <ToolButton label="School" onClick={() => pushCue({ focusHub: "School" })}>
@@ -830,6 +835,8 @@ export function Face() {
               </ToolButton>
               <ToolButton
                 label={voice.listening ? "Stop microphone" : "Microphone"}
+                tooltip={voice.micPermission === "denied" ? "Microphone blocked (see Settings)" : undefined}
+                dimmed={voice.micPermission === "denied"}
                 on={voice.listening}
                 onClick={() => {
                   voice.pressMic((text, isFinal) => {
@@ -875,6 +882,8 @@ export function Face() {
           </div>
       </div>
       <ChatCard
+        width={Math.min(sidebarWidth, windowWidth / 2)}
+        maxWidth={windowWidth / 2}
         collapsed={sidebarCollapsed}
         onCollapse={toggleSidebar}
         onResize={resizeSidebar}
@@ -923,12 +932,16 @@ function ChatCard({
   chatRef,
   onTab,
   onDecide,
+  width,
+  maxWidth,
   collapsed,
   onCollapse,
   onResize,
   onResizing,
   inspectorRef,
 }: {
+  width: number;
+  maxWidth: number;
   collapsed: boolean;
   onCollapse: () => void;
   onResize: (width: number) => void;
@@ -945,13 +958,12 @@ function ChatCard({
     <aside className="face-sidebar glass face-chrome" aria-label="Workspace sidebar">
       <button type="button" className="sidebar-reopen" aria-label="Open sidebar" aria-expanded={!collapsed} onClick={onCollapse}>‹ <span>{tab}</span></button>
       <div className="sidebar-content" inert={collapsed}>
-        <div className="sidebar-resize" role="separator" aria-label="Resize sidebar" aria-orientation="vertical" tabIndex={0}
+        <div className="sidebar-resize" role="separator" aria-label="Resize sidebar" aria-orientation="vertical" aria-valuemin={300} aria-valuemax={maxWidth} aria-valuenow={width} tabIndex={0}
           onPointerDown={(event) => { event.currentTarget.setPointerCapture(event.pointerId); onResizing(true); }}
           onPointerMove={(event) => { if (event.currentTarget.hasPointerCapture(event.pointerId)) onResize(window.innerWidth - event.clientX - 16); }}
           onPointerUp={(event) => { event.currentTarget.releasePointerCapture(event.pointerId); onResizing(false); }}
           onLostPointerCapture={() => onResizing(false)}
           onKeyDown={(event) => {
-            const width = event.currentTarget.parentElement!.parentElement!.getBoundingClientRect().width;
             if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
             event.preventDefault();
             onResize(event.key === "Home" ? 300 : event.key === "End" ? window.innerWidth / 2 : width + (event.key === "ArrowLeft" ? 20 : -20));
@@ -971,7 +983,7 @@ function ChatCard({
             </button>
           ))}
         </div>
-        <div className="face-chat chat-log" role="tabpanel" id={`panel-${tab === "inspector" ? "chat" : tab}`} aria-labelledby={`tab-${tab === "inspector" ? "chat" : tab}`} hidden={tab === "inspector"} ref={chatRef}>
+        <div key={tab} className="face-chat chat-log" role="tabpanel" id={`panel-${tab === "inspector" ? "chat" : tab}`} aria-labelledby={`tab-${tab === "inspector" ? "chat" : tab}`} hidden={tab === "inspector"} ref={chatRef}>
           {tab === "chat" ? <ChatLines items={items} /> : null}
           {tab === "tasks" ? <TaskLines items={items} pending={pending} onDecide={onDecide} /> : null}
           {tab === "log" ? <LogLines items={items} /> : null}
@@ -1009,7 +1021,7 @@ function SourceChips({ chips }: { chips: string[] }) {
 
 function ChatLines({ items }: { items: LogItem[] }) {
   const rows = inTimeOrder(collapseCalendar(items.filter((item) => item.kind === "you" || item.kind === "jarvis" || item.kind === "hand")));
-  if (rows.length === 0) return <p className="face-hint">Ask when you are ready.</p>;
+  if (rows.length === 0) return <div className="empty-state"><p>No chats yet</p><span>Ask Jarvis below, or use the microphone to start a conversation.</span></div>;
   return (
     <>
       {rows.map((item) => {
@@ -1060,7 +1072,7 @@ function TaskLines({
   onDecide: (id: string, plan: HandPlan, choice: "yes" | "no") => void;
 }) {
   const hands = items.filter((item) => item.kind === "hand" && !isStubTask(item));
-  if (hands.length === 0) return <p className="face-hint">No task is waiting.</p>;
+  if (hands.length === 0) return <div className="empty-state"><p>No tasks</p><span>Requests that need your approval will appear here.</span></div>;
   return (
     <>
       {hands.map((item) =>
@@ -1098,7 +1110,7 @@ function TaskLines({
 
 function LogLines({ items }: { items: LogItem[] }) {
   const rows = inTimeOrder(collapseCalendar(items));
-  if (rows.length === 0) return <p className="face-hint">Nothing yet.</p>;
+  if (rows.length === 0) return <div className="empty-state"><p>No activity yet</p><span>Your conversation and task history will appear here.</span></div>;
   return (
     <>
       {rows.map((item) => {
@@ -1151,6 +1163,8 @@ function ToolButton({
   onClick,
   disabled = false,
   expanded,
+  tooltip,
+  dimmed,
   children,
 }: {
   label: string;
@@ -1158,13 +1172,15 @@ function ToolButton({
   onClick?: () => void;
   disabled?: boolean;
   expanded?: boolean;
+  tooltip?: string;
+  dimmed?: boolean;
   children: ReactNode;
 }) {
   return (
-    <button type="button" className="tool-btn" aria-label={label} aria-disabled={disabled} aria-expanded={expanded} aria-controls={expanded !== undefined ? "face-settings" : undefined} data-on={on ? "true" : "false"} onClick={disabled ? undefined : onClick}>
+    <button type="button" className="tool-btn" data-dimmed={dimmed} aria-label={label} aria-disabled={disabled} aria-expanded={expanded} aria-controls={expanded !== undefined ? "face-settings" : undefined} data-on={on ? "true" : "false"} onClick={disabled ? undefined : onClick}>
       {children}
       <span className="tool-tip" role="tooltip">
-        {label}
+        {tooltip ?? label}
       </span>
     </button>
   );
