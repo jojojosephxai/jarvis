@@ -25,7 +25,7 @@ for (const [width, height] of sizes) test(`sourced reply, meta and follow-up ${w
   await expect(page.locator('.chat-reply').last()).toHaveText(reply);
   await expect(ask).toBeEnabled();
   const bubble = page.locator('.chat-line').last();
-  await expect(bubble.locator('.chat-chip')).toHaveText('School-schedule');
+  await expect(bubble.locator('.chat-chip')).toHaveText('School schedule');
   await expect(bubble.locator('.chat-timing')).toHaveText(/grok-4\.7 · \d+\.\ds/);
   await expect(bubble.locator('.chat-timing')).toHaveCSS('color','rgb(129, 146, 158)');
   await expect(bubble.locator('.chat-reply')).not.toContainText(/Notes used:|\(School\)/);

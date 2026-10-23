@@ -182,7 +182,7 @@ export function boundedHistory(history: ChatMessageInput[] = []): ChatMessageInp
 }
 
 export async function grokPhraseNotes(question: string, packet: string, history: ChatMessageInput[] = [], fetchImpl: typeof fetch = fetch): Promise<GrokResult> {
-  const model = pickGrokModel(question, packet.match(/# Life dashboard\n([\s\S]*?)(?:\n\nQuestion:|$)/)?.[1]);
+  const model = packet.includes("No vault search.") ? pickGrokModel(question, packet.match(/# Life dashboard\n([\s\S]*?)(?:\n\nQuestion:|$)/)?.[1]) : HARD_XAI_MODEL;
   const user = (packet.startsWith("Question:") ? packet : `Question:\n${question}\n\n${packet}`).slice(0, 12000);
   return postChat(
     chatBody(model, 0.4, 400, [
@@ -197,7 +197,7 @@ export async function grokPhraseNotes(question: string, packet: string, history:
 export async function* grokStreamSentences(question: string, packet: string, history: ChatMessageInput[] = [], fetchImpl: typeof fetch = fetch, onToken?: (text: string) => void): AsyncGenerator<string> {
   const key = process.env.XAI_API_KEY?.trim();
   if (!key) return;
-  const model = pickGrokModel(question, packet.match(/# Life dashboard\n([\s\S]*?)(?:\n\nQuestion:|$)/)?.[1]);
+  const model = packet.includes("No vault search.") ? pickGrokModel(question, packet.match(/# Life dashboard\n([\s\S]*?)(?:\n\nQuestion:|$)/)?.[1]) : HARD_XAI_MODEL;
   const user = (packet.startsWith("Current time:") || packet.startsWith("Question:")
     ? packet
     : `Question:\n${question}\n\n${packet}`

@@ -2,7 +2,7 @@ import "server-only";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { clockStamp } from "./clock";
-import { readVaultMarkdown, resolveVaultPath } from "./vault-read";
+import { readVaultMarkdown, resolveVaultPath, vaultNoteDate, OLDER_CONTEXT_DAYS } from "./vault-read";
 
 export type PinnedOptions = {
   root?: string;
@@ -21,7 +21,7 @@ async function optionalNote(directory: string, file: string): Promise<string> {
     const old = cached.get(full);
     if (old?.stamp === stamp) return old.text;
     const note = await readVaultMarkdown(directory, file);
-    const text = note?.markdown.replace(/^---\r?\n[\s\S]*?\r?\n---\s*/, "").trim() ?? "";
+    const text = note?.markdown.trim() ?? "";
     if (cached.size >= 100) cached.delete(cached.keys().next().value!);
     cached.set(full, { stamp, text });
     return text;
@@ -56,21 +56,26 @@ export function scheduleSlice(text: string, now: Date): string {
 export async function pinnedContext(question: string, options: PinnedOptions = {}): Promise<string> {
   const directory = resolveVaultPath(options.root ?? process.cwd(), options.vaultPath);
   const now = options.now ?? new Date();
-  const [notes, digest] = await Promise.all([
+  const [rawNotes, digest] = await Promise.all([
     Promise.all(files.map(file => optionalNote(directory, file))),
     Promise.resolve().then(() => options.boardDigest?.() ?? "").catch(() => ""),
   ]);
+  const notes = rawNotes.map(text => text.replace(/^---\r?\n[\s\S]*?\r?\n---\s*/, "").trim());
+  const datedLabel = (label: string, index: number) => {
+    const date = vaultNoteDate({ filePath: files[index], text: rawNotes[index] });
+    return date ? `${label} (${date}${now.getTime() - Date.parse(date) > OLDER_CONTEXT_DAYS * 86_400_000 ? ", older context" : ""})` : label;
+  };
   const [about, preferences, tone, schedule, goals] = notes;
   const tomorrow = new Date(`${dayParts(now).date}T17:00:00Z`);
   tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
   const blocks = [
-    ...[about, preferences, tone].map((text, i) => ({ label: files[i].slice(0, -3), text, limit: 500 })),
+    ...[about, preferences, tone].map((text, i) => ({ label: datedLabel(files[i].slice(0, -3), i), text, limit: 500 })),
     { label: "Today", text: scheduleSlice(schedule, now), limit: 350 },
     ...( /\btomorrow\b/i.test(question) ? [{ label: "Tomorrow", text: scheduleSlice(schedule, tomorrow), limit: 350 }] : []),
-    { label: "Goals", text: goals.split(/\n##\s/)[0], limit: 220 },
+    { label: datedLabel("Goals", 4), text: goals.split(/\n##\s/)[0], limit: 220 },
     { label: "Life dashboard", text: digest, limit: 900 },
   ].filter(block => block.text.trim());
-  const clock = `Current time: ${clockStamp(now)} (America/New_York).\nPinned profile and today:\n`;
+  const clock = `Current time: ${clockStamp(now)} (America/New_York).\nPinned profile and today (newer dated notes and today override older decisions; older context is over 30 days old):\n`;
   const available = 1400 - clock.length - blocks.reduce((n, b) => n + b.label.length + 5, 0);
   const wanted = blocks.reduce((n, b) => n + Math.min(b.text.length, b.limit), 0);
   return clock + blocks.map(b => `# ${b.label}\n${b.text.slice(0, Math.floor(Math.min(b.text.length, b.limit) * Math.min(1, available / wanted))).trim()}`).join("\n\n");

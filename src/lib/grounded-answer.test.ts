@@ -8,7 +8,7 @@ import { pinnedContext } from "./pinned-context";
 import { think, streamTurn } from "./brain";
 import { answerFromVault, wordingStaysOnNotes } from "./grounded-answer";
 import { promises as fs } from "node:fs";
-import { chunkVaultNote, loadVaultNotes, type VaultNote } from "./vault-read";
+import { chunkVaultNote, loadVaultNotes, vaultNoteDate, type VaultNote } from "./vault-read";
 
 const roots: string[] = [];
 
@@ -74,7 +74,8 @@ describe("answerFromVault", () => {
     });
     assert.match(answer.reply, /light/);
     assert.match(answer.reply, /plants/);
-    assert.match(answer.reply, /Goals|School/);
+    assert.ok(answer.sources.some(source => /Goals|School/.test(source)));
+    assert.doesNotMatch(answer.reply, /^(Goals|School):/m);
     assert.doesNotMatch(answer.reply, /Notes used:/);
   });
 
@@ -215,7 +216,8 @@ describe("think vault answers", () => {
       useModel: false,
     });
     assert.doesNotMatch(result.reply, /Notes used:/);
-    assert.match(result.reply, /Swim/);
+    assert.ok(result.sources?.includes("Swim"));
+    assert.doesNotMatch(result.reply, /^Swim:/m);
   });
 
   it("sends the current time with a vault question", async () => {
@@ -438,5 +440,31 @@ describe("heading retrieval and vault cache", () => {
       const removed = await loadVaultNotes(directory, 31003);
       assert.ok(removed.ok && !removed.notes.some(note => note.title === "School"));
     } finally { read.mock.restore(); stat.mock.restore(); }
+  });
+});
+
+describe("dated next-step context", () => {
+  it("prefers today's update over an old decision and marks older pinned goals", async () => {
+    const root = await makeVault();
+    const directory = path.join(root, "vault");
+    await mkdir(path.join(directory, "Journal"));
+    await writeFile(path.join(directory, "Old-decision.md"), '---\ndate: 2026-08-01\n---\n# Jarvis decision\nNext work: JOS-8 decision. Hands is blocked. Jarvis decision next.');
+    await writeFile(path.join(directory, "Journal", "2026-10-22.md"), '# Today\nJarvis: JOS-8 is finished. Hands is ready. Next work: polish the desktop graph.');
+    await writeFile(path.join(directory, "Goals.md"), '---\ndate: 2026-08-01\n---\n# Goals\nOld Jarvis goal: make the JOS-8 decision.');
+    await answerFromVault("What should I do next for Jarvis?", { root, vaultPath: directory, now: new Date("2026-10-22T16:00:00Z"), useModel: true,
+      complete: async (_q, packet) => {
+        const retrieved = packet.split("\nNotes:\n")[1];
+        assert.ok(retrieved.indexOf("JOS-8 is finished") < retrieved.indexOf("Hands is blocked"));
+        assert.match(retrieved, /2026-08-01, older context/);
+        assert.match(packet, /Goals \(2026-08-01, older context\)/);
+        assert.match(packet, /newer dated notes and today override older decisions/);
+        return { ok: true, text: "Polish the desktop graph; JOS-8 is finished and Hands is ready." };
+      },
+    });
+  });
+  it("recognizes updated frontmatter and dated filenames without accepting invalid dates", () => {
+    assert.equal(vaultNoteDate({ filePath: "decision.md", text: '---\ndate: 2026-08-01\nupdated: "2026-10-22T10:00:00Z"\n---' }), "2026-10-22");
+    assert.equal(vaultNoteDate({ filePath: "Journal/2026-10-22.md", text: "" }), "2026-10-22");
+    assert.equal(vaultNoteDate({ filePath: "note.md", text: "---\ndate: 2026-02-31\n---" }), null);
   });
 });

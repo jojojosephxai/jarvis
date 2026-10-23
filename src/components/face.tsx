@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useRef, useState, type CSSProperties, type ReactNode, type RefObject } from "react";
 
 import { NoteGraph, type GraphCue } from "@/components/note-graph";
+import { matchGraphNode } from "@/lib/graph-nav";
+import type { GraphNode } from "@/lib/note-graph";
 import { parseGraphCommand } from "@/lib/graph-command";
 import { mentionsCalendar } from "@/lib/intent";
 import { OrbStage } from "@/components/orb-stage";
@@ -136,6 +138,8 @@ export function Face({ realtimeAllowed = false }: { realtimeAllowed?: boolean })
   const [micDismissed, setMicDismissed] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const settingsRef = useRef<HTMLDivElement>(null);
+  const settingsPanelRef = useRef<HTMLElement>(null);
+  const [sourceNodes, setSourceNodes] = useState<GraphNode[]>([]);
   const [askFocus, setAskFocus] = useState(false);
   const [speaking, setSpeaking] = useState(false);
   const [ackOn, setAckOn] = useState(false);
@@ -311,9 +315,9 @@ export function Face({ realtimeAllowed = false }: { realtimeAllowed?: boolean })
 
   useEffect(() => {
     if (!settingsOpen) return;
-    settingsRef.current?.querySelector<HTMLInputElement>("input")?.focus();
+    settingsPanelRef.current?.querySelector<HTMLInputElement>("input")?.focus();
     const onPointer = (event: PointerEvent) => {
-      if (event.target instanceof Node && !settingsRef.current?.contains(event.target)) setSettingsOpen(false);
+      if (event.target instanceof Node && !settingsRef.current?.contains(event.target) && !settingsPanelRef.current?.contains(event.target)) setSettingsOpen(false);
     };
     const onKey = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
@@ -806,7 +810,7 @@ export function Face({ realtimeAllowed = false }: { realtimeAllowed?: boolean })
           <p>Reading notes</p>
       </div>
       <div className="face-stage" data-orb="center" data-mode={orb}>
-        <NoteGraph inspectorHost={inspectorHost} onInspect={inspect} cue={cue} suspendEscape={working} graphOpen={graphOpen} onHome={() => setGraphOpen(false)} railCollapsed={railCollapsed} onToggleRail={() => {
+        <NoteGraph onNodes={setSourceNodes} inspectorHost={inspectorHost} onInspect={inspect} cue={cue} suspendEscape={working} graphOpen={graphOpen} onHome={() => setGraphOpen(false)} railCollapsed={railCollapsed} onToggleRail={() => {
           const next = !railCollapsed;
           setRailCollapsed(next);
           try { localStorage.setItem("jarvis-rail-collapsed", String(next)); } catch {}
@@ -928,47 +932,49 @@ export function Face({ realtimeAllowed = false }: { realtimeAllowed?: boolean })
                 <MicIcon />
               </ToolButton>
               <div className="settings-control" ref={settingsRef}>
-                <ToolButton label="Settings" expanded={settingsOpen} onClick={() => setSettingsOpen((open) => !open)}>
+                <ToolButton label="Settings" expanded={settingsOpen} onClick={() => { if (!settingsOpen && sidebarCollapsed) toggleSidebar(); setSettingsOpen((open) => !open); }}>
                   <GearIcon />
                 </ToolButton>
-                {settingsOpen ? (
-                  <section id="face-settings" className="face-settings glass" role="dialog" aria-label="Settings">
-                    <div className="face-block-head">
-                      <p>Settings</p>
-                      <button type="button" aria-label="Close settings" onClick={() => setSettingsOpen(false)}>×</button>
-                    </div>
-                    <label className="face-check">
-                      <input type="checkbox" checked={spokenReplies} onChange={(event) => {
-                        setSpokenReplies(event.target.checked);
-                        chatSession.current?.setEnabled(fastVoice && event.target.checked);
-                        try { localStorage.setItem("jarvis-spoken-replies", String(event.target.checked)); } catch {}
-                      }} />
-                      Spoken replies (Altair)
-                    </label>
-                    <label className="face-check">
-                      <input type="checkbox" checked={showTiming} onChange={(event) => {
-                        setShowTiming(event.target.checked);
-                        try { localStorage.setItem("jarvis-show-timing", String(event.target.checked)); } catch {}
-                      }} />
-                      Show timing meta
-                    </label>
-                    <label className="face-check">
-                      <input type="checkbox" checked={fastVoice} onChange={(event) => {
-                        setFastVoice(event.target.checked);
-                        chatSession.current?.setEnabled(event.target.checked && spokenReplies);
-                        try { localStorage.setItem(FAST_VOICE_STORAGE_KEY, String(event.target.checked)); } catch {}
-                      }} />
-                      Fast voice (beta)
-                    </label>
-                    <p className="voice-minutes">Session: {voiceMinutes.toFixed(1)} min</p>
-                    <p className="mic-permission">Microphone: {voice.micPermission === "granted" ? "allowed" : voice.micPermission === "denied" ? "blocked" : voice.micPermission === "prompt" ? "not requested" : "status unavailable"}</p>
-                  </section>
-                ) : null}
               </div>
             </div>
           </div>
       </div>
+      {settingsOpen ? (
+        <section ref={settingsPanelRef} id="face-settings" className="face-settings glass" role="dialog" aria-label="Settings">
+          <div className="face-block-head">
+            <p>Settings</p>
+            <button type="button" aria-label="Close settings" onClick={() => setSettingsOpen(false)}>×</button>
+          </div>
+          <label className="face-check">
+            <input type="checkbox" checked={spokenReplies} onChange={(event) => {
+              setSpokenReplies(event.target.checked);
+              chatSession.current?.setEnabled(fastVoice && event.target.checked);
+              try { localStorage.setItem("jarvis-spoken-replies", String(event.target.checked)); } catch {}
+            }} />
+            Spoken replies (Altair)
+          </label>
+          <label className="face-check">
+            <input type="checkbox" checked={showTiming} onChange={(event) => {
+              setShowTiming(event.target.checked);
+              try { localStorage.setItem("jarvis-show-timing", String(event.target.checked)); } catch {}
+            }} />
+            Show timing meta
+          </label>
+          <label className="face-check">
+            <input type="checkbox" checked={fastVoice} onChange={(event) => {
+              setFastVoice(event.target.checked);
+              chatSession.current?.setEnabled(event.target.checked && spokenReplies);
+              try { localStorage.setItem(FAST_VOICE_STORAGE_KEY, String(event.target.checked)); } catch {}
+            }} />
+            Fast voice (beta)
+          </label>
+          <p className="voice-minutes">Session: {voiceMinutes.toFixed(1)} min</p>
+          <p className="mic-permission">Microphone: {voice.micPermission === "granted" ? "allowed" : voice.micPermission === "denied" ? "blocked" : voice.micPermission === "prompt" ? "not requested" : "status unavailable"}</p>
+        </section>
+      ) : null}
       <ChatCard
+        sourceNodes={sourceNodes}
+        onSource={source => { pushCue({ openNote: source }); inspect(); }}
         width={Math.min(sidebarWidth, windowWidth / 2)}
         maxWidth={windowWidth / 2}
         collapsed={sidebarCollapsed}
@@ -1014,6 +1020,8 @@ function WorkingPanel({ job, leaving, onStop }: { job: Job; leaving: boolean; on
 }
 
 function ChatCard({
+  sourceNodes,
+  onSource,
   items,
   fastVoiceLog,
   tab,
@@ -1029,6 +1037,8 @@ function ChatCard({
   onResizing,
   inspectorRef,
 }: {
+  sourceNodes: GraphNode[];
+  onSource: (source: string) => void;
   width: number;
   maxWidth: number;
   collapsed: boolean;
@@ -1074,7 +1084,7 @@ function ChatCard({
           ))}
         </div>
         <div key={tab} className="face-chat chat-log" role="tabpanel" id={`panel-${tab === "inspector" ? "chat" : tab}`} aria-labelledby={`tab-${tab === "inspector" ? "chat" : tab}`} hidden={tab === "inspector"} ref={chatRef}>
-          {tab === "chat" ? <ChatLines items={items} /> : null}
+          {tab === "chat" ? <ChatLines items={items} sourceNodes={sourceNodes} onSource={onSource} /> : null}
           {tab === "tasks" ? <TaskLines items={items} pending={pending} onDecide={onDecide} /> : null}
           {tab === "log" ? <>{fastVoiceLog ? <p className="chat-timing" role="status">{fastVoiceLog}</p> : null}<LogLines items={items} /></> : null}
         </div>
@@ -1097,20 +1107,21 @@ function TimingLine({ tokenMs, voiceMs, model }: { tokenMs?: number; voiceMs?: n
   );
 }
 
-function SourceChips({ chips }: { chips: string[] }) {
+function SourceChips({ chips, nodes, onOpen }: { chips: string[]; nodes: GraphNode[]; onOpen: (source: string) => void }) {
   if (chips.length === 0) return null;
   return (
     <p className="chat-chips">
-      {chips.map((chip) => (
-        <span key={chip} className="chat-chip">
-          {chip}
-        </span>
-      ))}
+      {chips.map(chip => {
+        const note = matchGraphNode(nodes.filter(node => node.file && !node.anchor), chip);
+        return <button type="button" key={chip} className="chat-chip" onClick={() => onOpen(note?.id ?? chip)}>
+          {note?.title ?? chip.replace(/\.md$/i, "").replace(/[-_]/g, " ")}
+        </button>;
+      })}
     </p>
   );
 }
 
-function ChatLines({ items }: { items: LogItem[] }) {
+function ChatLines({ items, sourceNodes, onSource }: { items: LogItem[]; sourceNodes: GraphNode[]; onSource: (source: string) => void }) {
   const rows = inTimeOrder(collapseCalendar(items.filter((item) => item.kind === "you" || item.kind === "jarvis" || item.kind === "hand")));
   if (rows.length === 0) return <div className="empty-state"><p>No chats yet</p><span>Ask Jarvis below, or use the microphone to start a conversation.</span></div>;
   return (
@@ -1130,7 +1141,7 @@ function ChatLines({ items }: { items: LogItem[] }) {
             <article key={item.id} className="chat-line">
               <p className="chat-meta">Jarvis · {formatStamp(item.at)}</p>
               <p className="chat-reply">{shown.body}</p>
-              <SourceChips chips={shown.chips} />
+              <SourceChips chips={shown.chips} nodes={sourceNodes} onOpen={onSource} />
               <TimingLine tokenMs={item.tokenMs} voiceMs={item.voiceMs} model={item.model} />
             </article>
           );
@@ -1141,7 +1152,7 @@ function ChatLines({ items }: { items: LogItem[] }) {
             <article key={item.id} className="chat-line">
               <p className="chat-meta">Jarvis · {formatStamp(item.at)}</p>
               <p className="chat-reply">{shown.body}</p>
-              <SourceChips chips={shown.chips} />
+              <SourceChips chips={shown.chips} nodes={sourceNodes} onOpen={onSource} />
               <TimingLine tokenMs={item.tokenMs} voiceMs={item.voiceMs} model={item.model} />
             </article>
           );

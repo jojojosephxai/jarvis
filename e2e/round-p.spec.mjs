@@ -98,3 +98,57 @@ for (const [width,height] of sizes) test(`Round P token text and first-clause au
   await expect(page.locator('#panel-log')).not.toContainText('newest plan');
   console.log(`MOCKED ${width} TTFT=${ttft} TTFA=${ttfa}`);
 });
+
+for (const [width,height] of sizes) test(`Round P settings, source titles, Inspector and filters ${width}`, async ({page}) => {
+  await page.route('**/api/chat',route=>route.fulfill({json:{
+    reply:'Your School note lists the map worksheet. Desktop drafts are ready for review.',
+    mode:'grok',model:'grok-4.7',sources:['School-schedule','Desktop-and-on-behalf'],receipts:[],
+  }}));
+  await open(page,width,height);
+  await page.getByRole('button',{name:'Settings',exact:true}).click();
+  const settings=page.getByRole('dialog',{name:'Settings',exact:true});
+  await expect(settings).toHaveCSS('opacity','1');
+  await page.mouse.move(0,0);
+  await expect(page.locator('.settings-control .tool-tip')).toHaveCSS('opacity','0');
+  await expect.poll(()=>settings.evaluate(el=>{
+    const s=el.getBoundingClientRect();
+    const intersects=r=>s.left<r.right&&s.right>r.left&&s.top<r.bottom&&s.bottom>r.top;
+    return s.left>=16&&s.right<=innerWidth-16&&s.top>=32&&s.bottom<=innerHeight-16&&
+      !['.orb-dial-ring','.face-ask'].some(selector=>intersects(document.querySelector(selector).getBoundingClientRect()))&&
+      [...el.querySelectorAll('label,p,button')].every(line=>{const r=line.getBoundingClientRect();return r.left>=s.left&&r.right<=s.right&&r.top>=s.top&&r.bottom<=s.bottom})&&
+      getComputedStyle(el).backgroundColor==='rgb(5, 14, 28)';
+  })).toBe(true);
+  if([1024,1440].includes(width)) await capture(page,shots,`rp-${width}-settings`);
+  await page.getByRole('button',{name:'Close settings',exact:true}).click();
+  await page.locator('#talk').fill("What's due for school?");await page.locator('#talk').press('Enter');
+  await expect(page.locator('#talk')).toBeEnabled();
+  const chips=page.locator('.chat-chip');
+  await expect(chips).toHaveText(['School schedule','Desktop permissions']);
+  await page.mouse.move(0,0);
+  if(width===1024) await capture(page,shots,'rp-1024-sourced-reply');
+  for(const title of ['School schedule','School schedule','Desktop permissions']) {
+    await page.getByRole('button',{name:title,exact:true}).click();
+    await expect(page.getByRole('tab',{name:'inspector',exact:true})).toHaveAttribute('aria-selected','true');
+    await expect(page.locator('.inspector-title')).toHaveText(title);
+    await expect(page.locator('.face')).toHaveAttribute('data-view','home');
+    if(title==='School schedule'&&[1024,1440].includes(width)) await capture(page,shots,`rp-${width}-sidebar`);
+    await page.getByRole('button',{name:'Back to chat'}).click();
+  }
+  await page.getByRole('button',{name:'Graph',exact:true}).click();
+  await expect(page.locator('.force-scene')).toHaveAttribute('data-scene','ready');
+  const filter=page.getByRole('complementary',{name:'Filter',exact:true});
+  const rows=filter.locator('.filter-list button');
+  expect(await rows.count()).toBeGreaterThan(0);
+  await rows.last().scrollIntoViewIfNeeded();
+  expect(await rows.last().evaluate(el=>{const r=el.getBoundingClientRect(),rail=document.querySelector('.face-column').getBoundingClientRect();return r.top>=rail.top&&r.bottom<=rail.bottom&&rail.bottom<=innerHeight-16})).toBe(true);
+  const row=rows.first();await row.click();await expect(row).toHaveAttribute('data-hidden','true');await row.click();await expect(row).toHaveAttribute('data-hidden','false');
+  const payload=await (await page.request.get('/api/graph')).json();
+  for(const entry of payload.legend) await expect(filter.locator('.filter-list li').filter({hasText:entry.label}).locator('.hub-count')).toHaveText(String(entry.count));
+  for(const name of ['Tags','Orphans','Auto-rotate','Hubs','Labels','Edges','Local']) {
+    const control=page.getByRole('checkbox',{name,exact:true});
+    await control.scrollIntoViewIfNeeded();const checked=await control.isChecked();await control.setChecked(!checked);await expect(control).toBeChecked({checked:!checked});await control.setChecked(checked);
+  }
+  for(const [name,value] of [['Repel','360'],['Link length','420'],['Hop depth','2']]) {
+    const slider=page.getByRole('slider',{name,exact:true});await slider.press('End');await expect(slider).toHaveValue(value);await expect(slider.locator('..').locator('span').last()).toHaveText(value);
+  }
+});

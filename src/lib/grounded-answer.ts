@@ -4,7 +4,7 @@ import { stripReplySources } from "./reply-text";
 import { pinnedContext, type PinnedOptions } from "./pinned-context";
 import { grokConfigured, grokPhraseNotes, grokStreamSentences, type GrokResult } from "./grok";
 import type { BrainMode, ChatMessageInput } from "./types";
-import { loadVaultNotes, resolveVaultPath, chunkVaultNote, type VaultChunk, type VaultNote } from "./vault-read";
+import { loadVaultNotes, vaultNoteDate, OLDER_CONTEXT_DAYS, resolveVaultPath, chunkVaultNote, type VaultChunk, type VaultNote } from "./vault-read";
 
 /**
  * Answers with grok-4.7 when a key is set. Matching vault notes are context.
@@ -213,6 +213,10 @@ function occurrences(text: string, term: string): number {
   return (text.toLowerCase().match(new RegExp(`\\b${term}\\b`, "g")) ?? []).length;
 }
 
+function nextStepAsk(question: string): boolean {
+  return /\b(next|what should i do|what (?:do|should) i work on|prioriti[sz]e|focus on)\b/i.test(question);
+}
+
 function rankChunks(notes: VaultNote[], terms: string[], question: string, now = new Date()): ScoredNote[] {
   const chunks = notes.flatMap(chunkVaultNote);
   const length = (text: string) => (text.match(/[a-z0-9]+/gi) ?? []).length;
@@ -221,6 +225,7 @@ function rankChunks(notes: VaultNote[], terms: string[], question: string, now =
     const count = chunks.filter(c => occurrences(`${c.note.title} ${c.heading} ${c.text} ${c.aliases} ${c.links}`, term)).length;
     return [term, Math.log(1 + (chunks.length - count + 0.5) / (count + 0.5))];
   }));
+  const nextStep = nextStepAsk(question);
   return chunks.map(chunk => {
     let score = 0, hitTerms = 0;
     for (const term of terms) {
@@ -235,13 +240,15 @@ function rankChunks(notes: VaultNote[], terms: string[], question: string, now =
     // A multi-term ask still needs more than one overlapping word.
     if (terms.length >= 2 && hitTerms < 2) score *= 0.15;
     if (path.basename(chunk.note.filePath).toLowerCase() === "readme.md" && !/\b(obsidian|vault|open|readme)\b/i.test(question)) score *= 0.3;
-    const dated = chunk.note.filePath.replace(/\\/g, "/").match(/\/Journal\/(\d{4}-\d{2}-\d{2})[^/]*\.md$/i);
+    const dated = vaultNoteDate(chunk.note);
     if (dated) {
-      const age = Math.max(0, Math.floor((now.getTime() - Date.parse(dated[1])) / 86_400_000));
+      const age = Math.max(0, Math.floor((now.getTime() - Date.parse(dated)) / 86_400_000));
       score *= 1 + 0.3 / (1 + age);
+      if (nextStep && age <= 7) score = Math.max(score, 1);
     }
     return { ...chunk, score, hitTerms };
-  }).filter(chunk => chunk.score >= 0.8).sort((a, b) => b.score - a.score);
+  }).filter(chunk => chunk.score >= 0.8).sort((a, b) =>
+    (nextStep ? (vaultNoteDate(b.note) ?? "").localeCompare(vaultNoteDate(a.note) ?? "") : 0) || b.score - a.score);
 }
 
 function contentLines(text: string): string[] {
@@ -287,7 +294,7 @@ function localReading(question: string, picked: ScoredNote[], allTitles: string[
     if (!sources.includes(scored.note.title)) sources.push(scored.note.title);
     const lines = matchingLines(scored.text, terms).slice(0, 3);
     for (const line of lines) {
-      parts.push(`${scored.note.title}: ${line}`);
+      if (!parts.includes(line)) parts.push(line);
     }
   }
 
@@ -301,10 +308,14 @@ function localReading(question: string, picked: ScoredNote[], allTitles: string[
 
 const CONTEXT_NOTES = 3;
 
-function packetFor(question: string, picked: ScoredNote[], pinned: string): string {
+function packetFor(question: string, picked: ScoredNote[], pinned: string, now: Date): string {
   const blocks = picked
     .slice(0, CONTEXT_NOTES)
-    .map((scored) => `# ${scored.note.title} › ${scored.heading}\n${scored.text}`)
+    .map(scored => {
+      const date = vaultNoteDate(scored.note);
+      const older = date && now.getTime() - Date.parse(date) > OLDER_CONTEXT_DAYS * 86_400_000;
+      return `# ${scored.note.title} › ${scored.heading}${date ? ` (${date}${older ? ", older context" : ""})` : ""}\n${scored.text}`;
+    })
     .join("\n\n");
   return `${pinned}\n\nQuestion:\n${question}\n\nNotes:\n${blocks}`;
 }
@@ -360,7 +371,7 @@ async function gatherAnswer(question: string, options: AnswerOptions): Promise<G
 
   const best = ranked[0];
   const picked = best
-    ? ranked.filter((scored) => scored.score >= best.score * 0.55).slice(0, CONTEXT_NOTES)
+    ? ranked.filter(scored => scored.score >= best.score * 0.55 || (nextStepAsk(question) && (vaultNoteDate(scored.note) ?? "") >= (vaultNoteDate(best.note) ?? "~"))).slice(0, CONTEXT_NOTES)
     : [];
 
   const allTitles = loaded.notes.map((note) => note.title);
@@ -368,7 +379,7 @@ async function gatherAnswer(question: string, options: AnswerOptions): Promise<G
   const pinned = await pinnedContext(question, options);
   const packet =
     picked.length > 0
-      ? packetFor(question, picked, pinned)
+      ? packetFor(question, picked, pinned, options.now ?? new Date())
       : `${pinned}\n\nQuestion:\n${question}\n\nNotes:\nNo vault note matched. Answer anyway.`;
   return {
     modelOn: options.useModel ?? grokConfigured(),

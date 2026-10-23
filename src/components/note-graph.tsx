@@ -41,6 +41,7 @@ type FrameMode = "fit" | "cluster" | "node" | "path" | "matches";
 export type GraphCue = {
   token: number;
   focusQuery?: string;
+  openNote?: string;
   focusHub?: string;
   pathFrom?: string;
   pathTo?: string;
@@ -140,6 +141,7 @@ function isPayload(value: unknown): value is NoteGraphPayload {
 }
 
 export function NoteGraph({
+  onNodes,
   cue = null,
   suspendEscape = false,
   graphOpen,
@@ -149,6 +151,7 @@ export function NoteGraph({
   inspectorHost,
   onInspect,
 }: {
+  onNodes: (nodes: GraphNode[]) => void;
   cue?: GraphCue | null;
   suspendEscape?: boolean;
   graphOpen: boolean;
@@ -172,6 +175,7 @@ export function NoteGraph({
           return;
         }
         setPayload(body);
+        onNodes(body.nodes);
       })
       .catch(() => {
         if (!cancelled) setFailed(true);
@@ -179,7 +183,7 @@ export function NoteGraph({
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [onNodes]);
 
   const loadNotice = failed
     ? "The note graph could not be loaded. Try reloading."
@@ -247,7 +251,19 @@ function GraphReady({
 
   if (payload.status === "ready" && cue && cue.token !== seenCue) {
     setSeenCue(cue.token);
-    if (cue.fit || cue.clear) {
+    if (cue.openNote) {
+      const note = matchGraphNode(payload.nodes.filter(node => node.file && !node.anchor), cue.openNote);
+      if (note) {
+        setQuery("");
+        setFilterId(null);
+        setPathFromId("");
+        setPathToId("");
+        setReaderId(note.id);
+        setSelectedId(note.id);
+        setClusterId(null);
+        setFrameMode("node");
+      }
+    } else if (cue.fit || cue.clear) {
       setQuery("");
       setFilterId(null);
       setPathFromId("");
@@ -590,6 +606,21 @@ function GraphReady({
             ))}
           </ul>
         </div>
+        {graphOpen ? (
+        <FilterLegend
+          collapsed={filterCollapsed}
+          onCollapse={() => {
+            const next = !filterCollapsed;
+            setFilterCollapsed(next);
+            try { localStorage.setItem("jarvis-filter-collapsed", String(next)); } catch {}
+          }}
+          legend={payload.legend}
+          hiddenTypes={hiddenTypes}
+          onToggle={(type) =>
+            setHiddenTypes((current) => (current.includes(type) ? current.filter((item) => item !== type) : [...current, type]))
+          }
+        />
+        ) : null}
         {graphOpen ? <>
         <div className="face-block">
           <p className="face-block-label">Forces</p>
@@ -675,21 +706,6 @@ function GraphReady({
           <span>{payload.connectionCount} links</span>
         </p>
         </> : null}
-        {graphOpen ? (
-        <FilterLegend
-          collapsed={filterCollapsed}
-          onCollapse={() => {
-            const next = !filterCollapsed;
-            setFilterCollapsed(next);
-            try { localStorage.setItem("jarvis-filter-collapsed", String(next)); } catch {}
-          }}
-          legend={payload.legend}
-          hiddenTypes={hiddenTypes}
-          onToggle={(type) =>
-            setHiddenTypes((current) => (current.includes(type) ? current.filter((item) => item !== type) : [...current, type]))
-          }
-        />
-        ) : null}
         {graphOpen ? <p className="graph-orbit-hint">drag = orbit, shift-click = path</p> : null}
         {query.trim() ? (
           <p className="face-hint">{matches.length === 0 ? "No matches." : `${matches.length} match${matches.length === 1 ? "" : "es"}`}</p>

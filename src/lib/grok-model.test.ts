@@ -60,6 +60,8 @@ describe("grok model lock", () => {
       await grokPhraseNotes("hello", "Question:\nhello\n\nNotes:\nNo vault search.");
       const fastBody = JSON.parse(seenBody) as { model: string };
       assert.equal(fastBody.model, FAST_XAI_MODEL);
+      await grokPhraseNotes("hello", "Question:\nhello\n\nNotes:\n# Greeting\nA retrieved note.");
+      assert.equal(JSON.parse(seenBody).model, HARD_XAI_MODEL, "grounding always locks the hard model even for a greeting");
       assert.equal(seenAuth, "Bearer secret-key");
       assert.equal(seenBody.includes("secret-key"), false);
       assert.match(body.messages[0]?.content ?? "", /butler/i);

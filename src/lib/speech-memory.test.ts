@@ -118,7 +118,7 @@ test("the first clause arrives before a long sentence ends, without dropped or r
     assert.equal(clauseReady, false, "text must arrive before the speech clause");
     controller.enqueue(frame("seph, "));
     assert.equal((await first).value, "Joseph,");
-    controller.enqueue(frame(full.slice("Joseph, ".length)));
+    controller.enqueue(frame(full.slice("Joseph, ".length)).slice(0, -2));
     controller.close();
     const parts = ["Joseph,"];
     for await (const part of stream) parts.push(part);

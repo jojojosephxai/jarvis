@@ -62,3 +62,17 @@ describe("matchGraphNode", () => {
     assert.equal(matchingNodes(nodes, "joseph")[0]?.id, "About.md");
   });
 });
+
+describe("source note links", () => {
+  it("resolves source ids to note titles and exact Inspector ids", () => {
+    const notes = [
+      { id: "School-schedule.md", title: "School schedule", folder: "" },
+      { id: "Desktop-and-on-behalf.md", title: "Desktop permissions", folder: "" },
+    ];
+    for (const [id, title] of [["School-schedule", "School schedule"], ["Desktop-and-on-behalf", "Desktop permissions"]]) {
+      const note = matchGraphNode(notes, id);
+      assert.equal(note?.title, title);
+      assert.equal(matchGraphNode(notes, note!.id)?.id, `${id}.md`);
+    }
+  });
+});

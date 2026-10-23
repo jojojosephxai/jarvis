@@ -1279,11 +1279,11 @@
 .face-settings {
   position: absolute;
   z-index: 21;
-  right: 0;
-  top: auto;
-  bottom: calc(100% + 120px);
-  width: min(280px, calc(100vw - var(--center-left) - var(--center-right)));
-  max-height: calc(100dvh - 220px);
+  right: 32px;
+  top: 144px;
+  bottom: auto;
+  width: min(280px, calc(var(--side) - 32px));
+  max-height: calc(100dvh - 160px);
   overflow-y: auto;
   padding: 12px;
   background-color: #050e1c;
@@ -1348,3 +1348,7 @@
 .face[data-resizing="true"] :is(.orb-dial, .face-dock, .graph-canvas, .face-sidebar) { transition: none; }
 
 .inspector-body :is(strong, b) { color: #49d4ff; }
+
+.face-column .face-filter { flex-shrink: 0; overflow: visible; }
+.chat-chip { font: inherit; cursor: pointer; }
+.chat-chip:focus-visible { outline: 1px solid #49d4ff; outline-offset: 2px; }

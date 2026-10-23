@@ -12,6 +12,16 @@ export type VaultNote = {
   text: string;
 };
 
+/** Explicit dates survive vault copies and syncs; filesystem timestamps do not. */
+export function vaultNoteDate(note: Pick<VaultNote, "filePath" | "text">): string | null {
+  const front = note.text.replace(/^\uFEFF/, "").match(/^---\r?\n([\s\S]*?)\r?\n---/)?.[1] ?? "";
+  const dates = [...front.matchAll(/^(?:updated|modified|date|created)\s*:\s*["']?(\d{4}-\d{2}-\d{2})/gim)].map(match => match[1]);
+  const filename = path.basename(note.filePath).match(/(\d{4}-\d{2}-\d{2})/)?.[1];
+  if (filename) dates.push(filename);
+  return dates.filter(date => Number.isFinite(Date.parse(date)) && new Date(date).toISOString().slice(0, 10) === date).sort().at(-1) ?? null;
+}
+export const OLDER_CONTEXT_DAYS = 30;
+
 export type VaultLoad =
   | { ok: true; notes: VaultNote[]; directory: string }
   | { ok: false; directory: string; problem: string };
@@ -113,7 +123,7 @@ export type VaultChunk = { note: VaultNote; heading: string; text: string; alias
 
 /** Heading sections stay together; long sections get bounded, word-aligned windows. */
 export function chunkVaultNote(note: VaultNote): VaultChunk[] {
-  const front = note.text.match(/^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/);
+  const front = note.text.replace(/^\uFEFF/, "").match(/^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/);
   const aliases = front?.[1].match(/^aliases:\s*([^\n]*(?:\n[ \t]+-[^\n]*)*)/m)?.[1].replace(/[\[\]"',]/g, " ") ?? "";
   const body = front ? note.text.slice(front[0].length) : note.text;
   const sections: Array<{ heading: string; lines: string[] }> = [];
