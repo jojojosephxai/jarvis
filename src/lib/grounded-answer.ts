@@ -187,6 +187,7 @@ export type GroundedAnswer = {
 export type AnswerOptions = PinnedOptions & {
   useModel?: boolean;
   onToken?: (text: string) => void;
+  onSources?: (sources: string[]) => void;
   history?: ChatMessageInput[];
   complete?: (question: string, packet: string, history?: ChatMessageInput[]) => Promise<GrokResult>;
   stream?: (question: string, packet: string, history?: ChatMessageInput[]) => AsyncIterable<string>;
@@ -433,6 +434,7 @@ export async function* streamAnswerFromVault(
   options: AnswerOptions = {},
 ): AsyncGenerator<StreamedAnswer> {
   const gathered = await gatherAnswer(question, options);
+  options.onSources?.(gathered.sources);
   if (gathered.blocked) {
     yield { type: "done", answer: gathered.blocked };
     return;

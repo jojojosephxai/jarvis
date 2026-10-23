@@ -177,6 +177,7 @@ export async function* streamTurn(
       yield* emitReply(await finishAfterWatch(await talk(latest.content, options), root, watching));
       return;
     }
+    options.onSources?.([]);
     const packet = `${await pinnedContext(latest.content, options)}\n\nQuestion:\n${latest.content}\n\nNotes:\nNo vault search. Answer in one or two short sentences.`;
     let answerText = "";
     for await (const sentence of (options.stream ? options.stream(latest.content, packet, options.history) : grokStreamSentences(latest.content, packet, options.history, undefined, options.onToken))) {

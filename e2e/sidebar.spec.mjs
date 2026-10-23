@@ -86,6 +86,7 @@ for (const [width,height] of sizes) {
     await page.getByRole('tab',{name:'inspector',exact:true}).click();
     await expect(page.locator('.inspector-title')).toHaveText('School');
     await page.getByRole('button',{name:'Graph',exact:true}).click();
+    await page.getByRole('checkbox',{name:'Auto-rotate',exact:true}).uncheck();
     await expect(page.locator('.graph-float-label[data-hub="0"]').first()).toBeVisible();
     await page.getByRole('button',{name:'Back to chat'}).click();
     await page.locator('.graph-float-label[data-hub="0"]').first().click();

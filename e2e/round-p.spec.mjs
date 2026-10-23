@@ -95,7 +95,7 @@ for (const [width,height] of sizes) test(`Round P token text and first-clause au
   await expect(metric).toHaveAttribute('data-ttfa',/\d+/);
   const ttft=Number(await metric.getAttribute('data-ttft')),ttfa=Number(await metric.getAttribute('data-ttfa'));
   expect(ttft).toBeLessThan(1500);expect(ttfa).toBeLessThan(2500);expect(ttfa).toBeGreaterThanOrEqual(ttft);
-  await expect(page.locator('#panel-log')).not.toContainText('newest plan');
+  await expect(page.locator('#panel-log')).toContainText('newest plan');
   console.log(`MOCKED ${width} TTFT=${ttft} TTFA=${ttfa}`);
 });
 

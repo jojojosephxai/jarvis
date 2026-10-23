@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { edgePieces, rectIntersectsCircle, rectsIntersect } from "./graph-screen-layout";
+import { edgePieces, labelSpots, rectIntersectsCircle, rectsIntersect } from "./graph-screen-layout";
 
 import {
   easeFrame,
@@ -53,6 +53,24 @@ describe("desktop graph projection", () => {
     assert.equal(rectIntersectsCircle(label, { x: 195, y: 108, r: 8 }), true);
     assert.equal(rectIntersectsCircle(label, { x: 200, y: 125, r: 8 }), false);
     assert.equal(rectsIntersect(label, { left: 130, top: 101, right: 170, bottom: 120 }), true);
+  });
+
+  it("keeps a hub label beside a dense cluster at the viewport edge", () => {
+    const hub = { x: 296.6, y: 218.7, r: 9.1 };
+    const nodes = [hub, ...[
+      [325.5, 187, 4.2], [367.8, 241.1, 3.5], [267.7, 250.4, 3.7],
+      [375.4, 204.5, 3], [358.3, 206.8, 3], [393.5, 222.1, 3],
+      [351.1, 246.5, 3], [349.9, 234.8, 3], [373.2, 259.8, 3], [364.1, 233.5, 6.2],
+    ].map(([x, y, r]) => ({ x, y, r: r * 1.06 }))];
+    const spots = labelSpots(hub.x, hub.y, hub.r, 78.2, 18).map(spot => {
+      const left = Math.max(248, Math.min(892 - 78.2, spot.left));
+      return { ...spot, left, right: left + 78.2 };
+    });
+    const spot = spots.find(rect => !nodes.some(node => rectIntersectsCircle(rect, node, 3)));
+    assert.ok(spot, "the hub label must remain visible without covering a sphere");
+    const dx = Math.max(spot.left - hub.x, hub.x - spot.right, 0);
+    const dy = Math.max(spot.top - hub.y, hub.y - spot.bottom, 0);
+    assert.ok(Math.hypot(dx, dy) <= hub.r + 36);
   });
 });
 

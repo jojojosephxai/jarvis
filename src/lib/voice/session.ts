@@ -348,6 +348,7 @@ export function readFastVoicePreference(storage: Pick<Storage, "getItem">): bool
   try { return storage.getItem(FAST_VOICE_STORAGE_KEY) === "true"; } catch { return false; }
 }
 export type TurnHooks = {
+  sources?: (sources: string[]) => void;
   token?: (text: string) => void;
   sentence: (text: string) => void;
   transcript: (text: string) => void;
@@ -404,7 +405,7 @@ export class ChatSession {
     });
     return this.realtime;
   }
-  private async standard(messages: ChatMessageInput[], signal: AbortSignal, sentence?: (text: string) => void, token?: (text: string) => void): Promise<ChatResponse> {
+  private async standard(messages: ChatMessageInput[], signal: AbortSignal, sentence?: (text: string) => void, token?: (text: string) => void, sources?: (sources: string[]) => void): Promise<ChatResponse> {
     const response=await this.fetchImpl("/api/chat",{method:"POST",headers:{"Content-Type":"application/json",...(this.turnId?{"x-jarvis-turn":this.turnId}:{})},body:JSON.stringify({messages:messages.slice(-16),stream:true}),signal});
     if(!response.ok)throw new Error("Chat did not answer");
     if(!(response.headers.get("content-type")??"").includes("ndjson")) {
@@ -415,6 +416,7 @@ export class ChatSession {
     const line=(text:string)=>{
       if(!text.trim())return;
       const event=JSON.parse(text);
+      if(event.type==="sources"&&Array.isArray(event.sources)&&event.sources.every((source: unknown)=>typeof source==="string"))sources?.(event.sources);
       if(event.type==="token"&&typeof event.text==="string")token?.(event.text);
       if(event.type==="sentence"&&typeof event.text==="string")sentence?.(event.text);
       if(event.type==="done"&&chatResponse(event.response))result=event.response;
@@ -451,7 +453,7 @@ export class ChatSession {
         }
       }
     }
-    return {response:await this.standard(messages,signal,hooks.sentence,hooks.token),path:"tts"};
+    return {response:await this.standard(messages,signal,hooks.sentence,hooks.token,hooks.sources),path:"tts"};
   }
   async startMicrophone(messages: ChatMessageInput[], hooks: TurnHooks, onText: (text: string) => void, onResult: (response: ChatResponse, standard?: boolean) => void): Promise<boolean> {
     if(this.mode!=="realtime" || !(this.playback instanceof WorkletPlayback))return false;

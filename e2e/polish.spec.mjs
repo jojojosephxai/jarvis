@@ -42,6 +42,7 @@ test('hard refresh loader fades and Inspector retains dim graph context in path 
   await page.getByRole('button',{name:'Graph',exact:true}).click();
   const scene=page.locator('.force-scene');
   await expect(scene).toHaveAttribute('data-scene','ready');
+  await page.getByRole('checkbox',{name:'Auto-rotate',exact:true}).uncheck();
   const count=await scene.evaluate(el=>JSON.parse(el.dataset.nodes).length);
   await page.locator('.hub-list button',{hasText:'School'}).click();
   await expect(page.getByRole('tab',{name:'inspector',exact:true})).toHaveAttribute('aria-selected','true');

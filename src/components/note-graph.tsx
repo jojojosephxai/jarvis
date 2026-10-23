@@ -242,7 +242,7 @@ function GraphReady({
   const [repelDraft, setRepelDraft] = useState(180);
   const [linkDraft, setLinkDraft] = useState(160);
   const [localOn, setLocalOn] = useState(false);
-  const [autoRotate, setAutoRotate] = useState(false);
+  const [autoRotate, setAutoRotate] = useState(true);
   const [hopDepth, setHopDepth] = useState(1);
   const [showOrphans, setShowOrphans] = useState(true);
   const [filterCollapsed, setFilterCollapsed] = useState(false);

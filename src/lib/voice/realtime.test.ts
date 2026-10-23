@@ -202,3 +202,20 @@ test("localhost with a desktop port is loopback; remote hosts remain forbidden",
     assert.equal(response.status, host === "evil.com" ? 403 : 409);
   }
 });
+
+
+test("standard chat supplies validated sources before raw tokens", async () => {
+  const events: string[] = [];
+  const session = new ChatSession({fetchImpl: async () => new Response([
+    {type:"sources",sources:["School-schedule"]},
+    {type:"sources",sources:[42]},
+    {type:"token",text:"Ready"},
+    {type:"sentence",text:"Ready."},
+    {type:"done",response:{reply:"Ready.",mode:"grok",sources:["School-schedule"],receipts:[]}},
+  ].map(event=>JSON.stringify(event)).join("\n"),{headers:{"Content-Type":"application/x-ndjson"}})});
+  await session.run([{role:"user",content:"What is due for school?"}],new AbortController().signal,{
+    sources: sources => {assert.deepEqual(sources,["School-schedule"]);events.push("sources");},
+    token: () => events.push("token"),sentence: () => events.push("sentence"),transcript: () => {},
+  });
+  assert.deepEqual(events,["sources","token","sentence"]);
+});

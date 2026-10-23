@@ -25,7 +25,7 @@ import { decideFaceMode } from "@/lib/view-intent";
 import { butlerSpeech, MIC_BLOCKED_NOTICE } from "@/lib/voice/policy";
 import { createSentenceQueue, unspokenTail } from "@/lib/voice/sentence-queue";
 import { prepareSpeech, ChatSession, readFastVoicePreference, FAST_VOICE_STORAGE_KEY, type PreparedSpeech } from "@/lib/voice/session";
-import { stripReplySources, stripReplyTiming } from "@/lib/reply-text";
+import { cleanReplyText, stripReplyTiming } from "@/lib/reply-text";
 
 const BOOT_KEY = "jarvis-boot";
 const EXAMPLES = ["remind me…", "good morning", "show swim times"] as const;
@@ -110,9 +110,9 @@ function formatStamp(iso: string): string {
   return new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" }).format(date);
 }
 
-function replyForChat(text: string, sources: string[] | undefined): { body: string; chips: string[] } {
+function replyForChat(text: string, sources: string[] | undefined, pending = false): { body: string; chips: string[] } {
   const chips = [...new Set(sources ?? [])];
-  return { body: stripReplySources(stripReplyTiming(text), chips), chips };
+  return { body: cleanReplyText(text, sources, pending), chips };
 }
 
 function inTimeOrder(items: LogItem[]): LogItem[] {
@@ -601,8 +601,10 @@ export function Face({ realtimeAllowed = false }: { realtimeAllowed?: boolean })
         current.map((item) => (item.id === targetId && (item.kind === "jarvis" || item.kind === "hand") ? { ...item, tokenMs, voiceMs } : item)),
       );
     };
+    let liveSources: string[] | undefined;
     const upsertJarvis = (text: string, sources?: string[], failed = false, pending = true) => {
-      text = stripReplyTiming(text);
+      sources ??= liveSources;
+      text = cleanReplyText(text, sources, pending);
       const at = new Date().toISOString();
       setItems((current) => {
         const index = current.findIndex((item) => item.id === answerId && item.kind === "jarvis");
@@ -673,6 +675,11 @@ export function Face({ realtimeAllowed = false }: { realtimeAllowed?: boolean })
         { role: "user", content: trimmed },
       ].slice(-8) as ChatMessageInput[];
       const result = await session().run(messages, abort.signal, {
+        sources: (sources) => {
+          if (id !== jobGen.current || abort.signal.aborted) return;
+          liveSources = sources;
+          if (tokenText) upsertJarvis(dropUnaskedCalendar(tokenText, askedCalendar), sources);
+        },
         token: (delta) => {
           if (id !== jobGen.current || abort.signal.aborted) return;
           if (!tokenAt) tokenAt = performance.now();
@@ -1086,7 +1093,7 @@ function ChatCard({
         <div key={tab} className="face-chat chat-log" role="tabpanel" id={`panel-${tab === "inspector" ? "chat" : tab}`} aria-labelledby={`tab-${tab === "inspector" ? "chat" : tab}`} hidden={tab === "inspector"} ref={chatRef}>
           {tab === "chat" ? <ChatLines items={items} sourceNodes={sourceNodes} onSource={onSource} /> : null}
           {tab === "tasks" ? <TaskLines items={items} pending={pending} onDecide={onDecide} /> : null}
-          {tab === "log" ? <>{fastVoiceLog ? <p className="chat-timing" role="status">{fastVoiceLog}</p> : null}<LogLines items={items} /></> : null}
+          {tab === "log" ? <>{fastVoiceLog ? <p className="chat-timing" role="status">{fastVoiceLog}</p> : null}<LogLines items={items} sourceNodes={sourceNodes} onSource={onSource} /></> : null}
         </div>
         <div className="sidebar-inspector" role="tabpanel" id="panel-inspector" aria-labelledby="tab-inspector" hidden={tab !== "inspector"}>
           <button type="button" className="back-to-chat" onClick={() => onTab("chat")}>← Back to chat</button>
@@ -1136,7 +1143,7 @@ function ChatLines({ items, sourceNodes, onSource }: { items: LogItem[]; sourceN
           );
         }
         if (item.kind === "jarvis") {
-          const shown = replyForChat(item.text, item.sources);
+          const shown = replyForChat(item.text, item.sources, item.pending);
           return (
             <article key={item.id} className="chat-line">
               <p className="chat-meta">Jarvis · {formatStamp(item.at)}</p>
@@ -1210,14 +1217,54 @@ function TaskLines({
   );
 }
 
-function LogLines({ items }: { items: LogItem[] }) {
-  const rows = inTimeOrder(items).filter(item => (item.kind === "jarvis" || item.kind === "hand") && item.tokenMs !== undefined);
-  if (!rows.length) return <div className="empty-state"><p>No timings yet</p></div>;
-  return <>{rows.map(item => (item.kind === "jarvis" || item.kind === "hand") ? (
-    <p key={item.id} className="turn-metrics" data-ttft={item.tokenMs} data-ttfa={item.voiceMs}>
-      TTFT {item.tokenMs} ms · TTFA {item.voiceMs === undefined ? "—" : `${item.voiceMs} ms`}
-    </p>
-  ) : null)}</>;
+function LogLines({ items, sourceNodes, onSource }: { items: LogItem[]; sourceNodes: GraphNode[]; onSource: (source: string) => void }) {
+  const rows = inTimeOrder(collapseCalendar(items));
+  if (rows.length === 0) return <div className="empty-state"><p>No activity yet</p><span>Your conversation and task history will appear here.</span></div>;
+  return (
+    <>
+      {rows.map((item) => {
+        if (item.kind === "you") {
+          return (
+            <article key={item.id} className="chat-line">
+              <p className="chat-meta">
+                {formatStamp(item.at)} · You
+              </p>
+              <p>{item.text}</p>
+            </article>
+          );
+        }
+        if (item.kind === "jarvis") {
+          const shown = replyForChat(item.text, item.sources, item.pending);
+          return (
+            <article key={item.id} className="chat-line">
+              <p className="chat-meta">
+                {formatStamp(item.at)} · Jarvis
+              </p>
+              <p className="chat-reply">{shown.body}</p>
+              <SourceChips chips={shown.chips} nodes={sourceNodes} onOpen={onSource} />
+              {item.tokenMs !== undefined ? <p className="turn-metrics" data-ttft={item.tokenMs} data-ttfa={item.voiceMs}>TTFT {item.tokenMs} ms · TTFA {item.voiceMs === undefined ? "—" : `${item.voiceMs} ms`}</p> : null}
+            </article>
+          );
+        }
+        if (item.kind === "hand") {
+          const shown = replyForChat(item.reply, undefined);
+          return (
+            <article key={item.id} className="chat-line">
+              <p className="chat-meta">
+                {formatStamp(item.at)} · Jarvis
+              </p>
+              <p className="chat-reply">{shown.body}</p>
+              {item.receipts.map(receipt => <p key={receipt.id}>{receipt.outcome}</p>)}
+              <SourceChips chips={shown.chips} nodes={sourceNodes} onOpen={onSource} />
+              {item.tokenMs !== undefined ? <p className="turn-metrics" data-ttft={item.tokenMs} data-ttfa={item.voiceMs}>TTFT {item.tokenMs} ms · TTFA {item.voiceMs === undefined ? "—" : `${item.voiceMs} ms`}</p> : null}
+            </article>
+          );
+        }
+        const neverItem: never = item;
+        return neverItem;
+      })}
+    </>
+  );
 }
 
 function ToolButton({

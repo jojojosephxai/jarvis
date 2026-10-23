@@ -122,7 +122,6 @@ async function graphGeometry(focusId = null) {
       if (r.left < o.right && r.right > o.left && r.top < o.bottom && r.bottom > o.top) hits.push("graph labels overlap");
     }
     for (const n of nodes.filter(n => n.opacity > .2)) {
-      if (n.id === label.dataset.nodeId) continue;
       const x = n.x + n.w / 2, y = n.y + n.h / 2;
       const closestX = Math.max(r.left, Math.min(r.right, x)), closestY = Math.max(r.top, Math.min(r.bottom, y));
       if (Math.hypot(x - closestX, y - closestY) < n.r) hits.push("label overlaps another node");
@@ -136,7 +135,7 @@ async function graphGeometry(focusId = null) {
     else {
       const dx = Math.max(r.left - (node.x + node.w / 2), node.x + node.w / 2 - r.right, 0);
       const dy = Math.max(r.top - (node.y + node.h / 2), node.y + node.h / 2 - r.bottom, 0);
-      if (Math.hypot(dx, dy) > node.r + 30) hits.push("label detached from node");
+      if (Math.hypot(dx, dy) > node.r + 36) hits.push("label detached from node");
     }
   }
   for (const selector of [".face-column", ".face-sidebar"]) {
@@ -151,6 +150,7 @@ async function graphGeometry(focusId = null) {
 
 async function graphReady(page) {
   await expect(page.locator(".force-scene")).toHaveAttribute("data-scene", "ready");
+  await page.getByRole("checkbox", { name: "Auto-rotate", exact: true }).uncheck();
   await expect.poll(() => page.evaluate(graphGeometry)).toEqual([]);
 }
 

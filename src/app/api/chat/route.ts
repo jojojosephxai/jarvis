@@ -28,7 +28,9 @@ export async function POST(request: Request) {
     const readable = new ReadableStream({
       async start(controller) {
         try {
-          for await (const event of streamTurn(messages, { onToken: text => {
+          for await (const event of streamTurn(messages, { onSources: sources => {
+            controller.enqueue(encoder.encode(`${JSON.stringify({ type: "sources", sources })}\n`));
+          }, onToken: text => {
             timing.first();
             controller.enqueue(encoder.encode(`${JSON.stringify({ type: "token", text })}\n`));
           } })) {

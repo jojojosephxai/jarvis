@@ -4,7 +4,7 @@ export type ScreenNode = {
 };
 
 export function labelSpots(x: number, y: number, r: number, w: number, h: number): ScreenRect[] {
-  return [6, 18, 28].flatMap((gap) => [
+  return [6, 18, 28, 34].flatMap((gap) => [
     { x: x + r + gap, y: y - h / 2 },
     { x: x - r - gap - w, y: y - h / 2 },
     { x: x - w / 2, y: y - r - h - gap },
@@ -13,6 +13,10 @@ export function labelSpots(x: number, y: number, r: number, w: number, h: number
     { x: x - r - gap - w, y: y - h - 4 },
     { x: x + r + gap, y: y + 4 },
     { x: x - r - gap - w, y: y + 4 },
+    { x: x - w, y: y - r - h - gap },
+    { x, y: y - r - h - gap },
+    { x: x - w, y: y + r + gap },
+    { x, y: y + r + gap },
   ].map((spot) => ({ left: spot.x, top: spot.y, right: spot.x + w, bottom: spot.y + h })));
 }
 

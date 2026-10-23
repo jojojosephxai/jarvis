@@ -579,6 +579,7 @@
 }
 
 .force-scene {
+  outline: none;
   position: absolute;
   z-index: 1;
   inset: 0;
@@ -984,6 +985,8 @@
 
 .chat-chips {
   display: flex;
+  flex-direction: row;
+  white-space: normal;
   flex-wrap: wrap;
   gap: 6px;
   margin-top: 6px;
@@ -1313,7 +1316,7 @@
 .chat-tabs button { opacity: .65; transition: color 150ms var(--ease), opacity 150ms var(--ease), box-shadow 150ms var(--ease); }
 .chat-tabs button[data-active="true"] { color: #49d4ff; opacity: 1; }
 .chat-log, .sidebar-inspector, .face-settings { animation: status-fade 300ms var(--ease); }
-.sidebar-inspector .graph-inspector { mask-image: linear-gradient(to bottom, #000 calc(100% - 24px), transparent); padding-bottom: 24px; }
+.sidebar-inspector .graph-inspector { padding-bottom: 24px; }
 .inspector-title { overflow-wrap: anywhere; }
 .sidebar-heading .inspector-back { border: 0; }
 .empty-state { display: flex; flex-direction: column; gap: 8px; padding: 24px 4px; font-size: 12px; line-height: 1.7; color: #49d4ff; }
@@ -1350,5 +1353,9 @@
 .inspector-body :is(strong, b) { color: #49d4ff; }
 
 .face-column .face-filter { flex-shrink: 0; overflow: visible; }
-.chat-chip { font: inherit; cursor: pointer; }
+.chat-chip { font-family: inherit; font-size: 12px; cursor: pointer; }
 .chat-chip:focus-visible { outline: 1px solid #49d4ff; outline-offset: 2px; }
+
+.graph-inspector { color: #49d4ff; font: 12px/1.5 var(--font-jetbrains), ui-monospace, monospace; }
+.graph-inspector :is(p, li, button, code, pre, .inspector-path, .inspector-foot) { color: #49d4ff; font-size: 12px; opacity: 1; }
+.graph-inspector :is(.inspector-title, h4) { color: #49d4ff; font-size: 13px; }

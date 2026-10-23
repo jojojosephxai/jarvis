@@ -102,6 +102,7 @@ export function ForceScene({
       renderer.setClearColor(0x000000, 0);
       renderer.autoClear = false;
       renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
+      renderer.domElement.tabIndex = -1;
       host.appendChild(renderer.domElement);
       const scene = new THREE.Scene();
       const camera = new THREE.PerspectiveCamera(46, 1, 1, 8000);
@@ -379,6 +380,12 @@ export function ForceScene({
           });
           // Keep the settled 3D positions; screen-space repacking erases orbit and perspective.
           screenNodes = projected;
+          const entryOf = new Map(meshes.map(entry => [entry.id, entry]));
+          const flow = group?.children.find((child) => child.userData.flow);
+          if (flow) {
+            const ids = flow.userData.nodeIds as string[];
+            flow.userData.flow = ids.flatMap((id) => entryOf.get(id)?.mesh.position.toArray() ?? [0, 0, 0]);
+          }
 
         }
         const byId = new Map(screenNodes.map((node) => [node.id, node]));
@@ -425,6 +432,24 @@ export function ForceScene({
           }
           ring.position.copy(selectedMesh.mesh.position);
           ring.visible = selectedMesh.mesh.visible;
+        }
+        const flow = group?.children.find((child) => child.userData.flow);
+        if (flow instanceof THREE.Points) {
+          const raw = flow.userData.flow as number[];
+          const attr = flow.geometry.getAttribute("position");
+          const phase = reduced ? 0 : (now / 1000) % 1;
+          for (let index = 0; index < attr.count; index += 1) {
+            const base = (index % Math.floor(raw.length / 6)) * 6;
+            const t = (phase + index / attr.count) % 1;
+            attr.setXYZ(
+              index,
+              (raw[base] ?? 0) + ((raw[base + 3] ?? 0) - (raw[base] ?? 0)) * t,
+              (raw[base + 1] ?? 0) + ((raw[base + 4] ?? 0) - (raw[base + 1] ?? 0)) * t,
+              (raw[base + 2] ?? 0) + ((raw[base + 5] ?? 0) - (raw[base + 2] ?? 0)) * t,
+            );
+          }
+          attr.needsUpdate = true;
+          host.dataset.flowPositions = JSON.stringify(Array.from(attr.array));
         }
         paintLabels();
         renderer.setScissorTest(false);
@@ -585,6 +610,48 @@ export function ForceScene({
             group.add(ring);
           }
         }
+        if (current.points.length > 0) {
+          let minX = Infinity;
+          let minY = Infinity;
+          let minZ = Infinity;
+          let maxX = -Infinity;
+          let maxY = -Infinity;
+          let maxZ = -Infinity;
+          for (const point of current.points) {
+            minX = Math.min(minX, point.x);
+            minY = Math.min(minY, point.y);
+            minZ = Math.min(minZ, point.z);
+            maxX = Math.max(maxX, point.x);
+            maxY = Math.max(maxY, point.y);
+            maxZ = Math.max(maxZ, point.z);
+          }
+          const dustCount = 140;
+          const dust = new Float32Array(dustCount * 3);
+          for (let index = 0; index < dustCount; index += 1) {
+            const nx = ((index * 97) % 1000) / 1000;
+            const ny = ((index * 193) % 1000) / 1000;
+            const nz = ((index * 389) % 1000) / 1000;
+            dust[index * 3] = minX - 80 + nx * (maxX - minX + 160);
+            dust[index * 3 + 1] = minY - 40 + ny * (maxY - minY + 120);
+            dust[index * 3 + 2] = minZ - 80 + nz * (maxZ - minZ + 160);
+          }
+          const dustGeo = new THREE.BufferGeometry();
+          dustGeo.setAttribute("position", new THREE.BufferAttribute(dust, 3));
+          const starDust = new THREE.Points(
+            dustGeo,
+            new THREE.PointsMaterial({
+              color: 0x9fdfff,
+              size: 1.15,
+              transparent: true,
+              opacity: 0.32,
+              depthWrite: false,
+            }),
+          );
+          starDust.userData.kind = "dust";
+          group.add(starDust);
+          host.dataset.dustCount = String(dustCount);
+        }
+
         if (current.showEdges) {
           const focusId = current.selectedId;
           const routeSet = current.route ? new Set(current.route) : null;
@@ -659,10 +726,30 @@ export function ForceScene({
             addLines(crossPositions, crossLine);
           }
           if (contextPositions.length > 0) addLines(contextPositions, contextLine);
+          if (hotPositions.length >= 6) {
+            const count = Math.min(18, Math.floor(hotPositions.length / 6));
+            const flowGeo = new THREE.BufferGeometry();
+            flowGeo.setAttribute("position", new THREE.BufferAttribute(new Float32Array(count * 3), 3));
+            const flow = new THREE.Points(
+              flowGeo,
+              new THREE.PointsMaterial({
+                color: 0xb7f3ff,
+                size: 2.2,
+                transparent: true,
+                opacity: 0.75,
+                depthWrite: false,
+              }),
+            );
+            flow.userData.flow = hotPositions;
+            flow.userData.nodeIds = endpointIds.get(hotPositions);
+            group.add(flow);
+          }
           if (hotPositions.length > 0) {
             addLines(hotPositions, hotLine);
           }
         }
+        const flow = group.children.find(child => child.userData.flow);
+        host.dataset.flowCount = String(flow instanceof THREE.Points ? flow.geometry.getAttribute("position").count : 0);
         scene.add(group);
         host.dataset.ready = meshes.length > 0 ? "true" : "false";
       };
@@ -733,7 +820,7 @@ export function ForceScene({
             const rect = spot;
             return rect.left >= safe.left && rect.right <= safe.right && rect.top >= safe.top && rect.bottom <= safe.bottom &&
               !placed.some((other) => rectsIntersect(rect, other, 6)) &&
-              !screenNodes.some((node) => (!focus || near.has(node.id)) && node.id !== source.id && rectIntersectsCircle(rect, node, 3));
+              !screenNodes.some((node) => rectIntersectsCircle(rect, node, 3));
           });
           if (!spot) continue;
           keep.add(source.id);
