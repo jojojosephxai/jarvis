@@ -108,6 +108,8 @@ export function ForceScene({
       const raycaster = new THREE.Raycaster();
       const pointer = new THREE.Vector2();
       const target = new THREE.Vector3();
+      const overviewTarget = new THREE.Vector3();
+      const overviewCamera = camera.clone();
       const sphere = new THREE.SphereGeometry(1, 14, 12);
       let group: THREE_NS.Group | null = null;
       const meshes: {
@@ -223,7 +225,7 @@ export function ForceScene({
         let lo = 80, hi = Math.max(radius * 5, 900);
         for (let i = 0; i < 24; i++) { const mid = (lo + hi) / 2; if (fits(mid)) hi = mid; else lo = mid; }
         fits(hi);
-        if (rememberOverview) overviewDist = dist;
+        if (rememberOverview) { overviewDist = dist; overviewTarget.copy(target); overviewCamera.copy(camera); }
         publishDist();
         placeCamera();
       };
@@ -334,6 +336,13 @@ export function ForceScene({
         if (stamp !== placementStamp) {
           placementStamp = stamp;
           camera.updateMatrixWorld();
+          overviewCamera.position.set(
+            overviewTarget.x + Math.sin(yaw) * Math.cos(pitch) * overviewDist,
+            overviewTarget.y + Math.sin(pitch) * overviewDist,
+            overviewTarget.z + Math.cos(yaw) * Math.cos(pitch) * overviewDist,
+          );
+          overviewCamera.lookAt(overviewTarget);
+          overviewCamera.updateMatrixWorld();
           const near = new Set<string>();
           const focusId = framing.clusterId ?? framing.selectedId;
           if (focusId) {
@@ -349,12 +358,17 @@ export function ForceScene({
             const point = framing.points.find((point) => point.id === entry.id)!;
             const node = framing.nodes.find((node) => node.id === entry.id)!;
             const hub = node.kind === "folder" || node.nodeType === "hub";
-            const active = near.has(node.id);
-            const projectionCamera = camera;
+            const active = framing.route?.length ? framing.route.includes(node.id) : framing.clusterId
+              ? node.id === framing.clusterId || node.hubs.includes(framing.clusterId) : near.has(node.id);
+            const projectionCamera = focused && !active ? overviewCamera : camera;
             scratch.set(point.x, point.y, point.z);
             const depth = scratch.clone().applyMatrix4(projectionCamera.matrixWorldInverse);
             const worldPerPx = 2 * halfTan * -depth.z / viewH;
             scratch.copy(depth).applyMatrix4(projectionCamera.matrixWorld).project(projectionCamera);
+            // Preserve the original renderer's overview context while the active cluster is framed.
+            entry.mesh.position.copy(scratch).unproject(camera);
+            entry.glow?.position.copy(entry.mesh.position);
+            entry.hit?.position.copy(entry.mesh.position);
             const cap = focused ? (active ? (hub ? (node.id === focusId ? 18 : 10) : 7) : (hub ? 7 : 3.5)) : (hub ? 12 : 5);
             const radius = Math.max(hub ? 6 : 3, Math.min(cap, entry.baseScale / worldPerPx));
             return {
@@ -479,10 +493,6 @@ export function ForceScene({
           hot.add(current.clusterId);
           for (const node of current.nodes) {
             if (node.hubs.includes(current.clusterId)) hot.add(node.id);
-          }
-          for (const edge of current.edges) {
-            if (edge.from === current.clusterId) hot.add(edge.to);
-            if (edge.to === current.clusterId) hot.add(edge.from);
           }
         } else if (current.selectedId) {
           for (const id of neighborhood(current.selectedId, current.hopDepth)) hot.add(id);
