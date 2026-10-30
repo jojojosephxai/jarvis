@@ -3,7 +3,13 @@ import { capture } from './capture.mjs';
 import { expect, test } from './fixtures.mjs';
 
 const items = JSON.parse(await readFile(new URL('../tests/fixtures/do-next/items.json', import.meta.url), 'utf8'));
-const shots = 'work/do-next-screenshots';
+const shots = 'work/do-next-followup-screenshots';
+
+async function settleLayout(page) {
+  await expect.poll(() => page.locator('.face-sidebar, .orb-dial, .face-dock, .stage-orb').evaluateAll(elements =>
+    elements.flatMap(el => el.getAnimations()).filter(animation => animation.pending || animation.playState === 'running').length,
+  )).toBe(0);
+}
 
 async function open(page, width = 1440, height = 900) {
   await page.setViewportSize({ width, height });
@@ -18,6 +24,7 @@ async function open(page, width = 1440, height = 900) {
   await page.evaluate(() => document.fonts.ready);
   await expect(page.locator('.face-sidebar')).toHaveCSS('opacity', '1');
   await expect(page.locator('.stage-orb')).toHaveCSS('opacity', '1');
+  await settleLayout(page);
   await page.mouse.move(0, 0);
 }
 
@@ -36,8 +43,9 @@ function geometry() {
   };
 }
 
-for (const [width, height] of [[1024, 576], [1440, 900]]) {
-  for (const state of ['items', 'empty', 'error']) test(`Do next ${state} at ${width}x${height}`, async ({ page }) => {
+for (const [width, height] of [[1024, 576], [1024, 768], [1440, 900], [1920, 1080]]) {
+  const states = height === 768 || width === 1920 ? ['items'] : ['items', 'empty', 'error'];
+  for (const state of states) test(`Do next ${state} at ${width}x${height}`, async ({ page }) => {
     await page.route('**/api/do-next', route => route.fulfill({
       status: state === 'error' ? 503 : 200,
       json: state === 'error' ? { error: "Couldn't load." } : { items: state === 'items' ? items : [] },
@@ -53,6 +61,21 @@ for (const [width, height] of [[1024, 576], [1440, 900]]) {
       await expect(panel.getByRole('listitem')).toHaveCount(6);
       await expect(panel.getByRole('checkbox')).toHaveCount(0);
       await expect(panel.getByRole('button')).toHaveCount(1);
+      const content = panel.locator('.do-next-content');
+      if (height === 576) {
+        expect(await content.evaluate(el => el.scrollHeight > el.clientHeight)).toBe(true);
+        const fixed = page.locator('.orb-dial-ring, .face-ask, .chat-tabs');
+        const boxes = () => fixed.evaluateAll(elements => elements.map(el => el.getBoundingClientRect().toJSON()));
+        const beforeScroll = await boxes();
+        await content.evaluate(el => { el.scrollTop = el.scrollHeight; });
+        // The scroll range rounds to whole pixels at fractional vh heights.
+        await expect(panel.getByRole('listitem').last()).toBeInViewport({ ratio: .99 });
+        expect(await boxes()).toEqual(beforeScroll);
+        await content.evaluate(el => { el.scrollTop = 0; });
+      } else {
+        expect(await content.evaluate(el => el.scrollHeight <= el.clientHeight)).toBe(true);
+        for (const row of await panel.getByRole('listitem').all()) await expect(row).toBeInViewport({ ratio: 1 });
+      }
     } else await expect(panel).toContainText(state === 'empty' ? 'Nothing due.' : "Couldn't load.");
     await expect.poll(() => page.evaluate(geometry)).toEqual({ contained: true, clear: true, centered: true, type: true });
     await capture(page, shots, `do-next-${width}x${height}-${state}`);
@@ -81,6 +104,8 @@ test('Do next refreshes only on open and Refresh, retaining state through graph,
   await page.getByRole('tab', { name: 'chat', exact: true }).click();
   await page.getByRole('button', { name: 'Collapse sidebar', exact: true }).click();
   await page.getByRole('button', { name: 'Open sidebar', exact: true }).click();
+  await expect(page.locator('.face')).toHaveAttribute('data-sidebar-collapsed', 'false');
+  await settleLayout(page);
   await page.evaluate(() => { window.dispatchEvent(new Event('focus')); document.dispatchEvent(new Event('visibilitychange')); });
   await page.clock.install();
   await page.clock.fastForward(120_000);
@@ -95,6 +120,7 @@ test('Do next refreshes only on open and Refresh, retaining state through graph,
   await expect(panel.getByRole('listitem')).toHaveCount(1);
   await expect(panel).toContainText('Pack swim bag');
   expect(calls).toBe(4);
+  await settleLayout(page);
   const after = await page.locator('.orb-dial-ring').boundingBox();
   for (const key of ['x', 'y', 'width', 'height']) expect(after[key]).toBeCloseTo(before[key], 0);
   await expect(page.getByRole('group', { name: 'Zoom', exact: true })).toHaveCount(0);
