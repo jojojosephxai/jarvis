@@ -884,6 +884,19 @@
 }
 .sidebar-heading { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
 .sidebar-heading button { padding: 0 4px; font-size: 18px; }
+.do-next-panel { flex: none; min-width: 0; margin-bottom: 12px; padding-bottom: 12px; border-bottom: 1px solid rgba(73,212,255,.35); }
+.face[data-view="graph"] .do-next-panel { display: none; }
+.do-next-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
+.do-next-heading h2 { margin: 0; color: #49d4ff; font-size: 12px; font-weight: 400; letter-spacing: .06em; text-transform: uppercase; }
+.do-next-heading button { padding: 3px 8px; border: 1px solid rgba(73,212,255,.35); background: transparent; color: #49d4ff; font: inherit; font-size: 12px; letter-spacing: .04em; cursor: pointer; }
+.do-next-heading button:disabled { opacity: .5; cursor: default; }
+.do-next-heading button:focus-visible { outline: 1px solid #49d4ff; outline-offset: 2px; }
+.do-next-content { max-height: min(30vh, 280px); overflow: auto; scrollbar-width: thin; scrollbar-color: rgba(73,212,255,.4) transparent; }
+.do-next-items { display: grid; gap: 10px; margin: 0; padding: 0; list-style: none; }
+.do-next-task { margin: 0 0 3px; color: #cfefff; font-size: 13px; line-height: 1.45; letter-spacing: .04em; overflow-wrap: anywhere; }
+.do-next-meta { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 2px 12px; color: #49d4ff; font-size: 12px; line-height: 1.5; letter-spacing: .04em; overflow-wrap: anywhere; }
+.do-next-meta > * { min-width: 0; }
+.do-next-state { margin: 0; color: #49d4ff; font-size: 12px; line-height: 1.5; letter-spacing: .04em; }
 .sidebar-resize {
   position: absolute;
   top: 0;

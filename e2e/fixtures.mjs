@@ -15,6 +15,7 @@ export const test = base.extend({
       external.push('api.x.ai');
       socket.close();
     });
+    await context.route('**/api/do-next', route => route.fulfill({ json: { items: [] } }));
     await use();
     expect(external, 'No xAI or third-party network calls are allowed').toEqual([]);
   }, { auto: true }],

@@ -1,0 +1,8 @@
+[
+  { "task": "Review algebra notes", "due": "2026-10-29", "bot": "School" },
+  { "task": "Pack swim bag", "due": "2026-10-30", "bot": "Swim" },
+  { "task": "Return library book", "due": "2026-10-31", "bot": "School" },
+  { "task": "Check project draft", "due": "2026-11-01", "bot": "Jarvis" },
+  { "task": "Read science chapter", "due": "2026-11-02", "bot": "School" },
+  { "task": "Plan next week", "due": "2026-11-03", "bot": "Planning" }
+]

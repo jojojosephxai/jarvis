@@ -5,4 +5,5 @@ process.env.OBSIDIAN_VAULT_PATH = path.resolve('tests/fixtures/vault');
 process.env.XAI_API_KEY = '';
 process.env.AZURE_SPEECH_KEY = '';
 process.env.AZURE_SPEECH_REGION = '';
+process.env.DO_NEXT_PATH = '';
 globalThis.fetch = async input => { throw new Error(`Unmocked network request in a test: ${new URL(String(input)).hostname}`); };

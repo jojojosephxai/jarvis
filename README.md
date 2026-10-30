@@ -45,6 +45,14 @@ A refresh clears the talk lines. They stay on this screen only.
 
 `npm run dev` listens only on this computer, at [http://127.0.0.1:4721](http://127.0.0.1:4721). It is not open to other devices on the Wi-Fi.
 
+## Do next (local checkout)
+
+The home Workspace sidebar shows up to six read-only tasks from `data/do-next.json` in Cursor Origin's `mr-potato/life-dashboard` repo. Joseph must clone that repo himself on the computer running Jarvis's Next.js server, select the intended source branch, and set `DO_NEXT_PATH` to the **absolute file path** in the server process environment. For example, launch with `DO_NEXT_PATH=/absolute/path/to/life-dashboard/data/do-next.json npm run dev` on a POSIX shell, or set `$env:DO_NEXT_PATH='C:\path\to\life-dashboard\data\do-next.json'` before `npm run dev` in PowerShell. Restart Jarvis after changing the environment variable. No credentials are used by this reader, and no environment file is required.
+
+The file must be a JSON list of objects with string fields `task`, `due`, and `bot`; task and bot must be nonblank. Use ISO `YYYY-MM-DD` dates or ISO timestamps with a timezone. Items appear soonest-due first; invalid dates appear last as “Date unavailable.” Extra fields are ignored. Invalid JSON, a bad row anywhere in the list, a file over 300,000 bytes, or an unset/unreadable path produces “Couldn't load.” An empty list produces “Nothing due.”
+
+Jarvis reads the file once when opened and again only when **Refresh** is pressed, through the uncached server-only `GET /api/do-next` route. It never pulls Git changes, polls, or visits the retired dashboard. **Update the local checkout by hand**, then press Refresh; Refresh alone cannot retrieve newer commits. The path must be accessible to the server process, so a path on Joseph's PC will not work for a server hosted elsewhere. Keep the existing loopback-only server binding for local use.
+
 ## Hands
 
 These still work. They are not vault answers. The orb stays in the middle. The talk strip opens just enough to show the plan.

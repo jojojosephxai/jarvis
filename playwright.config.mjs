@@ -1,4 +1,5 @@
 import { defineConfig } from "@playwright/test";
+import { fileURLToPath } from "node:url";
 
 export default defineConfig({
   testDir: "e2e",
@@ -13,7 +14,7 @@ export default defineConfig({
   },
   webServer: {
     command: "node node_modules/next/dist/bin/next start -p 4732 -H 127.0.0.1",
-    env: { JARVIS_VOICE_LAYER: "realtime", XAI_API_KEY: "", AZURE_SPEECH_KEY: "", AZURE_SPEECH_REGION: "", OBSIDIAN_VAULT_PATH: "work/e2e-vault" },
+    env: { JARVIS_VOICE_LAYER: "realtime", XAI_API_KEY: "", AZURE_SPEECH_KEY: "", AZURE_SPEECH_REGION: "", OBSIDIAN_VAULT_PATH: "work/e2e-vault", DO_NEXT_PATH: fileURLToPath(new URL("./tests/fixtures/do-next/empty.json", import.meta.url)) },
     url: "http://127.0.0.1:4732",
     reuseExistingServer: false,
     timeout: 120000,

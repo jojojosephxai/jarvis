@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState, type CSSProperties, type ReactNode, type RefObject } from "react";
 
 import { NoteGraph, type GraphCue } from "@/components/note-graph";
+import { DoNextPanel } from "@/components/do-next-panel";
 import { matchGraphNode } from "@/lib/graph-nav";
 import type { GraphNode } from "@/lib/note-graph";
 import { parseGraphCommand } from "@/lib/graph-command";
@@ -1076,6 +1077,7 @@ function ChatCard({
             onResize(event.key === "Home" ? 300 : event.key === "End" ? window.innerWidth / 2 : width + (event.key === "ArrowLeft" ? 20 : -20));
           }} />
         <div className="sidebar-heading"><p className="face-block-label">Workspace</p><button type="button" className="inspector-back" aria-label="Collapse sidebar" aria-expanded={!collapsed} onClick={onCollapse}>›</button></div>
+        <DoNextPanel />
         <div className="chat-tabs" role="tablist" aria-label="Sidebar">
           {(["chat", "tasks", "log", "inspector"] as const).map((name) => (
             <button key={name} id={`tab-${name}`} aria-controls={`panel-${name}`} type="button" role="tab" tabIndex={tab === name ? 0 : -1} aria-selected={tab === name} data-active={tab === name ? "true" : "false"} onClick={() => onTab(name)}
