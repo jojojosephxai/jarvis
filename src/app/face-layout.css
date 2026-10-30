@@ -892,6 +892,9 @@
 .do-next-heading button:disabled { opacity: .5; cursor: default; }
 .do-next-heading button:focus-visible { outline: 1px solid #49d4ff; outline-offset: 2px; }
 .do-next-content { max-height: min(42vh, 320px); overflow: auto; scrollbar-width: thin; scrollbar-color: #49d4ff rgba(73,212,255,.16); }
+@media (max-height: 640px) {
+  .do-next-content { max-height: min(30vh, 180px); }
+}
 /* Scroll fades disappear at each end, even when the OS hides scrollbars. */
 .do-next-content {
   background-image: linear-gradient(#050e1c 30%, transparent), linear-gradient(transparent, #050e1c 70%), linear-gradient(rgba(73,212,255,.35), transparent), linear-gradient(transparent, rgba(73,212,255,.5));
